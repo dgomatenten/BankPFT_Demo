@@ -59,7 +59,10 @@ docker compose up --build
 ```
 app/
 ├── __init__.py              # App factory
-├── config.py                # Configuration
+├── config.py                # Flask configuration
+├── config/
+│   ├── upload_config.json   # Upload validation & staging rules
+│   └── allocation_config.json # Allocation engine settings
 ├── models/
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
@@ -74,11 +77,33 @@ app/
 │   └── testdata.py          # Test data generation
 ├── services/
 │   ├── __init__.py          # Maker/Checker state machine
-│   ├── upload_service.py    # File parsing & validation
-│   ├── allocation_engine.py # Pandas shredding engine
+│   ├── upload_service.py    # Config-driven file parsing & validation
+│   ├── allocation_engine.py # Config-driven Pandas shredding engine
 │   └── testdata_service.py  # Test data generators
 └── templates/               # Jinja2 / Bootstrap 5 templates
 ```
+
+## JSON Configuration
+
+Business logic for uploads and allocation is driven by JSON config files — no code changes needed to adjust column mappings, validation rules, or engine behavior.
+
+### `app/config/upload_config.json`
+
+Controls per data type (INSTRUMENT, GL, ALLOCATION):
+- **required_columns / optional_columns** — which columns must exist in the upload
+- **unique_key** — column checked for duplicates (e.g. `account_id`)
+- **dimension_lookups** — maps upload columns to dimension tables for referential integrity checks
+- **column_mapping** — type casting rules (date/float/string) with defaults for optional fields
+- **ratio_validation** — group-by keys, expected sum, and tolerance for allocation ratio checks
+
+### `app/config/allocation_config.json`
+
+Controls the batch allocation engine:
+- **source** — table, columns, and date filter column
+- **lookup** — table, status filter (`APPROVED`), and columns
+- **join** — join key (`customer_id`) and join type (`left`)
+- **output** — balance columns to apply ratios to, ratio column name
+- **orphan_handling** — enabled flag, default ratio (1.0), target org source
 
 ## Usage Workflow
 
@@ -91,11 +116,15 @@ app/
 
 ## Data Validation
 
-Uploads are validated against dimension tables before staging:
+Uploads are validated using a single generic engine driven by `upload_config.json`:
 
-- **Instrument:** Required columns, null checks, duplicate account_id, customer/product/org lookups
-- **GL:** Required columns, null checks, org unit lookups
-- **Allocation Ratios:** Required columns, null checks, ratio sums = 1.0 per group, customer/org lookups
+- **Required columns** — checked per data type from config
+- **Null checks** — on all required columns
+- **Unique key** — duplicate detection on configured key column
+- **Dimension lookups** — referential integrity against configured dimension tables
+- **Ratio validation** — group-by sum check with configurable tolerance (allocation type only)
+
+To add a new data type, add an entry to `upload_config.json` — no code changes required.
 
 ## Database
 
