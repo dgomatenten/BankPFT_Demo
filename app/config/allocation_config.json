@@ -1,0 +1,31 @@
+{
+    "source": {
+        "table": "proc_inst_data",
+        "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "balance", "interest_income"],
+        "date_filter_column": "as_of_date"
+    },
+
+    "lookup": {
+        "table": "ref_static_allocation",
+        "status_filter": "APPROVED",
+        "columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"]
+    },
+
+    "join": {
+        "key": "customer_id",
+        "type": "left"
+    },
+
+    "output": {
+        "table": "fct_mgmt_ledger",
+        "balance_columns": ["balance", "interest_income"],
+        "ratio_column": "ratio",
+        "allocated_column_prefix": "allocated_"
+    },
+
+    "orphan_handling": {
+        "enabled": true,
+        "default_ratio": 1.0,
+        "target_org_from": "source_org_unit_id"
+    }
+}

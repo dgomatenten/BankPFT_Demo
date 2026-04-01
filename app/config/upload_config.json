@@ -1,0 +1,70 @@
+{
+    "allowed_extensions": ["xlsx", "csv"],
+
+    "data_types": {
+        "INSTRUMENT": {
+            "required_columns": ["as_of_date", "account_id", "customer_id", "product_code", "org_unit_id", "balance"],
+            "optional_columns": ["interest_income"],
+            "unique_key": "account_id",
+            "staging_table": "stg_inst_data",
+            "dimension_lookups": {
+                "customer_id": "dim_customer",
+                "product_code": "dim_product",
+                "org_unit_id": "dim_org_unit"
+            },
+            "column_mapping": {
+                "as_of_date": {"type": "date"},
+                "account_id": {"type": "string"},
+                "customer_id": {"type": "string"},
+                "product_code": {"type": "string"},
+                "org_unit_id": {"type": "string"},
+                "balance": {"type": "float"},
+                "interest_income": {"type": "float", "default": 0}
+            }
+        },
+        "GL": {
+            "required_columns": ["as_of_date", "gl_account", "org_unit_id", "balance"],
+            "optional_columns": ["debit", "credit"],
+            "unique_key": null,
+            "staging_table": "stg_gl_data",
+            "dimension_lookups": {
+                "org_unit_id": "dim_org_unit"
+            },
+            "column_mapping": {
+                "as_of_date": {"type": "date"},
+                "gl_account": {"type": "string"},
+                "org_unit_id": {"type": "string"},
+                "debit": {"type": "float", "default": 0},
+                "credit": {"type": "float", "default": 0},
+                "balance": {"type": "float"}
+            }
+        },
+        "ALLOCATION": {
+            "required_columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"],
+            "optional_columns": [],
+            "unique_key": null,
+            "staging_table": "ref_static_allocation",
+            "dimension_lookups": {
+                "customer_id": "dim_customer",
+                "source_org_unit_id": "dim_org_unit",
+                "target_org_unit_id": "dim_org_unit"
+            },
+            "ratio_validation": {
+                "enabled": true,
+                "group_by": ["allocation_id", "customer_id"],
+                "sum_column": "ratio",
+                "expected_sum": 1.0,
+                "tolerance": 0.001
+            },
+            "column_mapping": {
+                "allocation_id": {"type": "string"},
+                "customer_id": {"type": "string"},
+                "source_org_unit_id": {"type": "string"},
+                "target_org_unit_id": {"type": "string"},
+                "ratio": {"type": "float"}
+            }
+        }
+    },
+
+    "max_validation_errors_shown": 10
+}

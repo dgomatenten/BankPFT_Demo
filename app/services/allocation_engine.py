@@ -1,5 +1,7 @@
-"""Batch allocation engine — the 'shredding' logic using Pandas."""
+"""Batch allocation engine — config-driven 'shredding' logic using Pandas."""
 
+import os
+import json
 import uuid
 from datetime import datetime
 import pandas as pd
@@ -8,9 +10,20 @@ from app.models.staging import ProcInstData
 from app.models.allocation import RefStaticAllocation, FctMgmtLedger
 from app.models.workflow import AllocationRule, BatchRun
 
+# ── Load configuration ──
+_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "allocation_config.json")
+with open(_CONFIG_PATH) as _f:
+    ALLOC_CONFIG = json.load(_f)
+
 
 def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     """Execute the allocation shredding for a given rule and date."""
+    src_cfg = ALLOC_CONFIG["source"]
+    lkp_cfg = ALLOC_CONFIG["lookup"]
+    join_cfg = ALLOC_CONFIG["join"]
+    out_cfg = ALLOC_CONFIG["output"]
+    orphan_cfg = ALLOC_CONFIG["orphan_handling"]
+
     batch_id = str(uuid.uuid4())
     batch = BatchRun(
         id=batch_id,
@@ -24,8 +37,10 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     db.session.commit()
 
     try:
-        # Load source data
-        source_rows = ProcInstData.query.filter(ProcInstData.as_of_date == as_of_date).all()
+        # Load source data using config columns
+        source_rows = ProcInstData.query.filter(
+            getattr(ProcInstData, src_cfg["date_filter_column"]) == as_of_date
+        ).all()
         if not source_rows:
             batch.status = "FAILED"
             batch.error_message = "No processed instrument data for the selected date."
@@ -33,78 +48,74 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             db.session.commit()
             return batch
 
-        source_data = pd.DataFrame([{
-            "account_id": r.account_id,
-            "customer_id": r.customer_id,
-            "product_code": r.product_code,
-            "org_unit_id": r.org_unit_id,
-            "balance": r.balance,
-            "interest_income": r.interest_income,
-        } for r in source_rows])
+        source_data = pd.DataFrame([
+            {col: getattr(r, col) for col in src_cfg["columns"]}
+            for r in source_rows
+        ])
 
-        # Load allocation ratios (APPROVED only)
-        alloc_rows = RefStaticAllocation.query.filter_by(status="APPROVED").all()
+        # Load allocation ratios using config status filter
+        alloc_rows = RefStaticAllocation.query.filter_by(status=lkp_cfg["status_filter"]).all()
         if alloc_rows:
-            alloc_data = pd.DataFrame([{
-                "allocation_id": r.allocation_id,
-                "customer_id": r.customer_id,
-                "source_org_unit_id": r.source_org_unit_id,
-                "target_org_unit_id": r.target_org_unit_id,
-                "ratio": r.ratio,
-            } for r in alloc_rows])
+            alloc_data = pd.DataFrame([
+                {col: getattr(r, col) for col in lkp_cfg["columns"]}
+                for r in alloc_rows
+            ])
         else:
-            alloc_data = pd.DataFrame(
-                columns=["allocation_id", "customer_id", "source_org_unit_id",
-                         "target_org_unit_id", "ratio"]
-            )
+            alloc_data = pd.DataFrame(columns=lkp_cfg["columns"])
 
-        # Join source with allocations
-        merged = source_data.merge(alloc_data, on="customer_id", how="left")
+        # Join source with allocations using config join key
+        join_key = join_cfg["key"]
+        merged = source_data.merge(alloc_data, on=join_key, how=join_cfg["type"])
 
         # Split: matched vs orphan
-        matched = merged[merged["allocation_id"].notna()].copy()
-        orphan = merged[merged["allocation_id"].isna()].copy()
+        id_col = lkp_cfg["columns"][0]  # allocation_id
+        matched = merged[merged[id_col].notna()].copy()
+        orphan = merged[merged[id_col].isna()].copy()
 
         results = []
+        ratio_col = out_cfg["ratio_column"]
+        balance_cols = out_cfg["balance_columns"]
 
-        # Matched records: apply ratio
+        # Matched records: apply ratio from config
         if not matched.empty:
-            matched["allocated_balance"] = matched["balance"] * matched["ratio"]
-            matched["allocated_income"] = matched["interest_income"] * matched["ratio"]
+            for bal_col in balance_cols:
+                matched[f"allocated_{bal_col}"] = matched[bal_col] * matched[ratio_col]
+
             for _, row in matched.iterrows():
                 results.append(FctMgmtLedger(
                     batch_run_id=batch_id,
                     as_of_date=as_of_date,
                     allocation_id=row["allocation_id"],
                     source_account_id=row["account_id"],
-                    customer_id=row["customer_id"],
+                    customer_id=row[join_key],
                     product_code=row["product_code"],
                     source_org_unit_id=row["org_unit_id"],
                     target_org_unit_id=row["target_org_unit_id"],
                     source_balance=row["balance"],
                     allocated_balance=row["allocated_balance"],
-                    allocated_income=row["allocated_income"],
-                    ratio_applied=row["ratio"],
+                    allocated_income=row["allocated_interest_income"],
+                    ratio_applied=row[ratio_col],
                     is_orphan=False,
                 ))
 
-        # Orphan records: 100% to original org unit
-        if not orphan.empty:
+        # Orphan records: use config default ratio and target org
+        if orphan_cfg["enabled"] and not orphan.empty:
             orphan_dedup = orphan.drop_duplicates(subset=["account_id"])
+            default_ratio = orphan_cfg["default_ratio"]
             for _, row in orphan_dedup.iterrows():
                 results.append(FctMgmtLedger(
                     batch_run_id=batch_id,
                     as_of_date=as_of_date,
                     allocation_id=None,
                     source_account_id=row["account_id"],
-                    customer_id=row["customer_id"],
+                    customer_id=row[join_key],
                     product_code=row["product_code"],
                     source_org_unit_id=row["org_unit_id"],
                     target_org_unit_id=row["org_unit_id"],
                     source_balance=row["balance"],
-                    allocated_balance=row["balance"],
-                    allocated_income=row["interest_income"],
-                    ratio_applied=1.0,
+                    allocated_balance=row["balance"] * default_ratio,
+                    allocated_income=row["interest_income"] * default_ratio,
+                    ratio_applied=default_ratio,
                     is_orphan=True,
                 ))
 

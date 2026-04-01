@@ -1,5 +1,6 @@
-"""Excel upload parsing and validation service."""
+"""Excel upload parsing and validation service — driven by upload_config.json."""
 
+import os
 import uuid
 import json
 from datetime import datetime
@@ -11,8 +12,26 @@ from app.models.staging import StgInstData, StgGlData
 from app.models.allocation import RefStaticAllocation
 from app.models.workflow import UploadBatch
 
+# ── Load configuration ──
+_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "upload_config.json")
+with open(_CONFIG_PATH) as _f:
+    UPLOAD_CONFIG = json.load(_f)
 
-ALLOWED_EXTENSIONS = {"xlsx", "csv"}
+ALLOWED_EXTENSIONS = set(UPLOAD_CONFIG["allowed_extensions"])
+
+# Dimension model registry — maps config names to SQLAlchemy models + key columns
+_DIMENSION_MODELS = {
+    "dim_customer": (DimCustomer, "customer_id"),
+    "dim_product": (DimProduct, "product_code"),
+    "dim_org_unit": (DimOrgUnit, "org_unit_id"),
+}
+
+# Staging model registry — maps config names to SQLAlchemy models
+_STAGING_MODELS = {
+    "stg_inst_data": StgInstData,
+    "stg_gl_data": StgGlData,
+    "ref_static_allocation": RefStaticAllocation,
+}
 
 
 def allowed_file(filename: str) -> bool:
@@ -25,117 +44,83 @@ def _read_file(filepath: str) -> pd.DataFrame:
     return pd.read_excel(filepath, engine="openpyxl")
 
 
-def validate_instrument_data(df: pd.DataFrame) -> list[str]:
-    """Validate instrument upload data against dimension tables."""
-    errors = []
+def _get_dimension_values(dim_name: str) -> set[str]:
+    """Load valid values for a dimension from the database."""
+    model, key_col = _DIMENSION_MODELS[dim_name]
+    return {getattr(r, key_col) for r in model.query.all()}
 
-    # Technical checks
-    required_cols = ["as_of_date", "account_id", "customer_id", "product_code", "org_unit_id", "balance"]
+
+def validate_upload(df: pd.DataFrame, data_type: str) -> list[str]:
+    """Generic config-driven validator for any data type."""
+    type_cfg = UPLOAD_CONFIG["data_types"].get(data_type)
+    if not type_cfg:
+        return [f"Unknown data type: {data_type}"]
+
+    errors = []
+    max_shown = UPLOAD_CONFIG.get("max_validation_errors_shown", 10)
+
+    # 1. Required column check
+    required_cols = type_cfg["required_columns"]
     for col in required_cols:
         if col not in df.columns:
             errors.append(f"Missing required column: {col}")
     if errors:
         return errors
 
+    # 2. Null check on required columns
     if df[required_cols].isnull().any().any():
         null_cols = df[required_cols].columns[df[required_cols].isnull().any()].tolist()
         errors.append(f"Null values found in: {null_cols}")
 
-    if df["account_id"].duplicated().any():
-        errors.append("Duplicate account_id values found.")
+    # 3. Unique key check
+    unique_key = type_cfg.get("unique_key")
+    if unique_key and unique_key in df.columns and df[unique_key].duplicated().any():
+        errors.append(f"Duplicate {unique_key} values found.")
 
-    # Dimension checks
-    valid_customers = {c.customer_id for c in DimCustomer.query.all()}
-    bad_customers = set(df["customer_id"].astype(str)) - valid_customers
-    if bad_customers:
-        errors.append(f"Unknown customer_ids: {sorted(bad_customers)[:10]}")
-
-    valid_products = {p.product_code for p in DimProduct.query.all()}
-    bad_products = set(df["product_code"].astype(str)) - valid_products
-    if bad_products:
-        errors.append(f"Unknown product_codes: {sorted(bad_products)[:10]}")
-
-    valid_orgs = {o.org_unit_id for o in DimOrgUnit.query.all()}
-    bad_orgs = set(df["org_unit_id"].astype(str)) - valid_orgs
-    if bad_orgs:
-        errors.append(f"Unknown org_unit_ids: {sorted(bad_orgs)[:10]}")
-
-    return errors
-
-
-def validate_gl_data(df: pd.DataFrame) -> list[str]:
-    errors = []
-    required_cols = ["as_of_date", "gl_account", "org_unit_id", "balance"]
-    for col in required_cols:
+    # 4. Dimension lookups
+    for col, dim_name in type_cfg.get("dimension_lookups", {}).items():
         if col not in df.columns:
-            errors.append(f"Missing required column: {col}")
-    if errors:
-        return errors
+            continue
+        valid_values = _get_dimension_values(dim_name)
+        bad_values = set(df[col].astype(str)) - valid_values
+        if bad_values:
+            errors.append(f"Unknown {col}: {sorted(bad_values)[:max_shown]}")
 
-    if df[required_cols].isnull().any().any():
-        null_cols = df[required_cols].columns[df[required_cols].isnull().any()].tolist()
-        errors.append(f"Null values found in: {null_cols}")
-
-    valid_orgs = {o.org_unit_id for o in DimOrgUnit.query.all()}
-    bad_orgs = set(df["org_unit_id"].astype(str)) - valid_orgs
-    if bad_orgs:
-        errors.append(f"Unknown org_unit_ids: {sorted(bad_orgs)[:10]}")
-
-    return errors
-
-
-def validate_allocation_data(df: pd.DataFrame) -> list[str]:
-    errors = []
-    required_cols = ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"]
-    for col in required_cols:
-        if col not in df.columns:
-            errors.append(f"Missing required column: {col}")
-    if errors:
-        return errors
-
-    if df[required_cols].isnull().any().any():
-        null_cols = df[required_cols].columns[df[required_cols].isnull().any()].tolist()
-        errors.append(f"Null values found in: {null_cols}")
-
-    # Ratio check: per allocation_id + customer_id, sum must be 1.0
-    grouped = df.groupby(["allocation_id", "customer_id"])["ratio"].sum()
-    bad_ratios = grouped[abs(grouped - 1.0) > 0.001]
-    if not bad_ratios.empty:
-        for (alloc_id, cust_id), total in bad_ratios.items():
-            errors.append(
-                f"Ratio sum for allocation_id={alloc_id}, customer_id={cust_id} "
-                f"is {total:.4f}, expected 1.0"
-            )
-
-    # Dimension checks
-    valid_customers = {c.customer_id for c in DimCustomer.query.all()}
-    bad_customers = set(df["customer_id"].astype(str)) - valid_customers
-    if bad_customers:
-        errors.append(f"Unknown customer_ids: {sorted(bad_customers)[:10]}")
-
-    valid_orgs = {o.org_unit_id for o in DimOrgUnit.query.all()}
-    bad_src = set(df["source_org_unit_id"].astype(str)) - valid_orgs
-    bad_tgt = set(df["target_org_unit_id"].astype(str)) - valid_orgs
-    if bad_src:
-        errors.append(f"Unknown source_org_unit_ids: {sorted(bad_src)[:10]}")
-    if bad_tgt:
-        errors.append(f"Unknown target_org_unit_ids: {sorted(bad_tgt)[:10]}")
+    # 5. Ratio validation (allocation-specific)
+    ratio_cfg = type_cfg.get("ratio_validation")
+    if ratio_cfg and ratio_cfg.get("enabled"):
+        group_by = ratio_cfg["group_by"]
+        sum_col = ratio_cfg["sum_column"]
+        expected = ratio_cfg["expected_sum"]
+        tolerance = ratio_cfg["tolerance"]
+        if sum_col in df.columns and all(g in df.columns for g in group_by):
+            grouped = df.groupby(group_by)[sum_col].sum()
+            bad_ratios = grouped[abs(grouped - expected) > tolerance]
+            if not bad_ratios.empty:
+                for keys, total in bad_ratios.items():
+                    label = ", ".join(f"{g}={k}" for g, k in zip(group_by, keys if isinstance(keys, tuple) else (keys,)))
+                    errors.append(f"Ratio sum for {label} is {total:.4f}, expected {expected}")
 
     return errors
+
+
+def _cast_value(value, col_cfg):
+    """Cast a DataFrame cell value according to column_mapping config."""
+    col_type = col_cfg["type"]
+    if col_type == "date":
+        return pd.to_datetime(value).date()
+    elif col_type == "float":
+        return float(value) if pd.notna(value) else col_cfg.get("default", 0)
+    else:  # string
+        return str(value)
 
 
 def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
-    """Parse an uploaded file, validate, and store in staging."""
+    """Parse an uploaded file, validate, and store in staging — config-driven."""
     batch_id = str(uuid.uuid4())
     df = _read_file(filepath)
 
-    validators = {
-        "INSTRUMENT": validate_instrument_data,
-        "GL": validate_gl_data,
-        "ALLOCATION": validate_allocation_data,
-    }
-    validator = validators.get(data_type)
-    errors = validator(df) if validator else [f"Unknown data type: {data_type}"]
+    errors = validate_upload(df, data_type)
 
     batch = UploadBatch(
         id=batch_id,
@@ -149,43 +134,24 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
     )
     db.session.add(batch)
 
-    # If no validation errors, load into staging
+    # If no validation errors, load into staging using config
     if not errors:
-        if data_type == "INSTRUMENT":
-            for _, row in df.iterrows():
-                db.session.add(StgInstData(
-                    upload_batch_id=batch_id,
-                    as_of_date=pd.to_datetime(row["as_of_date"]).date(),
-                    account_id=str(row["account_id"]),
-                    customer_id=str(row["customer_id"]),
-                    product_code=str(row["product_code"]),
-                    org_unit_id=str(row["org_unit_id"]),
-                    balance=float(row["balance"]),
-                    interest_income=float(row.get("interest_income", 0)),
-                ))
-        elif data_type == "GL":
-            for _, row in df.iterrows():
-                db.session.add(StgGlData(
-                    upload_batch_id=batch_id,
-                    as_of_date=pd.to_datetime(row["as_of_date"]).date(),
-                    gl_account=str(row["gl_account"]),
-                    org_unit_id=str(row["org_unit_id"]),
-                    debit=float(row.get("debit", 0)),
-                    credit=float(row.get("credit", 0)),
-                    balance=float(row["balance"]),
-                ))
-        elif data_type == "ALLOCATION":
-            for _, row in df.iterrows():
-                db.session.add(RefStaticAllocation(
-                    upload_batch_id=batch_id,
-                    allocation_id=str(row["allocation_id"]),
-                    customer_id=str(row["customer_id"]),
-                    source_org_unit_id=str(row["source_org_unit_id"]),
-                    target_org_unit_id=str(row["target_org_unit_id"]),
-                    ratio=float(row["ratio"]),
-                    status="PENDING",
-                    maker_id=maker_id,
-                ))
+        type_cfg = UPLOAD_CONFIG["data_types"][data_type]
+        col_mapping = type_cfg["column_mapping"]
+        staging_model = _STAGING_MODELS[type_cfg["staging_table"]]
+
+        for _, row in df.iterrows():
+            record_data = {"upload_batch_id": batch_id}
+            for col_name, col_cfg in col_mapping.items():
+                value = row.get(col_name, col_cfg.get("default"))
+                record_data[col_name] = _cast_value(value, col_cfg)
+
+            # Add extra fields for allocation records
+            if data_type == "ALLOCATION":
+                record_data["status"] = "PENDING"
+                record_data["maker_id"] = maker_id
+
+            db.session.add(staging_model(**record_data))
 
     db.session.commit()
     return batch
