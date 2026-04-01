@@ -1,0 +1,51 @@
+{% extends "layout/base.html" %}
+{% block title %}Execution Log — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Execution Log: {{ batch.id[:12] }}...</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3"><strong>Status:</strong> <span class="badge bg-success">{{ batch.status }}</span></div>
+            <div class="col-md-3"><strong>Date:</strong> {{ batch.as_of_date }}</div>
+            <div class="col-md-3"><strong>Source Total:</strong> {{ "{:,.2f}".format(batch.source_total) }}</div>
+            <div class="col-md-3"><strong>Output Total:</strong> {{ "{:,.2f}".format(batch.output_total) }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Detail Records (first 500)</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Account</th><th>Customer</th><th>Product</th>
+                        <th>Source Org</th><th>Target Org</th>
+                        <th>Source Bal</th><th>Ratio</th><th>Allocated Bal</th>
+                        <th>Orphan</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in records %}
+                <tr class="{{ 'table-warning' if r.is_orphan }}">
+                    <td>{{ r.source_account_id }}</td>
+                    <td>{{ r.customer_id }}</td>
+                    <td>{{ r.product_code }}</td>
+                    <td>{{ r.source_org_unit_id }}</td>
+                    <td>{{ r.target_org_unit_id }}</td>
+                    <td>{{ "{:,.2f}".format(r.source_balance) }}</td>
+                    <td>{{ "%.2f"|format(r.ratio_applied * 100) }}%</td>
+                    <td>{{ "{:,.2f}".format(r.allocated_balance) }}</td>
+                    <td>{{ '⚠' if r.is_orphan else '' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<a href="/batch/{{ batch.id }}" class="btn btn-outline-secondary mt-3"><i class="bi bi-arrow-left"></i> Back to Batch</a>
+{% endblock %}

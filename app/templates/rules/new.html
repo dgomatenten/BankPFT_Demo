@@ -1,0 +1,52 @@
+{% extends "layout/base.html" %}
+{% block title %}New Rule — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Create Allocation Rule</h2>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Rule Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. Customer Shred Q1" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <textarea name="description" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label">Source Table</label>
+                    <select name="source_table" class="form-select">
+                        <option value="proc_inst_data" selected>Instrument (proc_inst_data)</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Lookup Table</label>
+                    <select name="lookup_table" class="form-select">
+                        <option value="ref_static_allocation" selected>Static Allocation</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Output Table</label>
+                    <select name="output_table" class="form-select">
+                        <option value="fct_mgmt_ledger" selected>Management Ledger</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Join Key</label>
+                <select name="join_key" class="form-select">
+                    <option value="customer_id" selected>customer_id</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Created By</label>
+                <input type="text" name="created_by" class="form-control" value="user1" required>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Create Rule</button>
+            <a href="/rules" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

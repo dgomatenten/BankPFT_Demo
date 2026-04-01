@@ -1,0 +1,63 @@
+{% extends "layout/base.html" %}
+{% block title %}Test Data Generator — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Test Data Generator</h2>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Master Data</div>
+            <div class="card-body">
+                <p>Generate 10 Org Units, 5 Products, 50 Customers, and Accounts.</p>
+                <form method="POST" action="/testdata/generate-master">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-database-add"></i> Generate Master Data</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Instrument Data</div>
+            <div class="card-body">
+                <p>Generate 500+ instrument records in proc_inst_data (validated).</p>
+                <form method="POST" action="/testdata/generate-instruments">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-file-earmark-spreadsheet"></i> Generate Instruments</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Allocation Ratios</div>
+            <div class="card-body">
+                <p>Generate sample allocation ratios for 10 customers (auto-approved into DB).</p>
+                <form method="POST" action="/testdata/generate-allocations" class="mb-3">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-pie-chart"></i> Generate Allocations (DB)</button>
+                </form>
+                <hr>
+                <p>Generate an Excel file with test allocation ratios for all customers (for upload testing).</p>
+                <form method="POST" action="/testdata/generate-alloc-testdata" class="mb-2">
+                    <button type="submit" class="btn btn-outline-primary"><i class="bi bi-file-earmark-excel"></i> Generate Alloc Ratio Test File</button>
+                </form>
+                <a href="/testdata/download-template/allocation_ratio_testdata.xlsx" class="btn btn-sm btn-outline-success"><i class="bi bi-download"></i> Download Test File</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Excel Templates</div>
+            <div class="card-body">
+                <p>Generate blank Excel templates with correct headers for manual upload testing.</p>
+                <form method="POST" action="/testdata/generate-templates">
+                    <button type="submit" class="btn btn-success"><i class="bi bi-file-earmark-excel"></i> Generate Templates</button>
+                </form>
+                <div class="mt-3">
+                    <a href="/testdata/download-template/instrument_template.xlsx" class="btn btn-sm btn-outline-secondary">Instrument</a>
+                    <a href="/testdata/download-template/gl_template.xlsx" class="btn btn-sm btn-outline-secondary">GL</a>
+                    <a href="/testdata/download-template/allocation_template.xlsx" class="btn btn-sm btn-outline-secondary">Allocation</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

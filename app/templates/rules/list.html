@@ -1,0 +1,39 @@
+{% extends "layout/base.html" %}
+{% block title %}Allocation Rules — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Allocation Rules</h2>
+    <a href="/rules/new" class="btn btn-primary"><i class="bi bi-plus-circle"></i> New Rule</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr><th>ID</th><th>Name</th><th>Source</th><th>Lookup</th><th>Output</th><th>Status</th><th>Created By</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+            {% for r in rules %}
+            <tr>
+                <td><a href="/rules/{{ r.id }}">{{ r.id }}</a></td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.source_table }}</td>
+                <td>{{ r.lookup_table }}</td>
+                <td>{{ r.output_table }}</td>
+                <td><span class="badge bg-{{ 'success' if r.is_active else 'secondary' }}">{{ r.status }}</span></td>
+                <td>{{ r.created_by or '—' }}</td>
+                <td>
+                    <form method="POST" action="/rules/{{ r.id }}/toggle" class="d-inline">
+                        <button class="btn btn-sm btn-outline-{{ 'warning' if r.is_active else 'success' }}" title="{{ 'Deactivate' if r.is_active else 'Activate' }}">{{ 'Deactivate' if r.is_active else 'Activate' }}</button>
+                    </form>
+                    <form method="POST" action="/rules/{{ r.id }}/delete" class="d-inline ms-1" onsubmit="return confirm('Delete this rule?');">
+                        <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

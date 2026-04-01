@@ -1,0 +1,49 @@
+{% extends "layout/base.html" %}
+{% block title %}Batch Detail — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Batch Run: {{ batch.id[:12] }}...</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3"><strong>Batch ID:</strong><br><small>{{ batch.id }}</small></div>
+            <div class="col-md-2"><strong>Status:</strong><br>
+                <span class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else 'danger' if batch.status == 'FAILED' else 'info' }} fs-6">{{ batch.status }}</span>
+            </div>
+            <div class="col-md-2"><strong>As-of Date:</strong><br>{{ batch.as_of_date }}</div>
+            <div class="col-md-2"><strong>Run By:</strong><br>{{ batch.run_by }}</div>
+            <div class="col-md-3"><strong>Started:</strong><br>{{ batch.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+        </div>
+        <hr>
+        <div class="row">
+            <div class="col-md-3">
+                <strong>Source Rows:</strong> {{ batch.source_row_count }}<br>
+                <strong>Source Total:</strong> {{ "{:,.2f}".format(batch.source_total) }}
+            </div>
+            <div class="col-md-3">
+                <strong>Output Rows:</strong> {{ batch.output_row_count }}<br>
+                <strong>Output Total:</strong> {{ "{:,.2f}".format(batch.output_total) }}
+            </div>
+            <div class="col-md-3">
+                <strong>Orphan Rows:</strong> {{ batch.orphan_count }}
+            </div>
+            <div class="col-md-3">
+                {% set diff = batch.source_total - batch.output_total %}
+                <strong>Variance:</strong><br>
+                <span class="badge bg-{{ 'success' if diff|abs < 0.01 else 'danger' }} fs-6">{{ "{:,.2f}".format(diff) }}</span>
+            </div>
+        </div>
+        {% if batch.error_message %}
+        <hr>
+        <div class="alert alert-danger mb-0">{{ batch.error_message }}</div>
+        {% endif %}
+    </div>
+</div>
+
+{% if batch.status == 'COMPLETED' %}
+<a href="/reports/execution-log/{{ batch.id }}" class="btn btn-outline-primary"><i class="bi bi-list-ol"></i> View Execution Log</a>
+<a href="/reports/ledger?batch_id={{ batch.id }}" class="btn btn-outline-success"><i class="bi bi-table"></i> View Ledger Report</a>
+{% endif %}
+
+<a href="/batch" class="btn btn-outline-secondary ms-2"><i class="bi bi-arrow-left"></i> Back</a>
+{% endblock %}

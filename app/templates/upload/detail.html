@@ -1,0 +1,167 @@
+{% extends "layout/base.html" %}
+{% block title %}Upload Detail — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Upload: {{ batch.filename }}</h2>
+
+{# ── Workflow State Machine Visual ── #}
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-diagram-3"></i> Maker/Checker Workflow</div>
+    <div class="card-body">
+        {% set states = ["DRAFT", "PENDING", "APPROVED", "PROCESSED"] %}
+        <div class="d-flex align-items-center justify-content-center mb-3">
+            {% for s in states %}
+            {% if s == batch.status %}
+            <span class="badge bg-primary fs-6 px-3 py-2">{{ s }}</span>
+            {% elif s == "REJECTED" %}
+            {% else %}
+            <span class="badge bg-light text-dark border px-3 py-2">{{ s }}</span>
+            {% endif %}
+            {% if not loop.last %}<i class="bi bi-arrow-right mx-2 text-muted"></i>{% endif %}
+            {% endfor %}
+            {% if batch.status == "REJECTED" %}
+            <i class="bi bi-arrow-right mx-2 text-muted"></i>
+            <span class="badge bg-danger fs-6 px-3 py-2">REJECTED</span>
+            {% endif %}
+        </div>
+        <div class="row text-center small text-muted">
+            <div class="col">Maker uploads file</div>
+            <div class="col">Validation passes, submitted for review</div>
+            <div class="col">Checker approves (4-Eyes)</div>
+            <div class="col">Data promoted to Processing</div>
+        </div>
+    </div>
+</div>
+
+{# ── Batch Details ── #}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3"><strong>Batch ID:</strong><br><small>{{ batch.id }}</small></div>
+            <div class="col-md-2"><strong>Type:</strong><br>{{ batch.data_type }}</div>
+            <div class="col-md-2"><strong>Status:</strong><br>
+                <span class="badge bg-{{ 'success' if batch.status == 'APPROVED' else 'warning' if batch.status == 'PENDING' else 'danger' if batch.status == 'REJECTED' else 'info' if batch.status == 'PROCESSED' else 'secondary' }} fs-6">
+                    {{ batch.status }}
+                </span>
+            </div>
+            <div class="col-md-1"><strong>Rows:</strong><br>{{ batch.row_count }}</div>
+            <div class="col-md-1"><strong>Errors:</strong><br>{{ batch.error_count }}</div>
+            <div class="col-md-1"><strong>Maker:</strong><br>{{ batch.maker_id }}</div>
+            <div class="col-md-2"><strong>Checker:</strong><br>{{ batch.checker_id or '—' }}</div>
+        </div>
+        {% if batch.checker_comment %}
+        <hr>
+        <p class="mb-0"><strong>Checker Comment:</strong> {{ batch.checker_comment }}</p>
+        {% endif %}
+    </div>
+</div>
+
+{# ── Validation Errors ── #}
+{% if errors %}
+<div class="card mb-4 border-danger">
+    <div class="card-header bg-danger text-white"><i class="bi bi-exclamation-triangle"></i> Validation Errors ({{ errors|length }})</div>
+    <div class="card-body">
+        <ul class="mb-0">
+            {% for e in errors %}
+            <li>{{ e }}</li>
+            {% endfor %}
+        </ul>
+        <hr>
+        <p class="mb-0 text-muted small">Fix the errors in the source file and <a href="/upload/new">re-upload</a>. Validation checks: required columns, nulls, duplicates, dimension lookups, ratio sums = 1.0.</p>
+    </div>
+</div>
+{% endif %}
+
+{# ── Staged Data Preview ── #}
+{% if preview_rows %}
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-eye"></i> Staged Data Preview (first {{ preview_rows|length }} of {{ batch.row_count }} rows)</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        {% for col in preview_cols %}
+                        <th>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in preview_rows %}
+                    <tr>
+                        {% for col in preview_cols %}
+                        <td><small>{{ row[col] }}</small></td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% elif batch.error_count == 0 and batch.status not in ['DRAFT'] %}
+<div class="alert alert-info">Data has been staged. Use the workflow below to approve and promote to processing.</div>
+{% endif %}
+
+{# ── Workflow Actions ── #}
+{% if batch.status in ['PENDING', 'DRAFT', 'REJECTED'] %}
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-check2-square"></i> Workflow Actions</div>
+    <div class="card-body">
+        {% if batch.status == 'PENDING' %}
+        <div class="alert alert-warning mb-3">
+            <strong>Checker Required:</strong> A different user (not <code>{{ batch.maker_id }}</code>) must approve or reject this upload (4-Eyes Principle).
+        </div>
+        {% endif %}
+        {% if batch.status == 'DRAFT' and batch.error_count > 0 %}
+        <div class="alert alert-danger mb-3">
+            <strong>Cannot submit:</strong> This upload has validation errors. Delete this batch and re-upload a corrected file.
+        </div>
+        {% endif %}
+        {% if not (batch.status == 'DRAFT' and batch.error_count > 0) %}
+        <form method="POST" action="/upload/{{ batch.id }}/action" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Action</label>
+                <select name="target_status" class="form-select">
+                    {% if batch.status == 'DRAFT' or batch.status == 'REJECTED' %}
+                    <option value="PENDING">Submit for Review</option>
+                    {% endif %}
+                    {% if batch.status == 'PENDING' %}
+                    <option value="APPROVED">Approve</option>
+                    <option value="REJECTED">Reject</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Your User ID</label>
+                <input type="text" name="actor_id" class="form-control" value="checker1" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Comment</label>
+                <input type="text" name="comment" class="form-control" placeholder="Optional comment">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Execute</button>
+            </div>
+        </form>
+        {% endif %}
+
+        {% if batch.status in ['DRAFT', 'REJECTED'] %}
+        <hr>
+        <form method="POST" action="/upload/{{ batch.id }}/delete" onsubmit="return confirm('Delete this upload batch and its staged data?');">
+            <button class="btn btn-outline-danger"><i class="bi bi-trash"></i> Delete This Upload</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ── What Happened After Approval ── #}
+{% if batch.status == 'APPROVED' %}
+<div class="alert alert-success">
+    <i class="bi bi-check-circle"></i> <strong>Approved by {{ batch.checker_id }}</strong> — Data has been promoted from Staging to Processing tables.
+    {% if batch.data_type == 'ALLOCATION' %}Allocation ratios are now active and available for batch execution.{% endif %}
+</div>
+{% endif %}
+
+<a href="/upload" class="btn btn-outline-secondary mt-3"><i class="bi bi-arrow-left"></i> Back to Uploads</a>
+{% endblock %}

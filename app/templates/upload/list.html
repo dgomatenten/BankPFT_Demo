@@ -1,0 +1,40 @@
+{% extends "layout/base.html" %}
+{% block title %}Data Uploads — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Data Uploads</h2>
+    <a href="/upload/new" class="btn btn-primary"><i class="bi bi-cloud-upload"></i> New Upload</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr><th>Batch ID</th><th>File</th><th>Type</th><th>Status</th><th>Rows</th><th>Errors</th><th>Maker</th><th>Checker</th><th>Date</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+            {% for u in uploads %}
+            <tr>
+                <td><a href="/upload/{{ u.id }}">{{ u.id[:8] }}...</a></td>
+                <td>{{ u.filename }}</td>
+                <td>{{ u.data_type }}</td>
+                <td><span class="badge bg-{{ 'success' if u.status == 'APPROVED' else 'warning' if u.status == 'PENDING' else 'danger' if u.status == 'REJECTED' else 'info' if u.status == 'PROCESSED' else 'secondary' }}">{{ u.status }}</span></td>
+                <td>{{ u.row_count }}</td>
+                <td>{{ u.error_count }}</td>
+                <td>{{ u.maker_id }}</td>
+                <td>{{ u.checker_id or '—' }}</td>
+                <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>
+                    {% if u.status in ['DRAFT', 'REJECTED'] %}
+                    <form method="POST" action="/upload/{{ u.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this upload?');">
+                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

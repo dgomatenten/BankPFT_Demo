@@ -1,0 +1,71 @@
+{% extends "layout/base.html" %}
+{% block title %}Rule Detail — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Rule: {{ rule.name }}</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-2"><strong>ID:</strong><br>{{ rule.id }}</div>
+            <div class="col-md-3"><strong>Name:</strong><br>{{ rule.name }}</div>
+            <div class="col-md-2"><strong>Status:</strong><br>
+                <span class="badge bg-{{ 'success' if rule.is_active else 'secondary' }} fs-6">{{ rule.status }}</span>
+            </div>
+            <div class="col-md-2"><strong>Created By:</strong><br>{{ rule.created_by or '—' }}</div>
+            <div class="col-md-3"><strong>Created:</strong><br>{{ rule.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+        </div>
+        <hr>
+        <div class="row">
+            <div class="col-md-4"><strong>Source:</strong> {{ rule.source_table }}</div>
+            <div class="col-md-4"><strong>Lookup:</strong> {{ rule.lookup_table }}</div>
+            <div class="col-md-4"><strong>Output:</strong> {{ rule.output_table }}</div>
+        </div>
+        {% if rule.description %}
+        <hr>
+        <p class="mb-0">{{ rule.description }}</p>
+        {% endif %}
+    </div>
+</div>
+
+{# ── Rule Actions ── #}
+<div class="card mb-4">
+    <div class="card-header">Actions</div>
+    <div class="card-body d-flex gap-2">
+        <form method="POST" action="/rules/{{ rule.id }}/toggle">
+            <button class="btn btn-{{ 'warning' if rule.is_active else 'success' }}">
+                <i class="bi bi-{{ 'pause-circle' if rule.is_active else 'play-circle' }}"></i>
+                {{ 'Deactivate Rule' if rule.is_active else 'Activate Rule' }}
+            </button>
+        </form>
+        <form method="POST" action="/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete this rule permanently?');">
+            <button class="btn btn-outline-danger"><i class="bi bi-trash"></i> Delete Rule</button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Approved Allocation Ratios ({{ allocations|length }} entries)</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Allocation ID</th><th>Customer</th><th>Source Org</th><th>Target Org</th><th>Ratio</th></tr></thead>
+            <tbody>
+            {% for a in allocations[:50] %}
+            <tr>
+                <td>{{ a.allocation_id[:8] }}...</td>
+                <td>{{ a.customer_id }}</td>
+                <td>{{ a.source_org_unit_id }}</td>
+                <td>{{ a.target_org_unit_id }}</td>
+                <td>
+                    <div class="progress" style="height:20px;">
+                        <div class="progress-bar {{ 'bg-success' if a.ratio >= 0.5 else 'bg-warning' }}" style="width:{{ (a.ratio * 100)|int }}%">{{ "%.1f"|format(a.ratio * 100) }}%</div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<a href="/rules" class="btn btn-outline-secondary mt-3"><i class="bi bi-arrow-left"></i> Back to Rules</a>
+{% endblock %}

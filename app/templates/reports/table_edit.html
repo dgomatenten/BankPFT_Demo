@@ -1,0 +1,28 @@
+{% extends "layout/base.html" %}
+{% block title %}Edit Row — {{ table_name }} — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Edit Row in <code>{{ table_name }}</code></h2>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            {% for col in columns %}
+            <div class="mb-3">
+                <label class="form-label">
+                    {{ col }}
+                    {% if col in pk_cols %}<span class="badge bg-dark">PK</span>{% endif %}
+                </label>
+                {% if col in pk_cols %}
+                <input type="text" class="form-control" value="{{ row[col] }}" disabled>
+                {% else %}
+                <input type="text" name="{{ col }}" class="form-control"
+                       value="{{ row[col] if row[col] is not none else '' }}">
+                {% endif %}
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save Changes</button>
+            <a href="/reports/tables?table={{ table_name }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

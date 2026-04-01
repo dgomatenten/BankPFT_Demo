@@ -1,0 +1,39 @@
+{% extends "layout/base.html" %}
+{% block title %}New Upload — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Upload Data File</h2>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label class="form-label">Data Type</label>
+                <select name="data_type" class="form-select" required>
+                    <option value="INSTRUMENT">Instrument Data</option>
+                    <option value="GL">General Ledger</option>
+                    <option value="ALLOCATION">Allocation Ratios</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">File (.xlsx or .csv)</label>
+                <input type="file" name="file" class="form-control" accept=".xlsx,.csv" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Your User ID (Maker)</label>
+                <input type="text" name="maker_id" class="form-control" value="user1" required>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Upload & Validate</button>
+            <a href="/upload" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">Expected Column Headers</div>
+    <div class="card-body">
+        <p><strong>Instrument:</strong> as_of_date, account_id, customer_id, product_code, org_unit_id, balance, interest_income</p>
+        <p><strong>GL:</strong> as_of_date, gl_account, org_unit_id, debit, credit, balance</p>
+        <p><strong>Allocation:</strong> allocation_id, customer_id, source_org_unit_id, target_org_unit_id, ratio</p>
+    </div>
+</div>
+{% endblock %}

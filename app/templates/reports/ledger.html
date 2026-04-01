@@ -1,0 +1,54 @@
+{% extends "layout/base.html" %}
+{% block title %}Management Ledger — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Management Ledger Report</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Group By</label>
+                <select name="group_by" class="form-select">
+                    <option value="target_org_unit_id" {{ 'selected' if group_by == 'target_org_unit_id' }}>Org Unit</option>
+                    <option value="product_code" {{ 'selected' if group_by == 'product_code' }}>Product</option>
+                    <option value="customer_id" {{ 'selected' if group_by == 'customer_id' }}>Customer</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Batch Run</label>
+                <select name="batch_id" class="form-select">
+                    <option value="">All Batches</option>
+                    {% for b in batches %}
+                    <option value="{{ b.id }}" {{ 'selected' if batch_id == b.id }}>{{ b.as_of_date }} ({{ b.id[:8] }}...)</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Results by {{ group_by }}</div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead><tr><th>{{ group_by }}</th><th>Total Balance</th><th>Total Income</th><th>Row Count</th></tr></thead>
+            <tbody>
+            {% for r in results %}
+            <tr>
+                <td>{{ r[0] }}</td>
+                <td>{{ "{:,.2f}".format(r[1]) }}</td>
+                <td>{{ "{:,.2f}".format(r[2]) }}</td>
+                <td>{{ r[3] }}</td>
+            </tr>
+            {% endfor %}
+            {% if not results %}
+            <tr><td colspan="4" class="text-center text-muted">No data. Run a batch first.</td></tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

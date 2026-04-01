@@ -1,0 +1,60 @@
+{% extends "layout/base.html" %}
+{% block title %}Batch Execution — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Batch Execution</h2>
+
+<div class="card mb-4">
+    <div class="card-header">Run New Batch</div>
+    <div class="card-body">
+        <form method="POST" action="/batch/run" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Allocation Rule</label>
+                <select name="rule_id" class="form-select" required>
+                    <option value="">— Select Rule —</option>
+                    {% for r in rules %}
+                    <option value="{{ r.id }}">{{ r.name }} (ID: {{ r.id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">As-of Date</label>
+                <input type="date" name="as_of_date" class="form-control" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Run By</label>
+                <input type="text" name="run_by" class="form-control" value="user1" required>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success w-100"><i class="bi bi-play-fill"></i> Run</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if not rules %}
+<div class="alert alert-info">No active rules available. Create a rule first.</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">Batch History</div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead><tr><th>Batch ID</th><th>Date</th><th>Status</th><th>Source Rows</th><th>Output Rows</th><th>Orphans</th><th>Source Total</th><th>Output Total</th></tr></thead>
+            <tbody>
+            {% for b in batches %}
+            <tr>
+                <td><a href="/batch/{{ b.id }}">{{ b.id[:8] }}...</a></td>
+                <td>{{ b.as_of_date }}</td>
+                <td><span class="badge bg-{{ 'success' if b.status == 'COMPLETED' else 'danger' if b.status == 'FAILED' else 'info' }}">{{ b.status }}</span></td>
+                <td>{{ b.source_row_count }}</td>
+                <td>{{ b.output_row_count }}</td>
+                <td>{{ b.orphan_count }}</td>
+                <td>{{ "{:,.2f}".format(b.source_total) }}</td>
+                <td>{{ "{:,.2f}".format(b.output_total) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
