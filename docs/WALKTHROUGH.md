@@ -15,7 +15,7 @@ This guide walks through every screen in the Management Allocation System, expla
 7. [Allocation Rules — New Rule](#7-allocation-rules--new-rule)
 8. [Allocation Rules — Debit / Credit Offset](#8-allocation-rules--debit--credit-offset)
 9. [Allocation Rules — Source Dimension Filters](#9-allocation-rules--source-dimension-filters)
-10. [Allocation Rules — Output Dimension Mapping](#10-allocation-rules--output-dimension-mapping)
+10. [Allocation Rules — Debit & Credit Dimension Mapping](#10-allocation-rules--debit--credit-dimension-mapping)
 11. [Allocation Rules — Data Filter Editor](#11-allocation-rules--data-filter-editor)
 12. [Allocation Rules — Detail](#12-allocation-rules--detail)
 13. [Allocation Rules — Import from JSON](#13-allocation-rules--import-from-json)
@@ -156,65 +156,205 @@ Rules are immediately active when created (no Maker/Checker workflow for rules).
 
 **URL:** `/rules/new`
 
-Create a new allocation rule by configuring its source-to-output mapping.
+Create a new allocation rule. The form is organised into five sections.
 
 ![New Rule](images/05_rules_new.png)
 
 **How to use:**
-1. **Rule Name** — give the rule a descriptive name (e.g., "Customer Shred Q1")
-2. **Description** — optional notes about the rule's purpose
-3. **Source Table** — the processed data table to read from (dropdown options from `rule_config.json`)
-4. **Lookup Table** — the allocation ratio table to join with
-5. **Output Table** — where to write the allocated results
-6. **Join Key** — the column used to join source data with ratios (e.g., customer_id, org_unit_id, product_code)
-7. **Data Filters** — optional conditions to filter source data before allocation (see next section)
-8. **Click Create Rule** — the rule is saved and immediately active. The logged-in user is automatically recorded as the creator
+1. **Rule Name / Description** — name and optional notes
+2. **Source Table** — processed data table to read from
+3. **Lookup Table** — allocation ratio table to join with
+4. **Output Table** — where to write allocated results (`fct_mgmt_instrument` recommended)
+5. **Join Key** — column linking source to lookup (e.g. `customer_id`)
+6. **Debit / Credit Offset** — toggle double-entry generation (see section 8)
+7. **Source Dimension Filters** — per-dimension member filter (see section 9)
+8. **Debit & Credit Dimension Mapping** — per-dimension output value control (see section 10)
+9. **Data Filters** — row-level filter conditions (see section 11)
+10. **Click Create Rule** — saved immediately as ACTIVE
 
-All dropdown options are driven by `rule_config.json` — add new tables or join keys by editing the config file.
+All dropdown options are driven by `rule_config.json`.
 
 ---
 
-## 8. Allocation Rules — Data Filter Editor
+## 8. Allocation Rules — Debit / Credit Offset
+
+**Location:** New Rule form — "Debit / Credit Offset" card
+
+Controls whether the allocation engine generates double-entry accounting entries.
+
+**Options:**
+
+| Setting | Effect |
+|---|---|
+| **Generate Credit offset: ON** (default) | Two rows per matched record: a **DEBIT** (target dimensions + positive balance) and a **CREDIT** (source/configured dimensions + negative balance) |
+| **Generate Credit offset: OFF** | Single **DEBIT** row per matched record — balance moves to the target with no reversal |
+| **Offset Account** | Optional GL account label or code attached to the CREDIT entry for downstream reconciliation |
+
+**Example output for a 40% allocation, balance = 1000:**
+
+| entry_type | org_unit | allocated_balance |
+|---|---|---|
+| DEBIT | OU_TARGET | +400 |
+| CREDIT | OU_SOURCE | −400 |
+
+> **Note:** When Credit offset is ON, the **Credit Entry — Dimension Mapping** section (see section 10) becomes visible so you can configure exactly where the credit is posted.
+
+---
+
+## 9. Allocation Rules — Source Dimension Filters
+
+**Location:** New Rule form — "Source Dimension Filters" card
+
+For each dimension column in the selected source table, you can restrict which dimension members are included in the allocation run.
+
+**Modes per dimension:**
+
+| Mode | Behaviour |
+|---|---|
+| **All Members** (default) | All values of this dimension are included |
+| **Specific Members** | Only rows whose dimension value appears in the comma-separated members list are included |
+
+**Example — include only LOAN and DEPOSIT products:**
+
+| Dimension | Mode | Members |
+|---|---|---|
+| Customer ID | All Members | — |
+| Product Code | Specific Members | `LOAN, DEPOSIT` |
+| Org Unit | All Members | — |
+
+Stored as `source_dim_json` in the database.
+
+---
+
+## 10. Allocation Rules — Debit & Credit Dimension Mapping
+
+**Location:** New Rule form — "Debit Entry — Dimension Mapping" (green) and "Credit Entry — Dimension Mapping" (yellow) cards
+
+Each entry type has its own independent dimension mapping table. The **Debit** card controls where allocated balances are posted; the **Credit** card controls where the equal-and-opposite reversal is posted. The Credit card is hidden when "Generate Credit offset" is OFF.
+
+**Modes per dimension (same for both Debit and Credit):**
+
+| Mode | Behaviour |
+|---|---|
+| **Same as Source** (default) | Copies the source dimension value to the output row |
+| **From Lookup** | Reads the value from a column in the joined lookup table (e.g. `target_org_unit_id`) |
+| **Fixed Value** | Writes a hardcoded value to every output row for this dimension |
+
+**Typical configuration:**
+
+*Debit — remap org to allocation target, keep other dimensions:*
+
+| Dimension | Mode | Detail |
+|---|---|---|
+| Org Unit | From Lookup | `target_org_unit_id` |
+| Product Code | Same as Source | — |
+| Customer ID | Same as Source | — |
+
+*Credit — reverse at source org (default behaviour when Credit card is left as-is):*
+
+| Dimension | Mode | Detail |
+|---|---|---|
+| Org Unit | Same as Source | — |
+| Product Code | Same as Source | — |
+| Customer ID | Same as Source | — |
+
+Debit mapping stored as `output_dim_json`; Credit mapping stored as `credit_dim_json`. Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**.
+
+---
+
+## 11. Allocation Rules — Data Filter Editor
 
 **URL:** `/rules/new` (bottom of the form)
 
-The filter editor lets you restrict which source rows are included when the allocation engine runs.
+Row-level filter conditions that restrict which source rows are included when the allocation engine runs. Applied after source dimension filters.
 
 ![Filter Editor with Conditions](images/17_rule_filter_conditions.png)
 
 **How to use:**
 1. **Click "Add Condition"** — adds a new filter row
-2. **Select Field** — dropdown shows filterable columns for the selected source table (driven by `filter_config.json`)
-3. **Select Operator** — operators change based on the field's data type:
-   - **String fields:** equals, not equals, in list, not in list, contains, starts with
-   - **Numeric fields:** =, ≠, >, ≥, <, ≤, between
-   - **Date fields:** equals, after, before, between
+2. **Select Field** — dropdown shows filterable columns for the selected source table (from `filter_config.json`)
+3. **Select Operator** — changes based on field type (string / numeric / date)
 4. **Enter Value** — for `in`/`not in`, use comma-separated values; for `between`, use `min,max`
-5. **Match Logic** — choose ALL conditions (AND) or ANY condition (OR)
-6. **Remove** — click the × button to remove a condition
+5. **Match Logic** — ALL conditions (AND) or ANY condition (OR)
+6. **Remove** — click × to remove a condition
 
-Filters are saved as JSON in the database and applied automatically during batch execution.
+Filters are saved as JSON in `allocation_rule.filter_json` and applied at engine runtime.
 
 ---
 
-## 9. Allocation Rules — Detail (with Filters)
+## 12. Allocation Rules — Detail
 
 **URL:** `/rules/<rule_id>`
 
-View a rule's full configuration, including saved data filters.
+View a rule's full configuration.
 
 ![Rule Detail with Filters](images/18_rule_detail_with_filters.png)
 
 **Key elements:**
-- Full rule configuration (source, lookup, output, join key)
-- **Data Filters** section — shows the saved filter logic (AND/OR) and conditions table
-- **Toggle Active/Inactive** — enable or disable the rule without deleting it
-- **Delete Rule** — permanently remove the rule
-- **Allocation ratios preview** — shows the APPROVED allocation ratios that this rule would use
+- Source / Lookup / Output table names
+- **Offset Entry** badge — "DEBIT + CREDIT" or "DEBIT only"
+- **Offset Account** — GL label attached to credit entries
+- **Source Dimension Filters** card — shows mode and members per dimension
+- **Debit Entry — Dimension Mapping** card (green) — shows mode and detail per dimension for DEBIT
+- **Credit Entry — Dimension Mapping** card (yellow) — shows mode and detail per dimension for CREDIT; shows "same_as_source (default)" if not explicitly configured
+- **Data Filters** card — shows saved filter conditions
+- **Toggle / Delete** actions
+- **Allocation ratios preview** — APPROVED ratios the rule would use
 
 ---
 
-## 10. Batch Execution
+## 13. Allocation Rules — Import from JSON
+
+**URL:** `/rules/import`
+
+Create an allocation rule from a JSON file or pasted JSON text. Useful for version-controlling rule definitions or sharing configurations between environments.
+
+**How to use:**
+1. Click **Import JSON** from the Rules List page
+2. Either **upload a `.json` file** or **paste JSON** into the text area
+3. Click **Import Rule** — the rule is validated and saved
+
+**Minimum required field:** `name`
+
+**Full JSON schema:**
+
+```json
+{
+  "name": "Customer Shred Q1",
+  "description": "Optional notes",
+  "source_table": "proc_inst_data",
+  "lookup_table": "ref_static_allocation",
+  "output_table": "fct_mgmt_instrument",
+  "join_key": "customer_id",
+  "generate_offset": true,
+  "offset_account": "GL_OFFSET_9000",
+  "filter_json": {
+    "logic": "AND",
+    "conditions": [{"field": "product_code", "operator": "in", "value": "LOAN,DEPOSIT"}]
+  },
+  "source_dim_json": {
+    "org_unit_id":  {"mode": "all"},
+    "product_code": {"mode": "specific", "members": ["LOAN", "DEPOSIT"]},
+    "customer_id":  {"mode": "all"}
+  },
+  "output_dim_json": {
+    "org_unit_id":  {"mode": "lookup", "lookup_column": "target_org_unit_id"},
+    "product_code": {"mode": "same_as_source"},
+    "customer_id":  {"mode": "same_as_source"}
+  },
+  "credit_dim_json": {
+    "org_unit_id":  {"mode": "same_as_source"},
+    "product_code": {"mode": "same_as_source"},
+    "customer_id":  {"mode": "same_as_source"}
+  }
+}
+```
+
+Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**.
+
+---
+
+## 14. Batch Execution
 
 **URL:** `/batch`
 
@@ -225,22 +365,24 @@ Run allocation rules against processed data and view past batch runs.
 **How to use:**
 1. **Select a Rule** — choose from active allocation rules
 2. **As-of Date** — the date to filter source data
-3. **Click Run Allocation** — executes the Pandas-based "shredding" engine
+3. **Click Run Allocation** — executes the Pandas-based allocation engine
 
 **What happens during execution:**
-- Source data is read from the configured table (filtered by date)
-- **Data filters are applied** — if the rule has filter conditions, only matching rows are included
-- Allocation ratios are looked up from the configured lookup table
-- A left join matches source rows to ratios by the join key
-- Balance and income columns are multiplied by the ratio
-- Results are written to the output table (fct_mgmt_ledger)
-- Orphan records (no matching ratio) are handled per config
+1. Source data is loaded from the configured table (filtered by date)
+2. **Data filters** (`filter_json`) are applied — rows not matching are dropped
+3. **Source dimension filters** (`source_dim_json`) are applied per dimension
+4. Allocation ratios are loaded from the lookup table (APPROVED status only)
+5. A LEFT JOIN matches source rows to ratios by the rule's join key
+6. For each matched row: `allocated_balance = source_balance × ratio`
+7. **DEBIT entry** — output dimensions resolved per `output_dim_json`
+8. If **Generate Offset = ON**: **CREDIT entry** — dimensions resolved per `credit_dim_json` (defaults to same-as-source), balance = negative
+9. **Orphan rows** (no matching ratio) — DEBIT only at source org (`default_ratio` from config)
 
-**Past batch runs** are listed below with status, source/output row counts, and links to execution logs.
+Past batch runs are listed below with status, source/output row counts, and links to execution logs.
 
 ---
 
-## 11. Batch Execution — Detail
+## 15. Batch Execution — Detail
 
 **URL:** `/batch/<batch_id>`
 
