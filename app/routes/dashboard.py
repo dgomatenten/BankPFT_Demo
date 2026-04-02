@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template
+from flask_login import login_required
 from app.models.workflow import UploadBatch, AllocationRule, BatchRun
 from app.models.allocation import FctMgmtLedger
 
@@ -6,6 +7,7 @@ bp = Blueprint("dashboard", __name__)
 
 
 @bp.route("/")
+@login_required
 def index():
     uploads = UploadBatch.query.order_by(UploadBatch.created_at.desc()).limit(10).all()
     rules = AllocationRule.query.order_by(AllocationRule.created_at.desc()).limit(10).all()

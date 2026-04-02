@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, flash, redirect, url_for, send_from_directory, current_app
+from flask_login import login_required
 from app.services.testdata_service import (
     generate_master_data,
     generate_instrument_data,
@@ -9,6 +10,12 @@ from app.services.testdata_service import (
 import os
 
 bp = Blueprint("testdata", __name__)
+
+
+@bp.before_request
+@login_required
+def require_login():
+    pass
 
 
 @bp.route("/")

@@ -1,0 +1,45 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ 'Edit Group' if group else 'New Group' }} — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ 'Edit Group: ' + group.name if group else 'Create New Group' }}</h2>
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Group Name</label>
+                <input type="text" name="name" class="form-control" value="{{ group.name if group else '' }}" required {% if group %}readonly{% endif %}>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control" value="{{ group.description if group else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label d-block">Permissions</label>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="can_make" id="can_make" {{ 'checked' if group and group.can_make }}>
+                    <label class="form-check-label" for="can_make">Can Make (create/submit uploads)</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="can_check" id="can_check" {{ 'checked' if group and group.can_check }}>
+                    <label class="form-check-label" for="can_check">Can Check (approve/reject uploads)</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="is_admin" id="is_admin" {{ 'checked' if group and group.is_admin }}>
+                    <label class="form-check-label" for="is_admin">Admin (manage users & groups)</label>
+                </div>
+            </div>
+            {% if group %}
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {{ 'checked' if group.is_active }}>
+                    <label class="form-check-label" for="is_active">Active</label>
+                </div>
+            </div>
+            {% endif %}
+            <button type="submit" class="btn btn-primary">{{ 'Update' if group else 'Create' }} Group</button>
+            <a href="{{ url_for('admin.list_groups') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask_login import login_required
 from app.models import db
 from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccount
 from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
@@ -7,6 +8,12 @@ from app.models.workflow import UploadBatch, AllocationRule, BatchRun
 from sqlalchemy import func, inspect as sa_inspect
 
 bp = Blueprint("reports", __name__)
+
+
+@bp.before_request
+@login_required
+def require_login():
+    pass
 
 ALL_MODELS = {
     "dim_org_unit": DimOrgUnit,

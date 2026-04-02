@@ -1,6 +1,7 @@
 import os
 import json
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+from flask_login import login_required, current_user
 from app.models import db
 from app.models.workflow import UploadBatch
 from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
@@ -13,17 +14,19 @@ bp = Blueprint("upload", __name__)
 
 
 @bp.route("/")
+@login_required
 def list_uploads():
     uploads = UploadBatch.query.order_by(UploadBatch.created_at.desc()).all()
     return render_template("upload/list.html", uploads=uploads)
 
 
 @bp.route("/new", methods=["GET", "POST"])
+@login_required
 def new_upload():
     if request.method == "POST":
         file = request.files.get("file")
         data_type = request.form.get("data_type", "INSTRUMENT")
-        maker_id = request.form.get("maker_id", "user1")
+        maker_id = current_user.username
 
         if not file or file.filename == "":
             flash("No file selected.", "danger")
@@ -50,6 +53,7 @@ def new_upload():
 
 
 @bp.route("/<batch_id>")
+@login_required
 def detail(batch_id):
     batch = UploadBatch.query.get_or_404(batch_id)
     errors = json.loads(batch.errors_json) if batch.errors_json else []
@@ -79,20 +83,20 @@ def detail(batch_id):
 
 
 @bp.route("/<batch_id>/action", methods=["POST"])
+@login_required
 def action(batch_id):
     batch = UploadBatch.query.get_or_404(batch_id)
     target_status = request.form.get("target_status")
-    actor_id = request.form.get("actor_id", "checker1")
     comment = request.form.get("comment", "")
 
     try:
-        transition(batch.status, target_status, batch.maker_id, actor_id)
+        transition(batch.status, target_status, batch.maker_id, current_user)
     except WorkflowError as e:
         flash(str(e), "danger")
         return redirect(url_for("upload.detail", batch_id=batch_id))
 
     batch.status = target_status
-    batch.checker_id = actor_id
+    batch.checker_id = current_user.username
     batch.checker_comment = comment
 
     # On APPROVED, promote staging -> processing
@@ -104,11 +108,11 @@ def action(batch_id):
         elif batch.data_type == "ALLOCATION":
             RefStaticAllocation.query.filter_by(
                 upload_batch_id=batch.id
-            ).update({"status": "APPROVED", "checker_id": actor_id})
+            ).update({"status": "APPROVED", "checker_id": current_user.username})
         elif batch.data_type == "ORG_RECLASS":
             RefOrgReclass.query.filter_by(
                 upload_batch_id=batch.id
-            ).update({"status": "APPROVED", "checker_id": actor_id})
+            ).update({"status": "APPROVED", "checker_id": current_user.username})
 
     db.session.commit()
     flash(f"Batch {target_status.lower()} successfully.", "success")
@@ -116,6 +120,7 @@ def action(batch_id):
 
 
 @bp.route("/<batch_id>/delete", methods=["POST"])
+@login_required
 def delete(batch_id):
     batch = UploadBatch.query.get_or_404(batch_id)
     if batch.status not in ("DRAFT", "REJECTED"):

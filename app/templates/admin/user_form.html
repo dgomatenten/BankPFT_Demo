@@ -1,0 +1,55 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ 'Edit User' if user else 'New User' }} — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ 'Edit User: ' + user.username if user else 'Create New User' }}</h2>
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                {% if user %}
+                <input type="text" class="form-control" value="{{ user.username }}" readonly>
+                {% else %}
+                <input type="text" name="username" class="form-control" required>
+                {% endif %}
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Display Name</label>
+                <input type="text" name="display_name" class="form-control" value="{{ user.display_name if user else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password{% if user %} (leave blank to keep current){% endif %}</label>
+                <input type="password" name="password" class="form-control" {% if not user %}required{% endif %} minlength="4">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Groups</label>
+                {% for g in groups %}
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="groups" value="{{ g.id }}" id="grp_{{ g.id }}"
+                        {{ 'checked' if user and g in user.groups }}>
+                    <label class="form-check-label" for="grp_{{ g.id }}">
+                        {{ g.name }}
+                        <small class="text-muted">
+                            {% if g.can_make %}[Make]{% endif %}
+                            {% if g.can_check %}[Check]{% endif %}
+                            {% if g.is_admin %}[Admin]{% endif %}
+                        </small>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            {% if user %}
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {{ 'checked' if user.is_active }}>
+                    <label class="form-check-label" for="is_active">Active</label>
+                </div>
+            </div>
+            {% endif %}
+            <button type="submit" class="btn btn-primary">{{ 'Update' if user else 'Create' }} User</button>
+            <a href="{{ url_for('admin.list_users') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

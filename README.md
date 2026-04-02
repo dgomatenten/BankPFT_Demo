@@ -6,8 +6,9 @@ A prototype **Management Allocation System** that redistributes financial balanc
 
 | Module | Description |
 |---|---|
+| **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
-| **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Maker cannot approve their own submission |
+| **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
 | **Allocation Rules** | Configure source table, lookup table, output table, join key, and data filters. Rules are immediately active |
 | **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser |
@@ -29,9 +30,10 @@ Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_
 
 ## Tech Stack
 
-- **Backend:** Flask 3.0, SQLAlchemy 2.0, Pandas 2.1
+- **Backend:** Flask 3.0, SQLAlchemy 2.0, Pandas 2.1, Flask-Login 0.6
 - **Database:** SQLite (file-based, zero config)
 - **Frontend:** Bootstrap 5.3 (CDN), Bootstrap Icons
+- **Auth:** Flask-Login with group-based role permissions
 - **Upload:** openpyxl for Excel parsing
 - **Deployment:** Gunicorn, Docker
 
@@ -47,6 +49,14 @@ python run.py
 ```
 
 Open http://localhost:5000
+
+**Default accounts** (password = username):
+
+| Username | Role | Permissions |
+|---|---|---|
+| `admin` | Administrator | Make + Check + Admin |
+| `maker1` | Maker | Create and submit uploads |
+| `checker1` | Checker | Approve/reject uploads |
 
 ### Docker
 
@@ -67,11 +77,14 @@ app/
 │   ├── filter_config.json     # Filterable columns & operators per source table
 │   └── allocation_config.json # Allocation engine settings
 ├── models/
+│   ├── auth.py              # User, Group, UserGroup (login & role management)
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
 │   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger
 │   └── workflow.py          # UploadBatch, AllocationRule, BatchRun
 ├── routes/
+│   ├── auth.py              # Login, logout, change password
+│   ├── admin.py             # User & group management (admin only)
 │   ├── dashboard.py         # Home dashboard
 │   ├── upload.py            # Data upload with Maker/Checker
 │   ├── rules.py             # Allocation rule CRUD
@@ -79,7 +92,7 @@ app/
 │   ├── reports.py           # Reports & table browser
 │   └── testdata.py          # Test data generation
 ├── services/
-│   ├── __init__.py          # Maker/Checker state machine
+│   ├── __init__.py          # Maker/Checker state machine (group-aware)
 │   ├── upload_service.py    # Config-driven file parsing & validation
 │   ├── allocation_engine.py # Config-driven Pandas shredding engine
 │   └── testdata_service.py  # Test data generators
@@ -218,14 +231,46 @@ Controls the batch allocation engine with per-table column definitions:
 - **join_keys** — available join keys with `available_in` list showing which source tables support them
 - **orphan_handling** — enabled flag, default ratio (1.0), target org source
 
+## User & Group Management
+
+Authentication and authorization is handled via Flask-Login with group-based permissions.
+
+### Groups
+
+Each group has three permission flags:
+
+| Permission | Grants |
+|---|---|
+| **Can Make** | Create uploads, submit for review, create rules, run batches |
+| **Can Check** | Approve or reject uploads (4-Eyes enforcement) |
+| **Admin** | Manage users and groups via `/admin` |
+
+A user can belong to multiple groups. Effective permissions are the union of all group permissions.
+
+### Default Groups
+
+| Group | Can Make | Can Check | Admin |
+|---|---|---|---|
+| Makers | ✓ | | |
+| Checkers | | ✓ | |
+| Admins | ✓ | ✓ | ✓ |
+
+### Admin Pages
+
+- `/admin/users` — Create users, assign to groups, enable/disable, reset passwords
+- `/admin/groups` — Create groups, configure permission flags
+
+All routes require login (`@login_required`). Admin routes additionally check group membership.
+
 ## Usage Workflow
 
-1. **Generate test data** — Go to `/testdata` and generate master data, then instrument data and allocation ratios
-2. **Upload data** — Go to `/upload/new`, select data type, upload the Excel file. Validation runs automatically
-3. **Approve uploads** — A different user reviews staged data and approves (4-Eyes enforcement)
-4. **Create a rule** — Go to `/rules/new`, configure source → lookup → output mapping, and optionally add data filters
-5. **Run batch** — Go to `/batch`, select a rule and as-of date, execute the allocation (filters are applied automatically)
-6. **View results** — Check the Management Ledger report and execution log under `/reports`
+1. **Login** — Sign in at `/auth/login` (default accounts: admin/maker1/checker1, password = username)
+2. **Generate test data** — Go to `/testdata` and generate master data, then instrument data and allocation ratios
+3. **Upload data** — Go to `/upload/new`, select data type, upload the Excel file. Validation runs automatically
+4. **Approve uploads** — Log in as a Checker user (different from maker) to approve (4-Eyes enforcement with group permission check)
+5. **Create a rule** — Go to `/rules/new`, configure source → lookup → output mapping, and optionally add data filters
+6. **Run batch** — Go to `/batch`, select a rule and as-of date, execute the allocation (filters are applied automatically)
+7. **View results** — Check the Management Ledger report and execution log under `/reports`
 
 ## Data Validation
 

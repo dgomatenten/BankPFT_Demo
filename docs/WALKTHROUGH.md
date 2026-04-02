@@ -6,26 +6,52 @@ This guide walks through every screen in the Management Allocation System, expla
 
 ## Table of Contents
 
-1. [Dashboard](#1-dashboard)
-2. [Data Upload — List](#2-data-upload--list)
-3. [Data Upload — New Upload](#3-data-upload--new-upload)
-4. [Data Upload — Detail & Maker/Checker](#4-data-upload--detail--makechecker)
-5. [Allocation Rules — List](#5-allocation-rules--list)
-6. [Allocation Rules — New Rule](#6-allocation-rules--new-rule)
-7. [Allocation Rules — Data Filter Editor](#7-allocation-rules--data-filter-editor)
-8. [Allocation Rules — Detail (with Filters)](#8-allocation-rules--detail-with-filters)
-9. [Batch Execution](#9-batch-execution)
-10. [Batch Execution — Detail](#10-batch-execution--detail)
-11. [Reports — Index](#11-reports--index)
-12. [Management Ledger Report](#12-management-ledger-report)
-13. [Operations Report](#13-operations-report)
-14. [Database Table Browser](#14-database-table-browser)
-15. [Table Browser — Data View](#15-table-browser--data-view)
-16. [Test Data Generator](#16-test-data-generator)
+1. [Login](#1-login)
+2. [Dashboard](#2-dashboard)
+3. [Data Upload — List](#3-data-upload--list)
+4. [Data Upload — New Upload](#4-data-upload--new-upload)
+5. [Data Upload — Detail & Maker/Checker](#5-data-upload--detail--makechecker)
+6. [Allocation Rules — List](#6-allocation-rules--list)
+7. [Allocation Rules — New Rule](#7-allocation-rules--new-rule)
+8. [Allocation Rules — Data Filter Editor](#8-allocation-rules--data-filter-editor)
+9. [Allocation Rules — Detail (with Filters)](#9-allocation-rules--detail-with-filters)
+10. [Batch Execution](#10-batch-execution)
+11. [Batch Execution — Detail](#11-batch-execution--detail)
+12. [Reports — Index](#12-reports--index)
+13. [Management Ledger Report](#13-management-ledger-report)
+14. [Operations Report](#14-operations-report)
+15. [Database Table Browser](#15-database-table-browser)
+16. [Table Browser — Data View](#16-table-browser--data-view)
+17. [Test Data Generator](#17-test-data-generator)
+18. [User Management](#18-user-management)
+19. [Group Management](#19-group-management)
 
 ---
 
-## 1. Dashboard
+## 1. Login
+
+**URL:** `/auth/login`
+
+The login page is displayed when accessing the system without authentication. All pages require a valid login.
+
+**Key elements:**
+- **Username** — enter your username
+- **Password** — enter your password
+- **Sign In** — authenticates and redirects to the Dashboard
+
+**Default accounts** (password = username):
+
+| Username | Role | Permissions |
+|---|---|---|
+| `admin` | Administrator | Make + Check + Admin |
+| `maker1` | Maker | Create and submit uploads |
+| `checker1` | Checker | Approve/reject uploads |
+
+After login, the sidebar shows your display name, role badges (Maker/Checker/Admin), and links to change password or logout.
+
+---
+
+## 2. Dashboard
 
 **URL:** `/`
 
@@ -38,11 +64,11 @@ The dashboard is the landing page. It provides a quick overview of the system's 
 - **Recent Uploads** — last uploaded files with status badges (DRAFT, PENDING, APPROVED, PROCESSED)
 - **Recent Batch Runs** — latest allocation batch runs with row counts
 
-Use the sidebar navigation on the left to reach any module.
+Use the sidebar navigation on the left to reach any module. Admin users will see additional **Users** and **Groups** links.
 
 ---
 
-## 2. Data Upload — List
+## 3. Data Upload — List
 
 **URL:** `/upload`
 
@@ -62,7 +88,7 @@ Click any file name to view details, or click **New Upload** to upload a file.
 
 ---
 
-## 3. Data Upload — New Upload
+## 4. Data Upload — New Upload
 
 **URL:** `/upload/new`
 
@@ -73,8 +99,7 @@ Upload an Excel (.xlsx) or CSV file for validation and staging.
 **How to use:**
 1. **Select Data Type** — choose from the dropdown (Instrument Data, General Ledger, Allocation Ratios). These options are driven by `upload_config.json`
 2. **Choose File** — select a `.xlsx` or `.csv` file from your computer
-3. **Enter User ID** — identifies you as the Maker in the workflow
-4. **Click Upload & Validate** — the file is parsed, validated against configured rules, and staged
+3. **Click Upload & Validate** — the file is parsed, validated against configured rules, and staged. The logged-in user is automatically recorded as the Maker
 
 **Expected Column Headers** — shown at the bottom of the page, generated automatically from the JSON config. Required columns are in bold; optional columns are shown in italics.
 
@@ -82,7 +107,7 @@ After upload, you are redirected to the detail page showing validation results.
 
 ---
 
-## 4. Data Upload — Detail & Maker/Checker
+## 5. Data Upload — Detail & Maker/Checker
 
 **URL:** `/upload/<batch_id>`
 
@@ -99,11 +124,11 @@ Shows upload details, validation results, and the Maker/Checker workflow.
   - **Approve / Reject** — Checker reviews (PENDING → APPROVED or REJECTED)
   - **Process** — promotes staging data to processing tables (APPROVED → PROCESSED)
 
-**4-Eyes Rule:** The Checker must be a different user than the Maker. The system enforces this.
+**4-Eyes Rule:** The Checker must be a different user than the Maker, and must belong to a group with the **Can Check** permission. The system enforces both constraints.
 
 ---
 
-## 5. Allocation Rules — List
+## 6. Allocation Rules — List
 
 **URL:** `/rules`
 
@@ -122,7 +147,7 @@ Rules are immediately active when created (no Maker/Checker workflow for rules).
 
 ---
 
-## 6. Allocation Rules — New Rule
+## 7. Allocation Rules — New Rule
 
 **URL:** `/rules/new`
 
@@ -138,14 +163,13 @@ Create a new allocation rule by configuring its source-to-output mapping.
 5. **Output Table** — where to write the allocated results
 6. **Join Key** — the column used to join source data with ratios (e.g., customer_id, org_unit_id, product_code)
 7. **Data Filters** — optional conditions to filter source data before allocation (see next section)
-8. **Created By** — your user ID
-9. **Click Create Rule** — the rule is saved and immediately active
+8. **Click Create Rule** — the rule is saved and immediately active. The logged-in user is automatically recorded as the creator
 
 All dropdown options are driven by `rule_config.json` — add new tables or join keys by editing the config file.
 
 ---
 
-## 7. Allocation Rules — Data Filter Editor
+## 8. Allocation Rules — Data Filter Editor
 
 **URL:** `/rules/new` (bottom of the form)
 
@@ -168,7 +192,7 @@ Filters are saved as JSON in the database and applied automatically during batch
 
 ---
 
-## 8. Allocation Rules — Detail (with Filters)
+## 9. Allocation Rules — Detail (with Filters)
 
 **URL:** `/rules/<rule_id>`
 
@@ -185,7 +209,7 @@ View a rule's full configuration, including saved data filters.
 
 ---
 
-## 9. Batch Execution
+## 10. Batch Execution
 
 **URL:** `/batch`
 
@@ -211,7 +235,7 @@ Run allocation rules against processed data and view past batch runs.
 
 ---
 
-## 10. Batch Execution — Detail
+## 11. Batch Execution — Detail
 
 **URL:** `/batch/<batch_id>`
 
@@ -226,7 +250,7 @@ View details of a completed batch run.
 
 ---
 
-## 11. Reports — Index
+## 12. Reports — Index
 
 **URL:** `/reports`
 
@@ -242,7 +266,7 @@ Hub page with links to all available reports.
 
 ---
 
-## 12. Management Ledger Report
+## 13. Management Ledger Report
 
 **URL:** `/reports/ledger`
 
@@ -265,7 +289,7 @@ This report shows how financial balances have been redistributed from legal/book
 
 ---
 
-## 13. Operations Report
+## 14. Operations Report
 
 **URL:** `/reports/operations`
 
@@ -281,7 +305,7 @@ System activity and health overview.
 
 ---
 
-## 14. Database Table Browser
+## 15. Database Table Browser
 
 **URL:** `/reports/tables`
 
@@ -295,7 +319,7 @@ Browse, search, and edit data in any database table.
 
 ---
 
-## 15. Table Browser — Data View
+## 16. Table Browser — Data View
 
 **URL:** `/reports/tables?table=<table_name>`
 
@@ -314,7 +338,7 @@ Useful for verifying dimension data, checking staged records, or inspecting allo
 
 ---
 
-## 16. Test Data Generator
+## 17. Test Data Generator
 
 **URL:** `/testdata`
 
@@ -340,24 +364,70 @@ Generate realistic test data for the system.
 
 ---
 
+## 18. User Management
+
+**URL:** `/admin/users` (Admin only)
+
+Create, edit, and manage system users.
+
+**Key elements:**
+- **User list** — shows username, display name, group memberships, effective permissions (Can Make / Can Check), and active status
+- **New User** — create a user with username, display name, password, and group assignments
+- **Edit User** — change display name, reset password, toggle active status, reassign groups
+
+Users authenticate via username/password. Each user's permissions are derived from their group memberships — there are no per-user permission flags.
+
+**How to use:**
+1. Click **New User**
+2. Enter username, display name, and password
+3. Select one or more groups (each shows its permission flags: [Make], [Check], [Admin])
+4. Click **Create User**
+
+---
+
+## 19. Group Management
+
+**URL:** `/admin/groups` (Admin only)
+
+Create and manage permission groups.
+
+**Key elements:**
+- **Group list** — shows name, description, permission flags (Can Make, Can Check, Admin), active status, and member count
+- **New Group** — create a group with name, description, and permission checkboxes
+- **Edit Group** — modify description, permissions, or active status
+
+**Permission flags:**
+
+| Flag | Effect |
+|---|---|
+| **Can Make** | Users in this group can create and submit uploads for review |
+| **Can Check** | Users in this group can approve or reject uploads (4-Eyes Principle) |
+| **Admin** | Users in this group can access `/admin` to manage users and groups |
+
+A user's effective permissions are the union of all their groups' permissions. For example, a user in both "Makers" and "Checkers" groups can both create and approve uploads (though not their own — 4-Eyes still applies).
+
+---
+
 ## End-to-End Workflow Summary
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Test Data   │────>│  Upload File │────>│   Approve    │────>│  Create Rule │────>│ Run Batch    │
-│  Generator   │     │  (Maker)     │     │  (Checker)   │     │              │     │ Allocation   │
-└─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘     └──────────────┘
-                                                                                         │
-                                                                                         ▼
-                                                                                  ┌──────────────┐
-                                                                                  │  View Ledger │
-                                                                                  │  Report      │
-                                                                                  └──────────────┘
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Login      │────>│  Test Data   │────>│  Upload File │────>│   Approve    │────>│  Create Rule │────>│ Run Batch    │
+│   (any user) │     │  Generator   │     │  (Maker)     │     │  (Checker)   │     │              │     │ Allocation   │
+└─────────────┘     └──────────────┘     └──────────────┘     └─────────────┘     └──────────────┘     └──────────────┘
+                                                                                                             │
+                                                                                                             ▼
+                                                                                                      ┌──────────────┐
+                                                                                                      │  View Ledger │
+                                                                                                      │  Report      │
+                                                                                                      └──────────────┘
 ```
 
-1. **Generate** test data (or prepare your own Excel/CSV files)
-2. **Upload** files via Data Upload — validation runs automatically
-3. **Approve** uploads through the Maker/Checker workflow (4-Eyes)
-4. **Create** an allocation rule defining the source → lookup → output mapping, with optional data filters
-5. **Execute** a batch run to allocate balances using the rule (filters are applied automatically)
-6. **Review** results in the Management Ledger Report
+1. **Login** as maker1 (or any user with Maker permissions)
+2. **Generate** test data (or prepare your own Excel/CSV files)
+3. **Upload** files via Data Upload — validation runs automatically, logged-in user is the Maker
+4. **Login** as checker1 (or any user with Checker permissions, different from the Maker)
+5. **Approve** uploads through the Maker/Checker workflow (4-Eyes + group permission enforcement)
+6. **Create** an allocation rule defining the source → lookup → output mapping, with optional data filters
+7. **Execute** a batch run to allocate balances using the rule (filters are applied automatically)
+8. **Review** results in the Management Ledger Report

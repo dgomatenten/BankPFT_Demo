@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask_login import login_required, current_user
 from app.models.workflow import AllocationRule, BatchRun
 from app.services.allocation_engine import run_allocation
 
@@ -7,6 +8,7 @@ bp = Blueprint("batch", __name__)
 
 
 @bp.route("/")
+@login_required
 def list_batches():
     batches = BatchRun.query.order_by(BatchRun.started_at.desc()).all()
     rules = AllocationRule.query.filter_by(is_active=True).all()
@@ -14,10 +16,11 @@ def list_batches():
 
 
 @bp.route("/run", methods=["POST"])
+@login_required
 def run():
     rule_id = request.form.get("rule_id", type=int)
     as_of_str = request.form.get("as_of_date", "")
-    run_by = request.form.get("run_by", "user1")
+    run_by = current_user.username
 
     if not rule_id:
         flash("Please select a rule.", "danger")
@@ -45,6 +48,7 @@ def run():
 
 
 @bp.route("/<batch_id>")
+@login_required
 def detail(batch_id):
     batch = BatchRun.query.get_or_404(batch_id)
     return render_template("batch/detail.html", batch=batch)

@@ -1,5 +1,6 @@
 import json, os
 from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask_login import login_required, current_user
 from app.models import db
 from app.models.workflow import AllocationRule
 from app.models.allocation import RefStaticAllocation
@@ -16,12 +17,14 @@ bp = Blueprint("rules", __name__)
 
 
 @bp.route("/")
+@login_required
 def list_rules():
     rules = AllocationRule.query.order_by(AllocationRule.created_at.desc()).all()
     return render_template("rules/list.html", rules=rules)
 
 
 @bp.route("/new", methods=["GET", "POST"])
+@login_required
 def new_rule():
     if request.method == "POST":
         filter_raw = request.form.get("filter_json", "").strip()
@@ -33,7 +36,7 @@ def new_rule():
             output_table=request.form.get("output_table", "fct_mgmt_ledger"),
             join_key=request.form.get("join_key", "customer_id"),
             filter_json=filter_raw if filter_raw else None,
-            created_by=request.form.get("created_by", "user1"),
+            created_by=current_user.username,
             status="ACTIVE",
         )
         db.session.add(rule)
@@ -45,6 +48,7 @@ def new_rule():
 
 
 @bp.route("/<int:rule_id>")
+@login_required
 def detail(rule_id):
     rule = AllocationRule.query.get_or_404(rule_id)
     allocations = RefStaticAllocation.query.filter_by(status="APPROVED").all()
@@ -52,6 +56,7 @@ def detail(rule_id):
 
 
 @bp.route("/<int:rule_id>/toggle", methods=["POST"])
+@login_required
 def toggle(rule_id):
     rule = AllocationRule.query.get_or_404(rule_id)
     rule.is_active = not rule.is_active
@@ -62,6 +67,7 @@ def toggle(rule_id):
 
 
 @bp.route("/<int:rule_id>/delete", methods=["POST"])
+@login_required
 def delete(rule_id):
     rule = AllocationRule.query.get_or_404(rule_id)
     db.session.delete(rule)
