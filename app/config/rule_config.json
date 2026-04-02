@@ -1,4 +1,6 @@
 {
+    "description": "Drives the Allocation Rule creation form. Values must match keys in allocation_config.json.",
+
     "source_tables": [
         {"value": "proc_inst_data", "label": "Instrument (proc_inst_data)"},
         {"value": "proc_gl_data", "label": "General Ledger (proc_gl_data)"}

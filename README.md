@@ -85,9 +85,65 @@ app/
 └── templates/               # Jinja2 / Bootstrap 5 templates
 ```
 
-## JSON Configuration
+## JSON vs Database — What Lives Where
 
-Business logic for uploads, validation, allocation rules, and the allocation engine is driven by **4 JSON config files** — no code changes needed to add data types, toggle validation rules, or adjust engine behavior.
+The system separates **configuration** (JSON files, no code changes) from **runtime data** (database, created by users at runtime).
+
+### Design Principle
+
+```
+JSON files  =  rules, column definitions, form options, engine settings  (HOW things work)
+Database    =  uploaded data, workflow state, execution results           (WHAT happened)
+```
+
+### Upload Module
+
+| Aspect | Source | Details |
+|---|---|---|
+| Data types (INSTRUMENT, GL, ALLOCATION) | **JSON** `upload_config.json` | Labels, descriptions, required/optional columns |
+| Which validation rules run per type | **JSON** `upload_config.json` | `validation_rules` list per data type |
+| Validation rule behavior | **JSON** `validation_rules.json` | Enabled, severity, stop_on_fail |
+| Column casting & defaults | **JSON** `upload_config.json` | `column_mapping` per data type |
+| Numeric range checks | **JSON** `upload_config.json` | `numeric_ranges` per column |
+| Dimension lookup targets | **JSON** `upload_config.json` | `dimension_lookups` per column |
+| Uploaded rows & batch status | **DB** `upload_batch`, `stg_*` | Created at runtime by user uploads |
+| Maker/Checker workflow state | **DB** `upload_batch` | DRAFT → PENDING → APPROVED → PROCESSED |
+
+**To add a new upload data type:** add an entry to `upload_config.json` — no code changes.
+
+### Allocation Rule Module
+
+| Aspect | Source | Details |
+|---|---|---|
+| Form dropdown options | **JSON** `rule_config.json` | Source/lookup/output tables, join keys |
+| Default form selections | **JSON** `rule_config.json` | `defaults` section |
+| User's chosen rule config | **DB** `allocation_rule` | `source_table`, `lookup_table`, `output_table`, `join_key` saved per rule |
+| Rule active/inactive state | **DB** `allocation_rule` | `is_active`, `status` |
+
+When a user creates a rule via the form, the dropdowns come from `rule_config.json`, but the selected values are **saved to the database**. Each rule can have different table/join combinations.
+
+### Allocation Engine (Batch Execution)
+
+| Aspect | Source | Details |
+|---|---|---|
+| Which tables and join key to use | **DB** `allocation_rule` | Engine reads `rule.source_table`, `rule.join_key`, etc. |
+| Column definitions for each table | **JSON** `allocation_config.json` | `source_tables.{table}.columns`, `balance_columns`, etc. |
+| Lookup table columns & filters | **JSON** `allocation_config.json` | `lookup_tables.{table}.ratio_column`, `status_filter` |
+| Orphan handling defaults | **JSON** `allocation_config.json` | `default_ratio`, `target_org_from` |
+| Batch execution results | **DB** `batch_run`, `fct_mgmt_ledger` | Created at runtime by engine |
+
+**Engine flow:**
+```
+1. User clicks "Run Allocation" with rule_id
+2. Engine loads AllocationRule from DB → gets source_table, join_key, etc.
+3. Engine looks up column definitions in allocation_config.json for that table
+4. Engine queries source data (e.g. proc_inst_data) and lookup data (e.g. ref_static_allocation)
+5. Pandas join on the rule's join_key → apply ratio → write to fct_mgmt_ledger
+```
+
+**To add a new source table:** add its column config to `allocation_config.json` and its option to `rule_config.json`.
+
+## JSON Configuration Files
 
 ### `app/config/upload_config.json`
 
@@ -123,15 +179,15 @@ Drives the allocation rule creation form:
 - **join_keys** — selectable join keys (e.g. `customer_id`, `org_unit_id`, `product_code`)
 - **defaults** — pre-selected values for each dropdown
 
-All dropdowns in the "Create Rule" form are rendered from this file.
+All dropdowns in the "Create Rule" form are rendered from this file. Values must match keys in `allocation_config.json`.
 
 ### `app/config/allocation_config.json`
 
-Controls the batch allocation engine:
-- **source** — table, columns, and date filter column
-- **lookup** — table, status filter (`APPROVED`), and columns
-- **join** — join key (`customer_id`) and join type (`left`)
-- **output** — balance columns to apply ratios to, ratio column name
+Controls the batch allocation engine with per-table column definitions:
+- **source_tables** — keyed by table name, each with `columns`, `balance_columns`, `date_filter_column`, `account_id_column`
+- **lookup_tables** — keyed by table name, each with `columns`, `ratio_column`, `id_column`, `target_org_column`, `status_filter`
+- **output_tables** — keyed by table name (model reference)
+- **join_keys** — available join keys with `available_in` list showing which source tables support them
 - **orphan_handling** — enabled flag, default ratio (1.0), target org source
 
 ## Usage Workflow

@@ -1,27 +1,51 @@
 {
-    "source": {
-        "table": "proc_inst_data",
-        "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "balance", "interest_income"],
-        "date_filter_column": "as_of_date"
+    "source_tables": {
+        "proc_inst_data": {
+            "label": "Instrument Data",
+            "model": "ProcInstData",
+            "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "balance", "interest_income"],
+            "date_filter_column": "as_of_date",
+            "account_id_column": "account_id",
+            "balance_columns": ["balance", "interest_income"],
+            "dimension_columns": ["customer_id", "product_code", "org_unit_id"]
+        },
+        "proc_gl_data": {
+            "label": "General Ledger Data",
+            "model": "ProcGlData",
+            "columns": ["gl_account", "org_unit_id", "debit", "credit", "balance"],
+            "date_filter_column": "as_of_date",
+            "account_id_column": "gl_account",
+            "balance_columns": ["balance"],
+            "dimension_columns": ["org_unit_id"]
+        }
     },
 
-    "lookup": {
-        "table": "ref_static_allocation",
-        "status_filter": "APPROVED",
-        "columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"]
+    "lookup_tables": {
+        "ref_static_allocation": {
+            "label": "Static Allocation Ratios",
+            "model": "RefStaticAllocation",
+            "columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"],
+            "id_column": "allocation_id",
+            "ratio_column": "ratio",
+            "target_org_column": "target_org_unit_id",
+            "status_filter": "APPROVED"
+        }
     },
 
-    "join": {
-        "key": "customer_id",
-        "type": "left"
+    "output_tables": {
+        "fct_mgmt_ledger": {
+            "label": "Management Ledger",
+            "model": "FctMgmtLedger"
+        }
     },
 
-    "output": {
-        "table": "fct_mgmt_ledger",
-        "balance_columns": ["balance", "interest_income"],
-        "ratio_column": "ratio",
-        "allocated_column_prefix": "allocated_"
+    "join_keys": {
+        "customer_id": {"label": "Customer ID", "available_in": ["proc_inst_data"]},
+        "org_unit_id": {"label": "Org Unit ID", "available_in": ["proc_inst_data", "proc_gl_data"]},
+        "product_code": {"label": "Product Code", "available_in": ["proc_inst_data"]}
     },
+
+    "join_type": "left",
 
     "orphan_handling": {
         "enabled": true,
