@@ -40,6 +40,28 @@ class FctMgmtLedger(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     batch_run_id = db.Column(db.String(36), nullable=False, index=True)
     as_of_date = db.Column(db.Date, nullable=False)
+    entry_type = db.Column(db.String(10), default="DEBIT")  # DEBIT / CREDIT
+    allocation_id = db.Column(db.String(36), nullable=True)
+    source_account_id = db.Column(db.String(20), nullable=False)
+    customer_id = db.Column(db.String(20), nullable=False)
+    product_code = db.Column(db.String(20), nullable=False)
+    source_org_unit_id = db.Column(db.String(20), nullable=False)
+    target_org_unit_id = db.Column(db.String(20), nullable=False)
+    source_balance = db.Column(db.Float, nullable=False)
+    allocated_balance = db.Column(db.Float, nullable=False)
+    allocated_income = db.Column(db.Float, default=0.0)
+    ratio_applied = db.Column(db.Float, nullable=False)
+    is_orphan = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class FctMgmtInstrument(db.Model):
+    """Instrument-level allocation output — one row per account per debit/credit entry."""
+    __tablename__ = "fct_mgmt_instrument"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    batch_run_id = db.Column(db.String(36), nullable=False, index=True)
+    as_of_date = db.Column(db.Date, nullable=False)
+    entry_type = db.Column(db.String(10), default="DEBIT")  # DEBIT / CREDIT
     allocation_id = db.Column(db.String(36), nullable=True)
     source_account_id = db.Column(db.String(20), nullable=False)
     customer_id = db.Column(db.String(20), nullable=False)

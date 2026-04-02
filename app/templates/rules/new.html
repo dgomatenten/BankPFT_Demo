@@ -5,7 +5,9 @@
 
 <div class="card">
     <div class="card-body">
-        <form method="POST">
+        <form method="POST" id="rule-form">
+
+            {# ── Basic info ── #}
             <div class="mb-3">
                 <label class="form-label">Rule Name</label>
                 <input type="text" name="name" class="form-control" placeholder="e.g. Customer Shred Q1" required>
@@ -14,24 +16,26 @@
                 <label class="form-label">Description</label>
                 <textarea name="description" class="form-control" rows="2"></textarea>
             </div>
+
+            {# ── Table / key selection ── #}
             <div class="row mb-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Source Table</label>
-                    <select name="source_table" class="form-select">
+                    <select name="source_table" id="source_table" class="form-select">
                         {% for opt in rule_config.source_tables %}
                         <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.source_table }}>{{ opt.label }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Lookup Table</label>
-                    <select name="lookup_table" class="form-select">
+                    <select name="lookup_table" id="lookup_table" class="form-select">
                         {% for opt in rule_config.lookup_tables %}
                         <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.lookup_table }}>{{ opt.label }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Output Table</label>
                     <select name="output_table" class="form-select">
                         {% for opt in rule_config.output_tables %}
@@ -39,15 +43,54 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="col-md-3">
+                    <label class="form-label">Join Key</label>
+                    <select name="join_key" class="form-select">
+                        {% for opt in rule_config.join_keys %}
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.join_key }}>{{ opt.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
-            <div class="mb-3">
-                <label class="form-label">Join Key</label>
-                <select name="join_key" class="form-select">
-                    {% for opt in rule_config.join_keys %}
-                    <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.join_key }}>{{ opt.label }}</option>
-                    {% endfor %}
-                </select>
+
+            {# ── Debit / Credit offset ── #}
+            <div class="card mb-3 border-primary">
+                <div class="card-header bg-primary text-white"><i class="bi bi-arrow-left-right"></i> Debit / Credit Offset</div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="generate_offset" name="generate_offset" value="1" checked>
+                        <label class="form-check-label" for="generate_offset">Generate Credit offset entry (double-entry)</label>
+                    </div>
+                    <div id="offset-account-row">
+                        <label class="form-label">Offset Account <span class="text-muted">(optional label / GL account)</span></label>
+                        <input type="text" name="offset_account" class="form-control" placeholder="e.g. GL_OFFSET_9000">
+                    </div>
+                </div>
             </div>
+
+            {# ── Source Dimension Filters ── #}
+            <div class="card mb-3 border-info">
+                <div class="card-header bg-info text-white"><i class="bi bi-filter-square"></i> Source Dimension Filters</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0" id="src-dim-table">
+                        <thead class="table-light"><tr><th>Dimension</th><th>Mode</th><th>Members <span class="text-muted fw-normal">(comma-separated, for Specific)</span></th></tr></thead>
+                        <tbody id="src-dim-body"></tbody>
+                    </table>
+                </div>
+            </div>
+            <input type="hidden" name="source_dim_json" id="source_dim_json_input">
+
+            {# ── Output Dimension Mapping ── #}
+            <div class="card mb-3 border-success">
+                <div class="card-header bg-success text-white"><i class="bi bi-diagram-3"></i> Output Dimension Mapping</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0" id="out-dim-table">
+                        <thead class="table-light"><tr><th>Dimension</th><th>Mode</th><th>Lookup Column / Fixed Value</th></tr></thead>
+                        <tbody id="out-dim-body"></tbody>
+                    </table>
+                </div>
+            </div>
+            <input type="hidden" name="output_dim_json" id="output_dim_json_input">
 
             {# ── Data Filter Editor ── #}
             {% include "components/filter_editor.html" %}
@@ -57,4 +100,125 @@
         </form>
     </div>
 </div>
+
+<script>
+(function() {
+    const RULE_CFG   = {{ rule_config | tojson }};
+    const srcSelect  = document.getElementById('source_table');
+    const lkpSelect  = document.getElementById('lookup_table');
+    const srcBody    = document.getElementById('src-dim-body');
+    const outBody    = document.getElementById('out-dim-body');
+
+    function getDims(srcTable) {
+        return (RULE_CFG.dimension_config || {})[srcTable] || [];
+    }
+
+    function getLkpCols(lkpTable) {
+        return (RULE_CFG.lookup_output_columns || {})[lkpTable] || [];
+    }
+
+    function buildSrcRows(srcTable) {
+        const dims = getDims(srcTable);
+        srcBody.innerHTML = '';
+        dims.forEach(d => {
+            const tr = document.createElement('tr');
+            tr.dataset.dim = d.column;
+            tr.innerHTML = `
+                <td><strong>${d.label}</strong><br><small class="text-muted">${d.column}</small></td>
+                <td style="width:180px">
+                    <select class="form-select form-select-sm src-mode-sel">
+                        <option value="all" selected>All Members</option>
+                        <option value="specific">Specific Members</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm src-members-inp" placeholder="OU001, OU002, ..." disabled>
+                </td>`;
+            srcBody.appendChild(tr);
+            tr.querySelector('.src-mode-sel').addEventListener('change', function() {
+                tr.querySelector('.src-members-inp').disabled = this.value !== 'specific';
+            });
+        });
+    }
+
+    function buildOutRows(srcTable, lkpTable) {
+        const dims    = getDims(srcTable);
+        const lkpCols = getLkpCols(lkpTable);
+        const lkpOpts = lkpCols.map(c => `<option value="${c.column}">${c.label}</option>`).join('');
+        outBody.innerHTML = '';
+        dims.forEach(d => {
+            const tr = document.createElement('tr');
+            tr.dataset.dim = d.column;
+            tr.innerHTML = `
+                <td><strong>${d.label}</strong><br><small class="text-muted">${d.column}</small></td>
+                <td style="width:200px">
+                    <select class="form-select form-select-sm out-mode-sel">
+                        <option value="same_as_source" selected>Same as Source</option>
+                        <option value="lookup">From Lookup</option>
+                        <option value="fixed">Fixed Value</option>
+                    </select>
+                </td>
+                <td>
+                    <select class="form-select form-select-sm out-lkp-sel" style="display:none">${lkpOpts}</select>
+                    <input type="text" class="form-control form-control-sm out-fixed-inp" placeholder="fixed value" style="display:none">
+                </td>`;
+            outBody.appendChild(tr);
+            tr.querySelector('.out-mode-sel').addEventListener('change', function() {
+                tr.querySelector('.out-lkp-sel').style.display   = this.value === 'lookup'  ? '' : 'none';
+                tr.querySelector('.out-fixed-inp').style.display = this.value === 'fixed'   ? '' : 'none';
+            });
+        });
+    }
+
+    function serializeDims() {
+        // source_dim_json
+        const srcObj = {};
+        srcBody.querySelectorAll('tr[data-dim]').forEach(tr => {
+            const dim     = tr.dataset.dim;
+            const mode    = tr.querySelector('.src-mode-sel').value;
+            const members = tr.querySelector('.src-members-inp').value
+                .split(',').map(m => m.trim()).filter(Boolean);
+            srcObj[dim] = mode === 'specific' ? { mode, members } : { mode: 'all' };
+        });
+        document.getElementById('source_dim_json_input').value =
+            Object.keys(srcObj).length ? JSON.stringify(srcObj) : '';
+
+        // output_dim_json
+        const outObj = {};
+        outBody.querySelectorAll('tr[data-dim]').forEach(tr => {
+            const dim  = tr.dataset.dim;
+            const mode = tr.querySelector('.out-mode-sel').value;
+            if (mode === 'lookup') {
+                const col = tr.querySelector('.out-lkp-sel').value;
+                outObj[dim] = { mode, lookup_column: col };
+            } else if (mode === 'fixed') {
+                const val = tr.querySelector('.out-fixed-inp').value.trim();
+                outObj[dim] = { mode, value: val };
+            } else {
+                outObj[dim] = { mode: 'same_as_source' };
+            }
+        });
+        document.getElementById('output_dim_json_input').value =
+            Object.keys(outObj).length ? JSON.stringify(outObj) : '';
+    }
+
+    function rebuild() {
+        const src = srcSelect.value;
+        const lkp = lkpSelect.value;
+        buildSrcRows(src);
+        buildOutRows(src, lkp);
+    }
+
+    srcSelect.addEventListener('change', rebuild);
+    lkpSelect.addEventListener('change', function() {
+        buildOutRows(srcSelect.value, this.value);
+    });
+
+    document.getElementById('rule-form').addEventListener('submit', serializeDims);
+
+    // Initial build
+    rebuild();
+})();
+</script>
 {% endblock %}
+

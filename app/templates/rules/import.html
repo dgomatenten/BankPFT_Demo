@@ -1,0 +1,83 @@
+{% extends "layout/base.html" %}
+{% block title %}Import Rule — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Import Allocation Rule from JSON</h2>
+
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-upload"></i> Upload or Paste Rule JSON</div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">Upload JSON file</label>
+                        <input type="file" name="rule_file" class="form-control" accept=".json,application/json">
+                    </div>
+                    <div class="text-center text-muted my-2">— or —</div>
+                    <div class="mb-3">
+                        <label class="form-label">Paste JSON directly</label>
+                        <textarea name="rule_json" class="form-control font-monospace" rows="14"
+                            placeholder='{
+  "name": "Customer Shred Q1",
+  "source_table": "proc_inst_data",
+  "lookup_table": "ref_static_allocation",
+  "output_table": "fct_mgmt_instrument",
+  "join_key": "customer_id",
+  "generate_offset": true,
+  "offset_account": "GL_OFFSET_9000",
+  "source_dim_json": {
+    "org_unit_id":  { "mode": "all" },
+    "product_code": { "mode": "specific", "members": ["LOAN", "DEPOSIT"] },
+    "customer_id":  { "mode": "all" }
+  },
+  "output_dim_json": {
+    "org_unit_id":  { "mode": "lookup",         "lookup_column": "target_org_unit_id" },
+    "product_code": { "mode": "same_as_source" },
+    "customer_id":  { "mode": "same_as_source" }
+  }
+}'></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Import Rule</button>
+                    <a href="/rules" class="btn btn-outline-secondary ms-2">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white"><i class="bi bi-info-circle"></i> JSON Schema Reference</div>
+            <div class="card-body small">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light"><tr><th>Field</th><th>Required</th><th>Notes</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>name</code></td><td><span class="badge bg-danger">Yes</span></td><td>Display name</td></tr>
+                        <tr><td><code>description</code></td><td>No</td><td></td></tr>
+                        <tr><td><code>source_table</code></td><td>No</td><td><code>proc_inst_data</code> / <code>proc_gl_data</code></td></tr>
+                        <tr><td><code>lookup_table</code></td><td>No</td><td><code>ref_static_allocation</code> / <code>ref_org_reclass</code></td></tr>
+                        <tr><td><code>output_table</code></td><td>No</td><td><code>fct_mgmt_instrument</code> / <code>fct_mgmt_ledger</code></td></tr>
+                        <tr><td><code>join_key</code></td><td>No</td><td>Column linking source ↔ lookup</td></tr>
+                        <tr><td><code>generate_offset</code></td><td>No</td><td><code>true</code> = DEBIT + CREDIT</td></tr>
+                        <tr><td><code>offset_account</code></td><td>No</td><td>Optional GL label for credit entry</td></tr>
+                        <tr><td><code>filter_json</code></td><td>No</td><td><code>{"logic":"AND","conditions":[...]}</code></td></tr>
+                        <tr><td><code>source_dim_json</code></td><td>No</td><td>Per-dimension source filter</td></tr>
+                        <tr><td><code>output_dim_json</code></td><td>No</td><td>Per-dimension output mapping</td></tr>
+                    </tbody>
+                </table>
+                <hr>
+                <p class="mb-1"><strong>source_dim_json</strong> modes:</p>
+                <ul class="mb-2">
+                    <li><code>"mode":"all"</code> — include all dimension members</li>
+                    <li><code>"mode":"specific","members":[...]</code> — filter to listed values</li>
+                </ul>
+                <p class="mb-1"><strong>output_dim_json</strong> modes:</p>
+                <ul class="mb-0">
+                    <li><code>"mode":"same_as_source"</code> — pass source value to output</li>
+                    <li><code>"mode":"lookup","lookup_column":"..."</code> — read from joined lookup</li>
+                    <li><code>"mode":"fixed","value":"..."</code> — hardcode a member value</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

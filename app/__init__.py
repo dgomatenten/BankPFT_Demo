@@ -54,12 +54,37 @@ def create_app(config_class=Config):
 
     with flask_app.app_context():
         db.create_all()
+        _apply_schema_migrations()
         _seed_defaults()
 
     # Custom Jinja filter for parsing JSON in templates
     flask_app.jinja_env.filters["from_json"] = lambda s: json.loads(s) if s else {}
 
     return flask_app
+
+
+def _apply_schema_migrations():
+    """Add new columns to existing tables without dropping data (SQLite-safe)."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+
+    def _add_col_if_missing(table, col_def):
+        cols = {c["name"] for c in inspector.get_columns(table)}
+        col_name = col_def.split()[0]
+        if col_name not in cols:
+            with db.engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_def}"))
+                conn.commit()
+
+    if inspector.has_table("allocation_rule"):
+        _add_col_if_missing("allocation_rule", "source_dim_json TEXT")
+        _add_col_if_missing("allocation_rule", "output_dim_json TEXT")
+        _add_col_if_missing("allocation_rule", "generate_offset INTEGER DEFAULT 1")
+        _add_col_if_missing("allocation_rule", "offset_account VARCHAR(50)")
+
+    if inspector.has_table("fct_mgmt_ledger"):
+        _add_col_if_missing("fct_mgmt_ledger", "entry_type VARCHAR(10) DEFAULT 'DEBIT'")
 
 
 def _seed_defaults():

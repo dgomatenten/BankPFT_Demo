@@ -31,6 +31,10 @@ class AllocationRule(db.Model):
     output_table = db.Column(db.String(50), default="fct_mgmt_ledger")
     join_key = db.Column(db.String(50), default="customer_id")
     filter_json = db.Column(db.Text, nullable=True)  # JSON: {"logic":"AND","conditions":[...]}
+    source_dim_json = db.Column(db.Text, nullable=True)  # per-dimension source member filter
+    output_dim_json = db.Column(db.Text, nullable=True)  # per-dimension output mapping
+    generate_offset = db.Column(db.Boolean, default=True)  # emit credit offset entry
+    offset_account = db.Column(db.String(50), nullable=True)  # optional label for offset
     is_active = db.Column(db.Boolean, default=True)
     status = db.Column(db.String(20), default="ACTIVE")
     created_by = db.Column(db.String(50), nullable=True)

@@ -27,15 +27,22 @@ def list_rules():
 @login_required
 def new_rule():
     if request.method == "POST":
-        filter_raw = request.form.get("filter_json", "").strip()
+        filter_raw      = request.form.get("filter_json", "").strip()
+        src_dim_raw     = request.form.get("source_dim_json", "").strip()
+        out_dim_raw     = request.form.get("output_dim_json", "").strip()
+        generate_offset = request.form.get("generate_offset") == "1"
         rule = AllocationRule(
             name=request.form["name"],
             description=request.form.get("description", ""),
             source_table=request.form.get("source_table", "proc_inst_data"),
             lookup_table=request.form.get("lookup_table", "ref_static_allocation"),
-            output_table=request.form.get("output_table", "fct_mgmt_ledger"),
+            output_table=request.form.get("output_table", "fct_mgmt_instrument"),
             join_key=request.form.get("join_key", "customer_id"),
             filter_json=filter_raw if filter_raw else None,
+            source_dim_json=src_dim_raw if src_dim_raw else None,
+            output_dim_json=out_dim_raw if out_dim_raw else None,
+            generate_offset=generate_offset,
+            offset_account=request.form.get("offset_account", "").strip() or None,
             created_by=current_user.username,
             status="ACTIVE",
         )
@@ -45,6 +52,62 @@ def new_rule():
         return redirect(url_for("rules.detail", rule_id=rule.id))
 
     return render_template("rules/new.html", rule_config=RULE_CONFIG, filter_config=FILTER_CONFIG)
+
+
+@bp.route("/import", methods=["GET", "POST"])
+@login_required
+def import_rule():
+    """Create an AllocationRule from an uploaded/pasted JSON definition."""
+    if request.method == "POST":
+        # Accept file upload or pasted JSON text
+        raw = ""
+        uploaded = request.files.get("rule_file")
+        if uploaded and uploaded.filename:
+            raw = uploaded.read().decode("utf-8", errors="replace")
+        else:
+            raw = request.form.get("rule_json", "").strip()
+
+        if not raw:
+            flash("No JSON provided.", "warning")
+            return render_template("rules/import.html")
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            flash(f"Invalid JSON: {exc}", "danger")
+            return render_template("rules/import.html")
+
+        if not data.get("name"):
+            flash("JSON must contain a 'name' field.", "danger")
+            return render_template("rules/import.html")
+
+        # Serialise nested dicts back to JSON strings if needed
+        def _to_json(v):
+            if v is None:
+                return None
+            return json.dumps(v) if isinstance(v, dict) else str(v)
+
+        rule = AllocationRule(
+            name=data["name"],
+            description=data.get("description", ""),
+            source_table=data.get("source_table", "proc_inst_data"),
+            lookup_table=data.get("lookup_table", "ref_static_allocation"),
+            output_table=data.get("output_table", "fct_mgmt_instrument"),
+            join_key=data.get("join_key", "customer_id"),
+            filter_json=_to_json(data.get("filter_json")),
+            source_dim_json=_to_json(data.get("source_dim_json")),
+            output_dim_json=_to_json(data.get("output_dim_json")),
+            generate_offset=bool(data.get("generate_offset", True)),
+            offset_account=data.get("offset_account") or None,
+            created_by=current_user.username,
+            status="ACTIVE",
+        )
+        db.session.add(rule)
+        db.session.commit()
+        flash(f"Rule '{rule.name}' imported successfully.", "success")
+        return redirect(url_for("rules.detail", rule_id=rule.id))
+
+    return render_template("rules/import.html")
 
 
 @bp.route("/<int:rule_id>")
@@ -74,3 +137,4 @@ def delete(rule_id):
     db.session.commit()
     flash(f"Rule '{rule.name}' deleted.", "success")
     return redirect(url_for("rules.list_rules"))
+

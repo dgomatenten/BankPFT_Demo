@@ -20,12 +20,73 @@
             <div class="col-md-4"><strong>Lookup:</strong> {{ rule.lookup_table }}</div>
             <div class="col-md-4"><strong>Output:</strong> {{ rule.output_table }}</div>
         </div>
+        <div class="row mt-2">
+            <div class="col-md-4">
+                <strong>Offset Entry:</strong>
+                {% if rule.generate_offset %}
+                    <span class="badge bg-success">DEBIT + CREDIT</span>
+                {% else %}
+                    <span class="badge bg-secondary">DEBIT only</span>
+                {% endif %}
+            </div>
+            <div class="col-md-4">
+                <strong>Offset Account:</strong> {{ rule.offset_account or '—' }}
+            </div>
+        </div>
         {% if rule.description %}
         <hr>
         <p class="mb-0">{{ rule.description }}</p>
         {% endif %}
     </div>
 </div>
+
+{# ── Source Dimension Filters ── #}
+{% if rule.source_dim_json %}
+<div class="card mb-4">
+    <div class="card-header bg-info text-white"><i class="bi bi-filter-square"></i> Source Dimension Filters</div>
+    <div class="card-body p-0">
+        {% set src_dims = rule.source_dim_json | from_json %}
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Dimension</th><th>Mode</th><th>Members</th></tr></thead>
+            <tbody>
+            {% for dim, cfg in src_dims.items() %}
+            <tr>
+                <td>{{ dim }}</td>
+                <td><span class="badge bg-{{ 'warning' if cfg.mode == 'specific' else 'secondary' }}">{{ cfg.mode }}</span></td>
+                <td>{{ cfg.members | join(', ') if cfg.members else '—' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Output Dimension Mapping ── #}
+{% if rule.output_dim_json %}
+<div class="card mb-4">
+    <div class="card-header bg-success text-white"><i class="bi bi-diagram-3"></i> Output Dimension Mapping</div>
+    <div class="card-body p-0">
+        {% set out_dims = rule.output_dim_json | from_json %}
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Dimension</th><th>Mode</th><th>Detail</th></tr></thead>
+            <tbody>
+            {% for dim, cfg in out_dims.items() %}
+            <tr>
+                <td>{{ dim }}</td>
+                <td><span class="badge bg-primary">{{ cfg.mode }}</span></td>
+                <td>
+                    {% if cfg.mode == 'lookup' %}{{ cfg.lookup_column or '—' }}
+                    {% elif cfg.mode == 'fixed' %}{{ cfg.value or '—' }}
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 
 {# ── Saved Data Filters ── #}
 {% if rule.filter_json %}

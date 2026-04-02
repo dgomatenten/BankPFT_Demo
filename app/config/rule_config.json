@@ -12,7 +12,8 @@
     ],
 
     "output_tables": [
-        {"value": "fct_mgmt_ledger", "label": "Management Ledger (fct_mgmt_ledger)"}
+        {"value": "fct_mgmt_instrument", "label": "Management Instrument (fct_mgmt_instrument)"},
+        {"value": "fct_mgmt_ledger",     "label": "Management Ledger (fct_mgmt_ledger)"}
     ],
 
     "join_keys": [
@@ -24,7 +25,40 @@
     "defaults": {
         "source_table": "proc_inst_data",
         "lookup_table": "ref_static_allocation",
-        "output_table": "fct_mgmt_ledger",
+        "output_table": "fct_mgmt_instrument",
         "join_key": "customer_id"
+    },
+
+    "dimension_config": {
+        "proc_inst_data": [
+            {"column": "customer_id",  "label": "Customer ID"},
+            {"column": "product_code", "label": "Product Code"},
+            {"column": "org_unit_id",  "label": "Org Unit"}
+        ],
+        "proc_gl_data": [
+            {"column": "org_unit_id",  "label": "Org Unit"}
+        ]
+    },
+
+    "lookup_output_columns": {
+        "ref_static_allocation": [
+            {"column": "target_org_unit_id", "label": "Target Org Unit"},
+            {"column": "customer_id",        "label": "Customer ID (lookup)"}
+        ],
+        "ref_org_reclass": [
+            {"column": "target_org_unit_id", "label": "Target Org Unit"}
+        ]
+    },
+
+    "dim_modes": {
+        "source": [
+            {"value": "all",      "label": "All Members"},
+            {"value": "specific", "label": "Specific Members"}
+        ],
+        "output": [
+            {"value": "same_as_source", "label": "Same as Source"},
+            {"value": "lookup",         "label": "From Lookup"},
+            {"value": "fixed",          "label": "Fixed Value"}
+        ]
     }
 }

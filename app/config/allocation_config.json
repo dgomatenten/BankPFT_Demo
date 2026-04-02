@@ -45,6 +45,10 @@
         "fct_mgmt_ledger": {
             "label": "Management Ledger",
             "model": "FctMgmtLedger"
+        },
+        "fct_mgmt_instrument": {
+            "label": "Management Instrument",
+            "model": "FctMgmtInstrument"
         }
     },
 

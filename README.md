@@ -9,7 +9,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
-| **Allocation Rules** | Configure source table, lookup table, output table, join key, and data filters. Rules are immediately active |
+| **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters, output dimension mapping (same-as-source / lookup / fixed), and debit/credit offset generation. Rules can be created via form or imported from JSON |
 | **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser |
 | **Test Data Generator** | Generate master data, instrument data, GL data, and allocation ratio Excel files for testing |
@@ -23,7 +23,9 @@ Staging (STG_INST_DATA, STG_GL_DATA)
         ↓ Maker/Checker approval
 Processing (PROC_INST_DATA, PROC_GL_DATA)
         ↓ Allocation Engine (Pandas join + ratio shredding)
-Result (FCT_MGMT_LEDGER)
+        ↓ per-dimension source filter  →  join  →  output dim mapping
+Result  FCT_MGMT_INSTRUMENT  (DEBIT + CREDIT offset entries, instrument-level)
+        FCT_MGMT_LEDGER      (legacy ledger output)
 ```
 
 Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_id`. Each customer's ratios must sum to 1.0 per allocation group. Org reclassifications are stored in `REF_ORG_RECLASS` as 1:1 org-to-org mappings (ratio always 1.0).
@@ -39,7 +41,25 @@ Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_
 
 ## Quick Start
 
-### Local
+### Local (recommended — `start.sh`)
+
+```bash
+# Development server (auto-creates venv, installs deps)
+./start.sh
+
+# or explicitly:
+./start.sh dev
+
+# Production (Gunicorn daemon, 4 workers)
+./start.sh prod
+
+# Stop Gunicorn daemon
+./start.sh stop
+```
+
+Open http://localhost:5000
+
+### Manual (without start.sh)
 
 ```bash
 python -m venv venv
@@ -80,14 +100,14 @@ app/
 │   ├── auth.py              # User, Group, UserGroup (login & role management)
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
-│   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger
+│   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger, FctMgmtInstrument
 │   └── workflow.py          # UploadBatch, AllocationRule, BatchRun
 ├── routes/
 │   ├── auth.py              # Login, logout, change password
 │   ├── admin.py             # User & group management (admin only)
 │   ├── dashboard.py         # Home dashboard
 │   ├── upload.py            # Data upload with Maker/Checker
-│   ├── rules.py             # Allocation rule CRUD
+│   ├── rules.py             # Allocation rule CRUD + JSON import
 │   ├── batch.py             # Batch execution
 │   ├── reports.py           # Reports & table browser
 │   └── testdata.py          # Test data generation
@@ -133,8 +153,10 @@ Database    =  uploaded data, workflow state, execution results           (WHAT 
 | Default form selections | **JSON** `rule_config.json` | `defaults` section |
 | Filter field/operator options | **JSON** `filter_config.json` | Available columns & operators per source table |
 | User's chosen rule config | **DB** `allocation_rule` | `source_table`, `lookup_table`, `output_table`, `join_key` saved per rule |
-| User's data filter conditions | **DB** `allocation_rule.filter_json` | JSON: `{"logic":"AND","conditions":[{"field":"..","operator":"..","value":".."}]}` |
-| Rule active/inactive state | **DB** `allocation_rule` | `is_active`, `status` |
+| User's data filter conditions | **DB** `allocation_rule.filter_json` | JSON: `{"logic":"AND","conditions":[{"field":"..","operator":"..","value":".."}]}` || Source dimension member filters | **DB** `allocation_rule.source_dim_json` | Per-dimension: `{"org_unit_id":{"mode":"specific","members":["OU1"]}}` |
+| Output dimension mapping | **DB** `allocation_rule.output_dim_json` | Per-dimension: `{"org_unit_id":{"mode":"lookup","lookup_column":"target_org_unit_id"}}` |
+| Debit/Credit offset generation | **DB** `allocation_rule.generate_offset` | `true` = double-entry (DEBIT + CREDIT) |
+| Offset account label | **DB** `allocation_rule.offset_account` | Optional GL label for the credit entry || Rule active/inactive state | **DB** `allocation_rule` | `is_active`, `status` |
 
 When a user creates a rule via the form, the dropdowns come from `rule_config.json`, but the selected values are **saved to the database**. Each rule can have different table/join combinations.
 
@@ -150,12 +172,16 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 
 **Engine flow:**
 ```
-1. User clicks "Run Allocation" with rule_id
-2. Engine loads AllocationRule from DB → gets source_table, join_key, filter_json, etc.
-3. Engine looks up column definitions in allocation_config.json for that table
-4. Engine queries source data (e.g. proc_inst_data) and applies data filters
-5. Engine queries lookup data (e.g. ref_static_allocation)
-6. Pandas join on the rule's join_key → apply ratio → write to fct_mgmt_ledger
+1. Load AllocationRule from DB → source_table, join_key, filter_json, source_dim_json, output_dim_json, generate_offset
+2. Look up column definitions in allocation_config.json for each table
+3. Query source data (e.g. proc_inst_data) → apply filter_json → apply source_dim_json member filters
+4. Query lookup data (e.g. ref_static_allocation)
+5. Pandas LEFT JOIN on rule's join_key
+6. For each matched row: compute allocated_balance = source × ratio
+7. Resolve output dimensions per output_dim_json (same-as-source / lookup column / fixed value)
+8. Write DEBIT entry to output table (fct_mgmt_instrument or fct_mgmt_ledger)
+9. If generate_offset=true: write CREDIT entry (negative balance, source dimensions)
+10. Orphan rows (no lookup match) → DEBIT only at source org (default_ratio from config)
 ```
 
 **To add a new source table:** add its column config to `allocation_config.json` and its option to `rule_config.json`.
@@ -290,9 +316,64 @@ Each rule can be independently **enabled/disabled**, assigned a **severity** (er
 To add a new data type: add an entry to `upload_config.json` with its `validation_rules` list — no code changes required.
 To add a new validation rule: define it in `validation_rules.json` and implement the check in `_run_validation_rule()`.
 
-## Database
+## Output Tables
 
-SQLite database is created automatically at `instance/bankpft.db` on first run. Tables are auto-created by SQLAlchemy. Delete the file to reset.
+| Table | Purpose |
+|---|---|
+| `fct_mgmt_instrument` | Instrument-level allocation output — DEBIT + CREDIT offset entries (recommended default) |
+| `fct_mgmt_ledger` | Legacy ledger output — retains backward compatibility |
+
+Both tables share the same schema, with `entry_type` column indicating `DEBIT` or `CREDIT`.
+
+## Allocation Rule JSON Import
+
+Rules can be defined as JSON and imported via `/rules/import`. This allows batch setup, version control of rule configurations, and sharing between environments.
+
+**Minimum valid rule JSON:**
+```json
+{"name": "My Rule"}
+```
+
+**Full schema:**
+```json
+{
+  "name": "Customer Shred Q1",
+  "description": "Shred instrument balances by customer ratio",
+  "source_table": "proc_inst_data",
+  "lookup_table": "ref_static_allocation",
+  "output_table": "fct_mgmt_instrument",
+  "join_key": "customer_id",
+  "generate_offset": true,
+  "offset_account": "GL_OFFSET_9000",
+  "filter_json": {
+    "logic": "AND",
+    "conditions": [{"field": "product_code", "operator": "in", "value": "LOAN,DEPOSIT"}]
+  },
+  "source_dim_json": {
+    "org_unit_id":  {"mode": "all"},
+    "product_code": {"mode": "specific", "members": ["LOAN", "DEPOSIT"]},
+    "customer_id":  {"mode": "all"}
+  },
+  "output_dim_json": {
+    "org_unit_id":  {"mode": "lookup",         "lookup_column": "target_org_unit_id"},
+    "product_code": {"mode": "same_as_source"},
+    "customer_id":  {"mode": "same_as_source"}
+  }
+}
+```
+
+## start.sh Reference
+
+| Command | Description |
+|---|---|
+| `./start.sh` or `./start.sh dev` | Flask development server with auto-reload |
+| `./start.sh prod` | Gunicorn daemon (4 workers, logs to `bankpft.log`) |
+| `./start.sh stop` | Stop a running Gunicorn daemon |
+| `./start.sh docker` | Build and start via Docker Compose |
+
+Environment variable: `WORKERS=8 ./start.sh prod` overrides the default 4 Gunicorn workers.
+
+
 
 ## License
 
