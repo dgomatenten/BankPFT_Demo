@@ -1,0 +1,54 @@
+{
+    "rules": [
+        {
+            "id": "required_columns",
+            "name": "Required Column Check",
+            "description": "Validates all required columns exist in the uploaded file",
+            "enabled": true,
+            "severity": "error",
+            "stop_on_fail": true
+        },
+        {
+            "id": "null_check",
+            "name": "Null Value Check",
+            "description": "Checks for null values in required columns",
+            "enabled": true,
+            "severity": "error",
+            "stop_on_fail": false
+        },
+        {
+            "id": "unique_key",
+            "name": "Unique Key Check",
+            "description": "Checks for duplicate values in the configured unique key column",
+            "enabled": true,
+            "severity": "error",
+            "stop_on_fail": false
+        },
+        {
+            "id": "dimension_lookup",
+            "name": "Dimension Referential Integrity",
+            "description": "Validates column values exist in the referenced dimension table",
+            "enabled": true,
+            "severity": "error",
+            "stop_on_fail": false
+        },
+        {
+            "id": "ratio_sum",
+            "name": "Ratio Sum Validation",
+            "description": "Validates grouped ratio sums equal expected total (e.g. 1.0)",
+            "enabled": true,
+            "severity": "error",
+            "stop_on_fail": false
+        },
+        {
+            "id": "numeric_range",
+            "name": "Numeric Range Check",
+            "description": "Validates numeric columns fall within configured min/max bounds",
+            "enabled": true,
+            "severity": "warning",
+            "stop_on_fail": false
+        }
+    ],
+
+    "max_errors_shown": 10
+}

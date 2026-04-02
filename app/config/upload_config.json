@@ -3,6 +3,8 @@
 
     "data_types": {
         "INSTRUMENT": {
+            "label": "Instrument Data",
+            "description": "Account-level financial instrument balances",
             "required_columns": ["as_of_date", "account_id", "customer_id", "product_code", "org_unit_id", "balance"],
             "optional_columns": ["interest_income"],
             "unique_key": "account_id",
@@ -12,6 +14,10 @@
                 "product_code": "dim_product",
                 "org_unit_id": "dim_org_unit"
             },
+            "numeric_ranges": {
+                "balance": {"min": null, "max": null},
+                "interest_income": {"min": 0, "max": null}
+            },
             "column_mapping": {
                 "as_of_date": {"type": "date"},
                 "account_id": {"type": "string"},
@@ -20,15 +26,22 @@
                 "org_unit_id": {"type": "string"},
                 "balance": {"type": "float"},
                 "interest_income": {"type": "float", "default": 0}
-            }
+            },
+            "validation_rules": ["required_columns", "null_check", "unique_key", "dimension_lookup", "numeric_range"]
         },
         "GL": {
+            "label": "General Ledger",
+            "description": "GL account balances by org unit",
             "required_columns": ["as_of_date", "gl_account", "org_unit_id", "balance"],
             "optional_columns": ["debit", "credit"],
             "unique_key": null,
             "staging_table": "stg_gl_data",
             "dimension_lookups": {
                 "org_unit_id": "dim_org_unit"
+            },
+            "numeric_ranges": {
+                "debit": {"min": 0, "max": null},
+                "credit": {"min": 0, "max": null}
             },
             "column_mapping": {
                 "as_of_date": {"type": "date"},
@@ -37,9 +50,12 @@
                 "debit": {"type": "float", "default": 0},
                 "credit": {"type": "float", "default": 0},
                 "balance": {"type": "float"}
-            }
+            },
+            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"]
         },
         "ALLOCATION": {
+            "label": "Allocation Ratios",
+            "description": "Static allocation ratios for customer shredding",
             "required_columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"],
             "optional_columns": [],
             "unique_key": null,
@@ -56,15 +72,17 @@
                 "expected_sum": 1.0,
                 "tolerance": 0.001
             },
+            "numeric_ranges": {
+                "ratio": {"min": 0, "max": 1}
+            },
             "column_mapping": {
                 "allocation_id": {"type": "string"},
                 "customer_id": {"type": "string"},
                 "source_org_unit_id": {"type": "string"},
                 "target_org_unit_id": {"type": "string"},
                 "ratio": {"type": "float"}
-            }
+            },
+            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "ratio_sum", "numeric_range"]
         }
-    },
-
-    "max_validation_errors_shown": 10
+    }
 }

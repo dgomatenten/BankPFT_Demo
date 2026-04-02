@@ -5,7 +5,7 @@ from app.models import db
 from app.models.workflow import UploadBatch
 from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
 from app.models.allocation import RefStaticAllocation
-from app.services.upload_service import allowed_file, process_upload
+from app.services.upload_service import allowed_file, process_upload, UPLOAD_CONFIG
 from app.services import transition, WorkflowError
 from werkzeug.utils import secure_filename
 
@@ -45,7 +45,8 @@ def new_upload():
 
         return redirect(url_for("upload.detail", batch_id=batch.id))
 
-    return render_template("upload/new.html")
+    data_types = {k: v for k, v in UPLOAD_CONFIG["data_types"].items()}
+    return render_template("upload/new.html", data_types=data_types)
 
 
 @bp.route("/<batch_id>")

@@ -1,0 +1,27 @@
+{
+    "source_tables": [
+        {"value": "proc_inst_data", "label": "Instrument (proc_inst_data)"},
+        {"value": "proc_gl_data", "label": "General Ledger (proc_gl_data)"}
+    ],
+
+    "lookup_tables": [
+        {"value": "ref_static_allocation", "label": "Static Allocation (ref_static_allocation)"}
+    ],
+
+    "output_tables": [
+        {"value": "fct_mgmt_ledger", "label": "Management Ledger (fct_mgmt_ledger)"}
+    ],
+
+    "join_keys": [
+        {"value": "customer_id", "label": "customer_id"},
+        {"value": "org_unit_id", "label": "org_unit_id"},
+        {"value": "product_code", "label": "product_code"}
+    ],
+
+    "defaults": {
+        "source_table": "proc_inst_data",
+        "lookup_table": "ref_static_allocation",
+        "output_table": "fct_mgmt_ledger",
+        "join_key": "customer_id"
+    }
+}

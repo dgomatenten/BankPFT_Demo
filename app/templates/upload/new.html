@@ -9,9 +9,9 @@
             <div class="mb-3">
                 <label class="form-label">Data Type</label>
                 <select name="data_type" class="form-select" required>
-                    <option value="INSTRUMENT">Instrument Data</option>
-                    <option value="GL">General Ledger</option>
-                    <option value="ALLOCATION">Allocation Ratios</option>
+                    {% for key, dt in data_types.items() %}
+                    <option value="{{ key }}">{{ dt.label }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="mb-3">
@@ -31,9 +31,9 @@
 <div class="card mt-4">
     <div class="card-header">Expected Column Headers</div>
     <div class="card-body">
-        <p><strong>Instrument:</strong> as_of_date, account_id, customer_id, product_code, org_unit_id, balance, interest_income</p>
-        <p><strong>GL:</strong> as_of_date, gl_account, org_unit_id, debit, credit, balance</p>
-        <p><strong>Allocation:</strong> allocation_id, customer_id, source_org_unit_id, target_org_unit_id, ratio</p>
+        {% for key, dt in data_types.items() %}
+        <p><strong>{{ dt.label }}:</strong> {{ dt.required_columns | join(", ") }}{% if dt.optional_columns %}, <em>{{ dt.optional_columns | join(", ") }}</em> (optional){% endif %}</p>
+        {% endfor %}
     </div>
 </div>
 {% endblock %}

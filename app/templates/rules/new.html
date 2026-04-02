@@ -18,26 +18,34 @@
                 <div class="col-md-4">
                     <label class="form-label">Source Table</label>
                     <select name="source_table" class="form-select">
-                        <option value="proc_inst_data" selected>Instrument (proc_inst_data)</option>
+                        {% for opt in rule_config.source_tables %}
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.source_table }}>{{ opt.label }}</option>
+                        {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Lookup Table</label>
                     <select name="lookup_table" class="form-select">
-                        <option value="ref_static_allocation" selected>Static Allocation</option>
+                        {% for opt in rule_config.lookup_tables %}
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.lookup_table }}>{{ opt.label }}</option>
+                        {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Output Table</label>
                     <select name="output_table" class="form-select">
-                        <option value="fct_mgmt_ledger" selected>Management Ledger</option>
+                        {% for opt in rule_config.output_tables %}
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.output_table }}>{{ opt.label }}</option>
+                        {% endfor %}
                     </select>
                 </div>
             </div>
             <div class="mb-3">
                 <label class="form-label">Join Key</label>
                 <select name="join_key" class="form-select">
-                    <option value="customer_id" selected>customer_id</option>
+                    {% for opt in rule_config.join_keys %}
+                    <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.join_key }}>{{ opt.label }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="mb-3">

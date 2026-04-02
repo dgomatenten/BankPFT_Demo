@@ -1,7 +1,12 @@
+import json, os
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from app.models import db
 from app.models.workflow import AllocationRule
 from app.models.allocation import RefStaticAllocation
+
+_CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "rule_config.json")
+with open(_CFG_PATH) as _f:
+    RULE_CONFIG = json.load(_f)
 
 bp = Blueprint("rules", __name__)
 
@@ -30,7 +35,7 @@ def new_rule():
         flash(f"Rule '{rule.name}' created and active.", "success")
         return redirect(url_for("rules.detail", rule_id=rule.id))
 
-    return render_template("rules/new.html")
+    return render_template("rules/new.html", rule_config=RULE_CONFIG)
 
 
 @bp.route("/<int:rule_id>")

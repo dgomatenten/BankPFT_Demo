@@ -13,11 +13,16 @@ from app.models.allocation import RefStaticAllocation
 from app.models.workflow import UploadBatch
 
 # ── Load configuration ──
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "upload_config.json")
-with open(_CONFIG_PATH) as _f:
+_CFG_DIR = os.path.join(os.path.dirname(__file__), "..", "config")
+with open(os.path.join(_CFG_DIR, "upload_config.json")) as _f:
     UPLOAD_CONFIG = json.load(_f)
+with open(os.path.join(_CFG_DIR, "validation_rules.json")) as _f:
+    VALIDATION_RULES_CONFIG = json.load(_f)
 
 ALLOWED_EXTENSIONS = set(UPLOAD_CONFIG["allowed_extensions"])
+
+# Index validation rules by id for quick lookup
+_VRULES = {r["id"]: r for r in VALIDATION_RULES_CONFIG["rules"]}
 
 # Dimension model registry — maps config names to SQLAlchemy models + key columns
 _DIMENSION_MODELS = {
@@ -51,55 +56,87 @@ def _get_dimension_values(dim_name: str) -> set[str]:
 
 
 def validate_upload(df: pd.DataFrame, data_type: str) -> list[str]:
-    """Generic config-driven validator for any data type."""
+    """Generic config-driven validator — runs only rules listed in the data type's validation_rules."""
     type_cfg = UPLOAD_CONFIG["data_types"].get(data_type)
     if not type_cfg:
         return [f"Unknown data type: {data_type}"]
 
     errors = []
-    max_shown = UPLOAD_CONFIG.get("max_validation_errors_shown", 10)
+    max_shown = VALIDATION_RULES_CONFIG.get("max_errors_shown", 10)
+    active_rule_ids = type_cfg.get("validation_rules", [])
 
-    # 1. Required column check
-    required_cols = type_cfg["required_columns"]
-    for col in required_cols:
-        if col not in df.columns:
-            errors.append(f"Missing required column: {col}")
-    if errors:
-        return errors
-
-    # 2. Null check on required columns
-    if df[required_cols].isnull().any().any():
-        null_cols = df[required_cols].columns[df[required_cols].isnull().any()].tolist()
-        errors.append(f"Null values found in: {null_cols}")
-
-    # 3. Unique key check
-    unique_key = type_cfg.get("unique_key")
-    if unique_key and unique_key in df.columns and df[unique_key].duplicated().any():
-        errors.append(f"Duplicate {unique_key} values found.")
-
-    # 4. Dimension lookups
-    for col, dim_name in type_cfg.get("dimension_lookups", {}).items():
-        if col not in df.columns:
+    for rule_id in active_rule_ids:
+        vrule = _VRULES.get(rule_id)
+        if not vrule or not vrule.get("enabled"):
             continue
-        valid_values = _get_dimension_values(dim_name)
-        bad_values = set(df[col].astype(str)) - valid_values
-        if bad_values:
-            errors.append(f"Unknown {col}: {sorted(bad_values)[:max_shown]}")
 
-    # 5. Ratio validation (allocation-specific)
-    ratio_cfg = type_cfg.get("ratio_validation")
-    if ratio_cfg and ratio_cfg.get("enabled"):
-        group_by = ratio_cfg["group_by"]
-        sum_col = ratio_cfg["sum_column"]
-        expected = ratio_cfg["expected_sum"]
-        tolerance = ratio_cfg["tolerance"]
-        if sum_col in df.columns and all(g in df.columns for g in group_by):
-            grouped = df.groupby(group_by)[sum_col].sum()
-            bad_ratios = grouped[abs(grouped - expected) > tolerance]
-            if not bad_ratios.empty:
-                for keys, total in bad_ratios.items():
-                    label = ", ".join(f"{g}={k}" for g, k in zip(group_by, keys if isinstance(keys, tuple) else (keys,)))
-                    errors.append(f"Ratio sum for {label} is {total:.4f}, expected {expected}")
+        new_errors = _run_validation_rule(rule_id, df, type_cfg, max_shown)
+        errors.extend(new_errors)
+
+        # Stop early if this rule is configured to halt on failure
+        if new_errors and vrule.get("stop_on_fail"):
+            break
+
+    return errors
+
+
+def _run_validation_rule(rule_id: str, df: pd.DataFrame, type_cfg: dict, max_shown: int) -> list[str]:
+    """Dispatch a single validation rule by its config id."""
+    errors = []
+
+    if rule_id == "required_columns":
+        for col in type_cfg["required_columns"]:
+            if col not in df.columns:
+                errors.append(f"Missing required column: {col}")
+
+    elif rule_id == "null_check":
+        req = [c for c in type_cfg["required_columns"] if c in df.columns]
+        if req and df[req].isnull().any().any():
+            null_cols = [c for c in req if df[c].isnull().any()]
+            errors.append(f"Null values found in: {null_cols}")
+
+    elif rule_id == "unique_key":
+        key = type_cfg.get("unique_key")
+        if key and key in df.columns and df[key].duplicated().any():
+            errors.append(f"Duplicate {key} values found.")
+
+    elif rule_id == "dimension_lookup":
+        for col, dim_name in type_cfg.get("dimension_lookups", {}).items():
+            if col not in df.columns:
+                continue
+            valid_values = _get_dimension_values(dim_name)
+            bad_values = set(df[col].astype(str)) - valid_values
+            if bad_values:
+                errors.append(f"Unknown {col}: {sorted(bad_values)[:max_shown]}")
+
+    elif rule_id == "ratio_sum":
+        ratio_cfg = type_cfg.get("ratio_validation")
+        if ratio_cfg and ratio_cfg.get("enabled"):
+            group_by = ratio_cfg["group_by"]
+            sum_col = ratio_cfg["sum_column"]
+            expected = ratio_cfg["expected_sum"]
+            tolerance = ratio_cfg["tolerance"]
+            if sum_col in df.columns and all(g in df.columns for g in group_by):
+                grouped = df.groupby(group_by)[sum_col].sum()
+                bad_ratios = grouped[abs(grouped - expected) > tolerance]
+                if not bad_ratios.empty:
+                    for keys, total in bad_ratios.items():
+                        label = ", ".join(f"{g}={k}" for g, k in zip(group_by, keys if isinstance(keys, tuple) else (keys,)))
+                        errors.append(f"Ratio sum for {label} is {total:.4f}, expected {expected}")
+
+    elif rule_id == "numeric_range":
+        for col, bounds in type_cfg.get("numeric_ranges", {}).items():
+            if col not in df.columns:
+                continue
+            col_data = pd.to_numeric(df[col], errors="coerce")
+            if bounds.get("min") is not None:
+                below = col_data[col_data < bounds["min"]]
+                if not below.empty:
+                    errors.append(f"{col}: {len(below)} values below minimum {bounds['min']}")
+            if bounds.get("max") is not None:
+                above = col_data[col_data > bounds["max"]]
+                if not above.empty:
+                    errors.append(f"{col}: {len(above)} values above maximum {bounds['max']}")
 
     return errors
 
