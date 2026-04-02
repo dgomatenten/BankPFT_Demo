@@ -1,0 +1,207 @@
+{# ── Data Filter Editor Component ──
+   Expects: filter_config (JSON obj), existing_filters (JSON string or None)
+   Emits: hidden input 'filter_json' with serialised filter conditions
+#}
+<div class="card mb-3" id="filter-editor">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-funnel"></i> Data Filters</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="add-filter-btn">
+            <i class="bi bi-plus-circle"></i> Add Condition
+        </button>
+    </div>
+    <div class="card-body">
+        <div class="mb-2">
+            <label class="form-label me-3">Match:</label>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="filter_logic" id="logic-and" value="AND" checked>
+                <label class="form-check-label" for="logic-and">ALL conditions (AND)</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="filter_logic" id="logic-or" value="OR">
+                <label class="form-check-label" for="logic-or">ANY condition (OR)</label>
+            </div>
+        </div>
+        <div id="filter-rows">
+            <p class="text-muted" id="no-filters-msg"><em>No filters — all source rows will be included.</em></p>
+        </div>
+    </div>
+</div>
+<input type="hidden" name="filter_json" id="filter_json_input" value="">
+
+<template id="filter-row-tpl">
+    <div class="row g-2 mb-2 align-items-center filter-row">
+        <div class="col-md-3">
+            <select class="form-select form-select-sm filter-field" required>
+                <option value="">— select field —</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select class="form-select form-select-sm filter-op" required>
+                <option value="">— select operator —</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <input type="text" class="form-control form-control-sm filter-value" placeholder="value">
+        </div>
+        <div class="col-md-2">
+            <button type="button" class="btn btn-sm btn-outline-danger remove-filter-btn" title="Remove">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    </div>
+</template>
+
+<script>
+(function() {
+    // Filter config injected from server
+    const FILTER_CFG = {{ filter_config | tojson }};
+    const container = document.getElementById('filter-rows');
+    const tpl = document.getElementById('filter-row-tpl');
+    const addBtn = document.getElementById('add-filter-btn');
+    const hiddenInput = document.getElementById('filter_json_input');
+    const noMsg = document.getElementById('no-filters-msg');
+    const sourceSelect = document.querySelector('select[name="source_table"]');
+
+    function getSourceTable() {
+        return sourceSelect ? sourceSelect.value : '{{ default_source|default("proc_inst_data") }}';
+    }
+
+    function getColumns() {
+        return FILTER_CFG.filterable_columns[getSourceTable()] || [];
+    }
+
+    function getOperators(colType) {
+        return FILTER_CFG.operators[colType] || [];
+    }
+
+    function populateFieldOptions(select) {
+        const cols = getColumns();
+        select.innerHTML = '<option value="">— select field —</option>';
+        cols.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.column;
+            opt.textContent = c.label;
+            opt.dataset.type = c.type;
+            select.appendChild(opt);
+        });
+    }
+
+    function populateOpOptions(opSelect, colType) {
+        const ops = getOperators(colType);
+        opSelect.innerHTML = '<option value="">— select operator —</option>';
+        ops.forEach(o => {
+            const opt = document.createElement('option');
+            opt.value = o.value;
+            opt.textContent = o.label;
+            opSelect.appendChild(opt);
+        });
+    }
+
+    function addRow(field, op, value) {
+        noMsg.style.display = 'none';
+        const clone = tpl.content.cloneNode(true);
+        const row = clone.querySelector('.filter-row');
+
+        const fieldSel = row.querySelector('.filter-field');
+        const opSel = row.querySelector('.filter-op');
+        const valInput = row.querySelector('.filter-value');
+
+        populateFieldOptions(fieldSel);
+
+        if (field) {
+            fieldSel.value = field;
+            const cols = getColumns();
+            const colMeta = cols.find(c => c.column === field);
+            if (colMeta) {
+                populateOpOptions(opSel, colMeta.type);
+                if (op) opSel.value = op;
+            }
+            if (value !== undefined) valInput.value = value;
+        }
+
+        // When field changes, update operators
+        fieldSel.addEventListener('change', function() {
+            const opt = fieldSel.selectedOptions[0];
+            const colType = opt ? opt.dataset.type : 'string';
+            populateOpOptions(opSel, colType || 'string');
+            syncHidden();
+        });
+
+        opSel.addEventListener('change', function() {
+            if (opSel.value === 'between') {
+                valInput.placeholder = 'min,max';
+            } else if (opSel.value === 'in' || opSel.value === 'not_in') {
+                valInput.placeholder = 'val1,val2,val3';
+            } else {
+                valInput.placeholder = 'value';
+            }
+            syncHidden();
+        });
+
+        valInput.addEventListener('input', syncHidden);
+
+        row.querySelector('.remove-filter-btn').addEventListener('click', function() {
+            row.remove();
+            if (container.querySelectorAll('.filter-row').length === 0) {
+                noMsg.style.display = '';
+            }
+            syncHidden();
+        });
+
+        container.appendChild(row);
+        syncHidden();
+    }
+
+    function syncHidden() {
+        const rows = container.querySelectorAll('.filter-row');
+        const logic = document.querySelector('input[name="filter_logic"]:checked').value;
+        const conditions = [];
+        rows.forEach(row => {
+            const field = row.querySelector('.filter-field').value;
+            const op = row.querySelector('.filter-op').value;
+            const val = row.querySelector('.filter-value').value;
+            if (field && op) {
+                conditions.push({field, operator: op, value: val});
+            }
+        });
+        if (conditions.length) {
+            hiddenInput.value = JSON.stringify({logic, conditions});
+        } else {
+            hiddenInput.value = '';
+        }
+    }
+
+    // Logic radio change
+    document.querySelectorAll('input[name="filter_logic"]').forEach(r => {
+        r.addEventListener('change', syncHidden);
+    });
+
+    addBtn.addEventListener('click', () => addRow());
+
+    // When source table changes, repopulate all field dropdowns
+    if (sourceSelect) {
+        sourceSelect.addEventListener('change', function() {
+            container.querySelectorAll('.filter-row').forEach(row => {
+                const fieldSel = row.querySelector('.filter-field');
+                const opSel = row.querySelector('.filter-op');
+                populateFieldOptions(fieldSel);
+                opSel.innerHTML = '<option value="">— select operator —</option>';
+                row.querySelector('.filter-value').value = '';
+            });
+            syncHidden();
+        });
+    }
+
+    // Load existing filters if present
+    const existingRaw = '{{ existing_filters|default("", true)|e }}';
+    if (existingRaw) {
+        try {
+            const existing = JSON.parse(existingRaw);
+            if (existing.logic === 'OR') {
+                document.getElementById('logic-or').checked = true;
+            }
+            (existing.conditions || []).forEach(c => addRow(c.field, c.operator, c.value));
+        } catch(e) { /* ignore bad JSON */ }
+    }
+})();
+</script>

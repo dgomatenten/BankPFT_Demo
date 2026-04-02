@@ -37,6 +37,80 @@ _LOOKUP_MODELS = {
 }
 
 
+def _apply_filters(df: pd.DataFrame, filter_json: str | None) -> pd.DataFrame:
+    """Apply user-defined filter conditions (stored as JSON) to a DataFrame."""
+    if not filter_json:
+        return df
+    try:
+        filt = json.loads(filter_json)
+    except (json.JSONDecodeError, TypeError):
+        return df
+
+    conditions = filt.get("conditions", [])
+    if not conditions:
+        return df
+
+    logic = filt.get("logic", "AND")
+    masks = []
+
+    for cond in conditions:
+        col = cond.get("field")
+        op = cond.get("operator")
+        val = cond.get("value", "")
+        if not col or not op or col not in df.columns:
+            continue
+
+        series = df[col]
+
+        if op == "eq":
+            m = series.astype(str) == val
+        elif op == "neq":
+            m = series.astype(str) != val
+        elif op == "gt":
+            m = pd.to_numeric(series, errors="coerce") > float(val)
+        elif op == "gte":
+            m = pd.to_numeric(series, errors="coerce") >= float(val)
+        elif op == "lt":
+            m = pd.to_numeric(series, errors="coerce") < float(val)
+        elif op == "lte":
+            m = pd.to_numeric(series, errors="coerce") <= float(val)
+        elif op == "between":
+            parts = [v.strip() for v in val.split(",")]
+            if len(parts) == 2:
+                num = pd.to_numeric(series, errors="coerce")
+                m = (num >= float(parts[0])) & (num <= float(parts[1]))
+            else:
+                continue
+        elif op == "in":
+            vals = {v.strip() for v in val.split(",")}
+            m = series.astype(str).isin(vals)
+        elif op == "not_in":
+            vals = {v.strip() for v in val.split(",")}
+            m = ~series.astype(str).isin(vals)
+        elif op == "contains":
+            m = series.astype(str).str.contains(val, case=False, na=False)
+        elif op == "starts_with":
+            m = series.astype(str).str.startswith(val, na=False)
+        else:
+            continue
+
+        masks.append(m)
+
+    if not masks:
+        return df
+
+    if logic == "OR":
+        combined = masks[0]
+        for m in masks[1:]:
+            combined = combined | m
+    else:
+        combined = masks[0]
+        for m in masks[1:]:
+            combined = combined & m
+
+    return df[combined].reset_index(drop=True)
+
+
 def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     """Execute allocation shredding using the rule's DB config + JSON column definitions."""
 
@@ -93,6 +167,15 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             {col: getattr(r, col) for col in src_cfg["columns"]}
             for r in source_rows
         ])
+
+        # ── 3b. Apply user-defined filters from the rule ──
+        source_data = _apply_filters(source_data, rule.filter_json)
+        if source_data.empty:
+            batch.status = "FAILED"
+            batch.error_message = "No rows remain after applying data filters."
+            batch.completed_at = datetime.utcnow()
+            db.session.commit()
+            return batch
 
         # ── 4. Load lookup ratios using config status filter ──
         alloc_rows = LookupModel.query.filter_by(status=lkp_cfg["status_filter"]).all()

@@ -1,0 +1,47 @@
+{
+    "description": "Defines available filter fields per source table and operators per data type. Used by the filter editor UI and allocation engine.",
+
+    "operators": {
+        "string": [
+            {"value": "eq", "label": "equals"},
+            {"value": "neq", "label": "not equals"},
+            {"value": "in", "label": "in list"},
+            {"value": "not_in", "label": "not in list"},
+            {"value": "contains", "label": "contains"},
+            {"value": "starts_with", "label": "starts with"}
+        ],
+        "float": [
+            {"value": "eq", "label": "="},
+            {"value": "neq", "label": "≠"},
+            {"value": "gt", "label": ">"},
+            {"value": "gte", "label": "≥"},
+            {"value": "lt", "label": "<"},
+            {"value": "lte", "label": "≤"},
+            {"value": "between", "label": "between"}
+        ],
+        "date": [
+            {"value": "eq", "label": "equals"},
+            {"value": "gt", "label": "after"},
+            {"value": "lt", "label": "before"},
+            {"value": "between", "label": "between"}
+        ]
+    },
+
+    "filterable_columns": {
+        "proc_inst_data": [
+            {"column": "account_id", "label": "Account ID", "type": "string"},
+            {"column": "customer_id", "label": "Customer ID", "type": "string"},
+            {"column": "product_code", "label": "Product Code", "type": "string"},
+            {"column": "org_unit_id", "label": "Org Unit", "type": "string"},
+            {"column": "balance", "label": "Balance", "type": "float"},
+            {"column": "interest_income", "label": "Interest Income", "type": "float"}
+        ],
+        "proc_gl_data": [
+            {"column": "gl_account", "label": "GL Account", "type": "string"},
+            {"column": "org_unit_id", "label": "Org Unit", "type": "string"},
+            {"column": "balance", "label": "Balance", "type": "float"},
+            {"column": "debit", "label": "Debit", "type": "float"},
+            {"column": "credit", "label": "Credit", "type": "float"}
+        ]
+    }
+}

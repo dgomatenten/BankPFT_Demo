@@ -8,6 +8,10 @@ _CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "rule_config
 with open(_CFG_PATH) as _f:
     RULE_CONFIG = json.load(_f)
 
+_FILTER_CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "filter_config.json")
+with open(_FILTER_CFG_PATH) as _f:
+    FILTER_CONFIG = json.load(_f)
+
 bp = Blueprint("rules", __name__)
 
 
@@ -20,6 +24,7 @@ def list_rules():
 @bp.route("/new", methods=["GET", "POST"])
 def new_rule():
     if request.method == "POST":
+        filter_raw = request.form.get("filter_json", "").strip()
         rule = AllocationRule(
             name=request.form["name"],
             description=request.form.get("description", ""),
@@ -27,6 +32,7 @@ def new_rule():
             lookup_table=request.form.get("lookup_table", "ref_static_allocation"),
             output_table=request.form.get("output_table", "fct_mgmt_ledger"),
             join_key=request.form.get("join_key", "customer_id"),
+            filter_json=filter_raw if filter_raw else None,
             created_by=request.form.get("created_by", "user1"),
             status="ACTIVE",
         )
@@ -35,7 +41,7 @@ def new_rule():
         flash(f"Rule '{rule.name}' created and active.", "success")
         return redirect(url_for("rules.detail", rule_id=rule.id))
 
-    return render_template("rules/new.html", rule_config=RULE_CONFIG)
+    return render_template("rules/new.html", rule_config=RULE_CONFIG, filter_config=FILTER_CONFIG)
 
 
 @bp.route("/<int:rule_id>")

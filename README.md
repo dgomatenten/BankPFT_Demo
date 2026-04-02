@@ -8,7 +8,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 |---|---|
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Maker cannot approve their own submission |
-| **Allocation Rules** | Configure source table, lookup table, output table, and join key. Rules are immediately active |
+| **Allocation Rules** | Configure source table, lookup table, output table, join key, and data filters. Rules are immediately active |
 | **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser |
 | **Test Data Generator** | Generate master data, instrument data, GL data, and allocation ratio Excel files for testing |
@@ -64,6 +64,7 @@ app/
 │   ├── upload_config.json     # Upload types, columns, validation rule lists
 │   ├── validation_rules.json  # Validation rule definitions (enabled/severity/stop)
 │   ├── rule_config.json       # Allocation rule form options & defaults
+│   ├── filter_config.json     # Filterable columns & operators per source table
 │   └── allocation_config.json # Allocation engine settings
 ├── models/
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
@@ -117,7 +118,9 @@ Database    =  uploaded data, workflow state, execution results           (WHAT 
 |---|---|---|
 | Form dropdown options | **JSON** `rule_config.json` | Source/lookup/output tables, join keys |
 | Default form selections | **JSON** `rule_config.json` | `defaults` section |
+| Filter field/operator options | **JSON** `filter_config.json` | Available columns & operators per source table |
 | User's chosen rule config | **DB** `allocation_rule` | `source_table`, `lookup_table`, `output_table`, `join_key` saved per rule |
+| User's data filter conditions | **DB** `allocation_rule.filter_json` | JSON: `{"logic":"AND","conditions":[{"field":"..","operator":"..","value":".."}]}` |
 | Rule active/inactive state | **DB** `allocation_rule` | `is_active`, `status` |
 
 When a user creates a rule via the form, the dropdowns come from `rule_config.json`, but the selected values are **saved to the database**. Each rule can have different table/join combinations.
@@ -135,10 +138,11 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 **Engine flow:**
 ```
 1. User clicks "Run Allocation" with rule_id
-2. Engine loads AllocationRule from DB → gets source_table, join_key, etc.
+2. Engine loads AllocationRule from DB → gets source_table, join_key, filter_json, etc.
 3. Engine looks up column definitions in allocation_config.json for that table
-4. Engine queries source data (e.g. proc_inst_data) and lookup data (e.g. ref_static_allocation)
-5. Pandas join on the rule's join_key → apply ratio → write to fct_mgmt_ledger
+4. Engine queries source data (e.g. proc_inst_data) and applies data filters
+5. Engine queries lookup data (e.g. ref_static_allocation)
+6. Pandas join on the rule's join_key → apply ratio → write to fct_mgmt_ledger
 ```
 
 **To add a new source table:** add its column config to `allocation_config.json` and its option to `rule_config.json`.
@@ -192,6 +196,19 @@ Drives the allocation rule creation form:
 
 All dropdowns in the "Create Rule" form are rendered from this file. Values must match keys in `allocation_config.json`.
 
+### `app/config/filter_config.json`
+
+Defines the data filter editor used in allocation rules:
+- **operators** — available operators grouped by data type (`string`, `float`, `date`)
+  - String: `eq`, `neq`, `in`, `not_in`, `contains`, `starts_with`
+  - Float: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `between`
+  - Date: `eq`, `gt` (after), `lt` (before), `between`
+- **filterable_columns** — per source table, lists which columns can be filtered with their label and data type
+
+The filter editor dynamically updates when the source table changes — only columns belonging to the selected table are shown.
+
+Filter conditions are stored as JSON in `allocation_rule.filter_json` and applied by the engine as Pandas DataFrame conditions before the join step.
+
 ### `app/config/allocation_config.json`
 
 Controls the batch allocation engine with per-table column definitions:
@@ -206,8 +223,8 @@ Controls the batch allocation engine with per-table column definitions:
 1. **Generate test data** — Go to `/testdata` and generate master data, then instrument data and allocation ratios
 2. **Upload data** — Go to `/upload/new`, select data type, upload the Excel file. Validation runs automatically
 3. **Approve uploads** — A different user reviews staged data and approves (4-Eyes enforcement)
-4. **Create a rule** — Go to `/rules/new`, configure source → lookup → output mapping
-5. **Run batch** — Go to `/batch`, select a rule and as-of date, execute the allocation
+4. **Create a rule** — Go to `/rules/new`, configure source → lookup → output mapping, and optionally add data filters
+5. **Run batch** — Go to `/batch`, select a rule and as-of date, execute the allocation (filters are applied automatically)
 6. **View results** — Check the Management Ledger report and execution log under `/reports`
 
 ## Data Validation

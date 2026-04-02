@@ -1,6 +1,7 @@
 from flask import Flask
 from app.config import Config
 from app.models import db
+import json
 import os
 
 # Pre-import model modules to avoid local variable shadowing in create_app
@@ -37,5 +38,8 @@ def create_app(config_class=Config):
 
     with flask_app.app_context():
         db.create_all()
+
+    # Custom Jinja filter for parsing JSON in templates
+    flask_app.jinja_env.filters["from_json"] = lambda s: json.loads(s) if s else {}
 
     return flask_app

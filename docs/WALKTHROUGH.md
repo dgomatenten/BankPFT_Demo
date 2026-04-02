@@ -12,15 +12,16 @@ This guide walks through every screen in the Management Allocation System, expla
 4. [Data Upload — Detail & Maker/Checker](#4-data-upload--detail--makechecker)
 5. [Allocation Rules — List](#5-allocation-rules--list)
 6. [Allocation Rules — New Rule](#6-allocation-rules--new-rule)
-7. [Allocation Rules — Detail](#7-allocation-rules--detail)
-8. [Batch Execution](#8-batch-execution)
-9. [Batch Execution — Detail](#9-batch-execution--detail)
-10. [Reports — Index](#10-reports--index)
-11. [Management Ledger Report](#11-management-ledger-report)
-12. [Operations Report](#12-operations-report)
-13. [Database Table Browser](#13-database-table-browser)
-14. [Table Browser — Data View](#14-table-browser--data-view)
-15. [Test Data Generator](#15-test-data-generator)
+7. [Allocation Rules — Data Filter Editor](#7-allocation-rules--data-filter-editor)
+8. [Allocation Rules — Detail (with Filters)](#8-allocation-rules--detail-with-filters)
+9. [Batch Execution](#9-batch-execution)
+10. [Batch Execution — Detail](#10-batch-execution--detail)
+11. [Reports — Index](#11-reports--index)
+12. [Management Ledger Report](#12-management-ledger-report)
+13. [Operations Report](#13-operations-report)
+14. [Database Table Browser](#14-database-table-browser)
+15. [Table Browser — Data View](#15-table-browser--data-view)
+16. [Test Data Generator](#16-test-data-generator)
 
 ---
 
@@ -136,30 +137,55 @@ Create a new allocation rule by configuring its source-to-output mapping.
 4. **Lookup Table** — the allocation ratio table to join with
 5. **Output Table** — where to write the allocated results
 6. **Join Key** — the column used to join source data with ratios (e.g., customer_id, org_unit_id, product_code)
-7. **Created By** — your user ID
-8. **Click Create Rule** — the rule is saved and immediately active
+7. **Data Filters** — optional conditions to filter source data before allocation (see next section)
+8. **Created By** — your user ID
+9. **Click Create Rule** — the rule is saved and immediately active
 
 All dropdown options are driven by `rule_config.json` — add new tables or join keys by editing the config file.
 
 ---
 
-## 7. Allocation Rules — Detail
+## 7. Allocation Rules — Data Filter Editor
+
+**URL:** `/rules/new` (bottom of the form)
+
+The filter editor lets you restrict which source rows are included when the allocation engine runs.
+
+![Filter Editor with Conditions](images/17_rule_filter_conditions.png)
+
+**How to use:**
+1. **Click "Add Condition"** — adds a new filter row
+2. **Select Field** — dropdown shows filterable columns for the selected source table (driven by `filter_config.json`)
+3. **Select Operator** — operators change based on the field's data type:
+   - **String fields:** equals, not equals, in list, not in list, contains, starts with
+   - **Numeric fields:** =, ≠, >, ≥, <, ≤, between
+   - **Date fields:** equals, after, before, between
+4. **Enter Value** — for `in`/`not in`, use comma-separated values; for `between`, use `min,max`
+5. **Match Logic** — choose ALL conditions (AND) or ANY condition (OR)
+6. **Remove** — click the × button to remove a condition
+
+Filters are saved as JSON in the database and applied automatically during batch execution.
+
+---
+
+## 8. Allocation Rules — Detail (with Filters)
 
 **URL:** `/rules/<rule_id>`
 
-View a rule's full configuration and manage its state.
+View a rule's full configuration, including saved data filters.
 
-![Rule Detail](images/13_rule_detail.png)
+![Rule Detail with Filters](images/18_rule_detail_with_filters.png)
 
 **Key elements:**
 - Full rule configuration (source, lookup, output, join key)
+- **Data Filters** section — shows the saved filter logic (AND/OR) and conditions table
 - **Toggle Active/Inactive** — enable or disable the rule without deleting it
 - **Delete Rule** — permanently remove the rule
 - **Allocation ratios preview** — shows the APPROVED allocation ratios that this rule would use
 
 ---
 
-## 8. Batch Execution
+## 9. Batch Execution
 
 **URL:** `/batch`
 
@@ -174,6 +200,7 @@ Run allocation rules against processed data and view past batch runs.
 
 **What happens during execution:**
 - Source data is read from the configured table (filtered by date)
+- **Data filters are applied** — if the rule has filter conditions, only matching rows are included
 - Allocation ratios are looked up from the configured lookup table
 - A left join matches source rows to ratios by the join key
 - Balance and income columns are multiplied by the ratio
@@ -184,7 +211,7 @@ Run allocation rules against processed data and view past batch runs.
 
 ---
 
-## 9. Batch Execution — Detail
+## 10. Batch Execution — Detail
 
 **URL:** `/batch/<batch_id>`
 
@@ -199,7 +226,7 @@ View details of a completed batch run.
 
 ---
 
-## 10. Reports — Index
+## 11. Reports — Index
 
 **URL:** `/reports`
 
@@ -215,11 +242,11 @@ Hub page with links to all available reports.
 
 ---
 
-## 11. Management Ledger Report
+## 12. Management Ledger Report
 
 **URL:** `/reports/ledger`
 
-The primary output report — shows allocated balances and income grouped by dimension.
+The primary output report
 
 ![Management Ledger](images/08_mgmt_ledger.png)
 
@@ -238,7 +265,7 @@ This report shows how financial balances have been redistributed from legal/book
 
 ---
 
-## 12. Operations Report
+## 13. Operations Report
 
 **URL:** `/reports/operations`
 
@@ -254,7 +281,7 @@ System activity and health overview.
 
 ---
 
-## 13. Database Table Browser
+## 14. Database Table Browser
 
 **URL:** `/reports/tables`
 
@@ -268,7 +295,7 @@ Browse, search, and edit data in any database table.
 
 ---
 
-## 14. Table Browser — Data View
+## 15. Table Browser — Data View
 
 **URL:** `/reports/tables?table=<table_name>`
 
@@ -287,7 +314,7 @@ Useful for verifying dimension data, checking staged records, or inspecting allo
 
 ---
 
-## 15. Test Data Generator
+## 16. Test Data Generator
 
 **URL:** `/testdata`
 
@@ -331,6 +358,6 @@ Generate realistic test data for the system.
 1. **Generate** test data (or prepare your own Excel/CSV files)
 2. **Upload** files via Data Upload — validation runs automatically
 3. **Approve** uploads through the Maker/Checker workflow (4-Eyes)
-4. **Create** an allocation rule defining the source → lookup → output mapping
-5. **Execute** a batch run to allocate balances using the rule
+4. **Create** an allocation rule defining the source → lookup → output mapping, with optional data filters
+5. **Execute** a batch run to allocate balances using the rule (filters are applied automatically)
 6. **Review** results in the Management Ledger Report

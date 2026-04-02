@@ -52,6 +52,10 @@
                 <label class="form-label">Created By</label>
                 <input type="text" name="created_by" class="form-control" value="user1" required>
             </div>
+
+            {# ── Data Filter Editor ── #}
+            {% include "components/filter_editor.html" %}
+
             <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Create Rule</button>
             <a href="/rules" class="btn btn-outline-secondary ms-2">Cancel</a>
         </form>

@@ -30,6 +30,7 @@ class AllocationRule(db.Model):
     lookup_table = db.Column(db.String(50), default="ref_static_allocation")
     output_table = db.Column(db.String(50), default="fct_mgmt_ledger")
     join_key = db.Column(db.String(50), default="customer_id")
+    filter_json = db.Column(db.Text, nullable=True)  # JSON: {"logic":"AND","conditions":[...]}
     is_active = db.Column(db.Boolean, default=True)
     status = db.Column(db.String(20), default="ACTIVE")
     created_by = db.Column(db.String(50), nullable=True)

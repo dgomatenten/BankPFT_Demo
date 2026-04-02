@@ -27,6 +27,27 @@
     </div>
 </div>
 
+{# ── Saved Data Filters ── #}
+{% if rule.filter_json %}
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-funnel"></i> Data Filters</div>
+    <div class="card-body p-0">
+        {% set filters = rule.filter_json | from_json %}
+        {% if filters and filters.conditions %}
+        <p class="px-3 pt-3 mb-2">Logic: <span class="badge bg-info">{{ filters.logic }}</span></p>
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Field</th><th>Operator</th><th>Value</th></tr></thead>
+            <tbody>
+            {% for c in filters.conditions %}
+            <tr><td>{{ c.field }}</td><td><code>{{ c.operator }}</code></td><td>{{ c.value }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 {# ── Rule Actions ── #}
 <div class="card mb-4">
     <div class="card-header">Actions</div>
