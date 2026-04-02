@@ -83,6 +83,28 @@
                 "ratio": {"type": "float"}
             },
             "validation_rules": ["required_columns", "null_check", "dimension_lookup", "ratio_sum", "numeric_range"]
+        },
+        "ORG_RECLASS": {
+            "label": "Org Reclassification",
+            "description": "Org unit reclassification mapping (1:1)",
+            "required_columns": ["reclass_id", "source_org_unit_id", "target_org_unit_id"],
+            "optional_columns": ["ratio"],
+            "unique_key": null,
+            "staging_table": "ref_org_reclass",
+            "dimension_lookups": {
+                "source_org_unit_id": "dim_org_unit",
+                "target_org_unit_id": "dim_org_unit"
+            },
+            "numeric_ranges": {
+                "ratio": {"min": 0, "max": 1}
+            },
+            "column_mapping": {
+                "reclass_id": {"type": "string"},
+                "source_org_unit_id": {"type": "string"},
+                "target_org_unit_id": {"type": "string"},
+                "ratio": {"type": "float", "default": 1.0}
+            },
+            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"]
         }
     }
 }

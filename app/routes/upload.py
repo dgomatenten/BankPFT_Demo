@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.models import db
 from app.models.workflow import UploadBatch
 from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
-from app.models.allocation import RefStaticAllocation
+from app.models.allocation import RefStaticAllocation, RefOrgReclass
 from app.services.upload_service import allowed_file, process_upload, UPLOAD_CONFIG
 from app.services import transition, WorkflowError
 from werkzeug.utils import secure_filename
@@ -69,6 +69,10 @@ def detail(batch_id):
         stg = RefStaticAllocation.query.filter_by(upload_batch_id=batch_id).limit(20).all()
         preview_cols = ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio", "status"]
         preview_rows = [{c: getattr(r, c) for c in preview_cols} for r in stg]
+    elif batch.data_type == "ORG_RECLASS":
+        stg = RefOrgReclass.query.filter_by(upload_batch_id=batch_id).limit(20).all()
+        preview_cols = ["reclass_id", "source_org_unit_id", "target_org_unit_id", "ratio", "status"]
+        preview_rows = [{c: getattr(r, c) for c in preview_cols} for r in stg]
 
     return render_template("upload/detail.html", batch=batch, errors=errors,
                            preview_cols=preview_cols, preview_rows=preview_rows)
@@ -101,6 +105,10 @@ def action(batch_id):
             RefStaticAllocation.query.filter_by(
                 upload_batch_id=batch.id
             ).update({"status": "APPROVED", "checker_id": actor_id})
+        elif batch.data_type == "ORG_RECLASS":
+            RefOrgReclass.query.filter_by(
+                upload_batch_id=batch.id
+            ).update({"status": "APPROVED", "checker_id": actor_id})
 
     db.session.commit()
     flash(f"Batch {target_status.lower()} successfully.", "success")
@@ -118,6 +126,7 @@ def delete(batch_id):
     StgInstData.query.filter_by(upload_batch_id=batch_id).delete()
     StgGlData.query.filter_by(upload_batch_id=batch_id).delete()
     RefStaticAllocation.query.filter_by(upload_batch_id=batch_id).delete()
+    RefOrgReclass.query.filter_by(upload_batch_id=batch_id).delete()
 
     db.session.delete(batch)
     db.session.commit()

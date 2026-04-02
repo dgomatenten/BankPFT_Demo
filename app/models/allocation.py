@@ -19,6 +19,22 @@ class RefStaticAllocation(db.Model):
     comments = db.Column(db.Text, nullable=True)
 
 
+class RefOrgReclass(db.Model):
+    __tablename__ = "ref_org_reclass"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    reclass_id = db.Column(db.String(36), nullable=False, index=True)
+    source_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
+    target_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
+    ratio = db.Column(db.Float, nullable=False, default=1.0)
+    status = db.Column(db.String(20), default="DRAFT")
+    maker_id = db.Column(db.String(50), nullable=False)
+    checker_id = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    comments = db.Column(db.Text, nullable=True)
+
+
 class FctMgmtLedger(db.Model):
     __tablename__ = "fct_mgmt_ledger"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)

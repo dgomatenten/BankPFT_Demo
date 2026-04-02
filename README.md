@@ -6,7 +6,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 
 | Module | Description |
 |---|---|
-| **Data Upload** | Excel/CSV upload for Instrument, GL, and Allocation Ratio data with column-level validation |
+| **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Maker cannot approve their own submission |
 | **Allocation Rules** | Configure source table, lookup table, output table, and join key. Rules are immediately active |
 | **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic |
@@ -25,7 +25,7 @@ Processing (PROC_INST_DATA, PROC_GL_DATA)
 Result (FCT_MGMT_LEDGER)
 ```
 
-Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_id`. Each customer's ratios must sum to 1.0 per allocation group.
+Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_id`. Each customer's ratios must sum to 1.0 per allocation group. Org reclassifications are stored in `REF_ORG_RECLASS` as 1:1 org-to-org mappings (ratio always 1.0).
 
 ## Tech Stack
 
@@ -68,7 +68,7 @@ app/
 ├── models/
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
-│   ├── allocation.py        # RefStaticAllocation, FctMgmtLedger
+│   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger
 │   └── workflow.py          # UploadBatch, AllocationRule, BatchRun
 ├── routes/
 │   ├── dashboard.py         # Home dashboard
@@ -100,7 +100,7 @@ Database    =  uploaded data, workflow state, execution results           (WHAT 
 
 | Aspect | Source | Details |
 |---|---|---|
-| Data types (INSTRUMENT, GL, ALLOCATION) | **JSON** `upload_config.json` | Labels, descriptions, required/optional columns |
+| Data types (INSTRUMENT, GL, ALLOCATION, ORG_RECLASS) | **JSON** `upload_config.json` | Labels, descriptions, required/optional columns |
 | Which validation rules run per type | **JSON** `upload_config.json` | `validation_rules` list per data type |
 | Validation rule behavior | **JSON** `validation_rules.json` | Enabled, severity, stop_on_fail |
 | Column casting & defaults | **JSON** `upload_config.json` | `column_mapping` per data type |
@@ -143,11 +143,22 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 
 **To add a new source table:** add its column config to `allocation_config.json` and its option to `rule_config.json`.
 
+## Lookup Tables
+
+The system supports multiple lookup tables that the allocation engine can join against:
+
+| Lookup Table | Purpose | Join Key | Ratio |
+|---|---|---|---|
+| `ref_static_allocation` | Shred balances across orgs by customer-level ratios | `customer_id` | Variable (must sum to 1.0 per group) |
+| `ref_org_reclass` | Reclassify one org unit to another (1:1 mapping) | `org_unit_id` | Always 1.0 |
+
+Both tables follow the Maker/Checker workflow (DRAFT → PENDING → APPROVED) and are uploaded via the standard upload screen.
+
 ## JSON Configuration Files
 
 ### `app/config/upload_config.json`
 
-Defines each upload data type (INSTRUMENT, GL, ALLOCATION) with:
+Defines each upload data type (INSTRUMENT, GL, ALLOCATION, ORG_RECLASS) with:
 - **label / description** — display name and tooltip shown in the upload form
 - **required_columns / optional_columns** — which columns must exist in the upload
 - **unique_key** — column checked for duplicates (e.g. `account_id`)
@@ -174,7 +185,7 @@ Built-in rules: `required_columns`, `null_check`, `unique_key`, `dimension_looku
 
 Drives the allocation rule creation form:
 - **source_tables** — selectable source tables (value/label pairs)
-- **lookup_tables** — selectable lookup tables
+- **lookup_tables** — selectable lookup tables (e.g. Static Allocation, Org Reclassification)
 - **output_tables** — selectable output tables
 - **join_keys** — selectable join keys (e.g. `customer_id`, `org_unit_id`, `product_code`)
 - **defaults** — pre-selected values for each dropdown

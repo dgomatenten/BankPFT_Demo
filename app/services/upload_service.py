@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 from app.models import db
 from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccount
 from app.models.staging import StgInstData, StgGlData
-from app.models.allocation import RefStaticAllocation
+from app.models.allocation import RefStaticAllocation, RefOrgReclass
 from app.models.workflow import UploadBatch
 
 # ── Load configuration ──
@@ -36,6 +36,7 @@ _STAGING_MODELS = {
     "stg_inst_data": StgInstData,
     "stg_gl_data": StgGlData,
     "ref_static_allocation": RefStaticAllocation,
+    "ref_org_reclass": RefOrgReclass,
 }
 
 
@@ -183,8 +184,8 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
                 value = row.get(col_name, col_cfg.get("default"))
                 record_data[col_name] = _cast_value(value, col_cfg)
 
-            # Add extra fields for allocation records
-            if data_type == "ALLOCATION":
+            # Add extra fields for allocation / reclass records
+            if data_type in ("ALLOCATION", "ORG_RECLASS"):
                 record_data["status"] = "PENDING"
                 record_data["maker_id"] = maker_id
 

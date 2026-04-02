@@ -17,7 +17,7 @@ from datetime import datetime
 import pandas as pd
 from app.models import db
 from app.models.staging import ProcInstData, ProcGlData
-from app.models.allocation import RefStaticAllocation, FctMgmtLedger
+from app.models.allocation import RefStaticAllocation, RefOrgReclass, FctMgmtLedger
 from app.models.workflow import AllocationRule, BatchRun
 
 # ── Load configuration ──
@@ -33,6 +33,7 @@ _SOURCE_MODELS = {
 
 _LOOKUP_MODELS = {
     "ref_static_allocation": RefStaticAllocation,
+    "ref_org_reclass": RefOrgReclass,
 }
 
 

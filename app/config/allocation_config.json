@@ -29,6 +29,15 @@
             "ratio_column": "ratio",
             "target_org_column": "target_org_unit_id",
             "status_filter": "APPROVED"
+        },
+        "ref_org_reclass": {
+            "label": "Org Reclassification",
+            "model": "RefOrgReclass",
+            "columns": ["reclass_id", "source_org_unit_id", "target_org_unit_id", "ratio"],
+            "id_column": "reclass_id",
+            "ratio_column": "ratio",
+            "target_org_column": "target_org_unit_id",
+            "status_filter": "APPROVED"
         }
     },
 
