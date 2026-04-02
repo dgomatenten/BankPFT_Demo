@@ -1,0 +1,28 @@
+{
+  "name": "GL Org Reclassification — DEBIT only",
+  "description": "Reclassify GL balances from one org unit to another using the org reclassification table. Produces DEBIT entries only (no credit offset). The GL account dimension is preserved as-is; org unit is remapped via the lookup.",
+  "source_table": "proc_gl_data",
+  "lookup_table": "ref_org_reclass",
+  "output_table": "fct_mgmt_ledger",
+  "join_key": "org_unit_id",
+  "entry_mode": "DEBIT_ONLY",
+  "filter_json": {
+    "logic": "AND",
+    "conditions": [
+      {
+        "field": "gl_account",
+        "operator": "starts_with",
+        "value": "5"
+      }
+    ]
+  },
+  "source_dim_json": {
+    "gl_account": { "mode": "all" },
+    "org_unit_id": { "mode": "specific", "members": ["OU001", "OU002", "OU003"] }
+  },
+  "output_dim_json": {
+    "gl_account":  { "mode": "same_as_source" },
+    "org_unit_id": { "mode": "lookup", "lookup_column": "target_org_unit_id" }
+  },
+  "credit_dim_json": {}
+}

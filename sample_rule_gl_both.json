@@ -1,0 +1,36 @@
+{
+  "name": "GL Org Reclass — DEBIT + CREDIT",
+  "description": "Reclassify GL balances between org units with a full double-entry. DEBIT posts to the target org (from lookup) keeping the same GL account. CREDIT reverses at the source org and posts to a dedicated clearing GL account (GL-CLR-8000) so the source ledger nets to zero.",
+  "source_table": "proc_gl_data",
+  "lookup_table": "ref_org_reclass",
+  "output_table": "fct_mgmt_ledger",
+  "join_key": "org_unit_id",
+  "entry_mode": "BOTH",
+  "filter_json": {
+    "logic": "OR",
+    "conditions": [
+      {
+        "field": "gl_account",
+        "operator": "starts_with",
+        "value": "4"
+      },
+      {
+        "field": "gl_account",
+        "operator": "starts_with",
+        "value": "5"
+      }
+    ]
+  },
+  "source_dim_json": {
+    "gl_account":  { "mode": "all" },
+    "org_unit_id": { "mode": "specific", "members": ["OU001", "OU002", "OU005"] }
+  },
+  "output_dim_json": {
+    "gl_account":  { "mode": "same_as_source" },
+    "org_unit_id": { "mode": "lookup", "lookup_column": "target_org_unit_id" }
+  },
+  "credit_dim_json": {
+    "gl_account":  { "mode": "fixed", "value": "GL-CLR-8000" },
+    "org_unit_id": { "mode": "same_as_source" }
+  }
+}

@@ -22,15 +22,15 @@
         </div>
         <div class="row mt-2">
             <div class="col-md-4">
-                <strong>Offset Entry:</strong>
-                {% if rule.generate_offset %}
+                <strong>Entry Mode:</strong>
+                {% set em = rule.entry_mode or ('BOTH' if rule.generate_offset else 'DEBIT_ONLY') %}
+                {% if em == 'BOTH' %}
                     <span class="badge bg-success">DEBIT + CREDIT</span>
+                {% elif em == 'CREDIT_ONLY' %}
+                    <span class="badge bg-warning text-dark">CREDIT only</span>
                 {% else %}
-                    <span class="badge bg-secondary">DEBIT only</span>
+                    <span class="badge bg-primary">DEBIT only</span>
                 {% endif %}
-            </div>
-            <div class="col-md-4">
-                <strong>Offset Account:</strong> {{ rule.offset_account or '—' }}
             </div>
         </div>
         {% if rule.description %}
@@ -62,10 +62,11 @@
 </div>
 {% endif %}
 
-{# ── Output Dimension Mapping ── #}
-{% if rule.output_dim_json %}
+{# ── Output Dimension Mapping (DEBIT) ── #}
+{% set _em = rule.entry_mode or ('BOTH' if rule.generate_offset else 'DEBIT_ONLY') %}
+{% if rule.output_dim_json and _em in ('BOTH', 'DEBIT_ONLY') %}
 <div class="card mb-4">
-    <div class="card-header bg-success text-white"><i class="bi bi-diagram-3"></i> Output Dimension Mapping</div>
+    <div class="card-header bg-success text-white"><i class="bi bi-arrow-up-circle"></i> Debit Entry — Dimension Mapping</div>
     <div class="card-body p-0">
         {% set out_dims = rule.output_dim_json | from_json %}
         <table class="table table-sm mb-0">
@@ -84,6 +85,36 @@
             {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Credit Dimension Mapping (CREDIT) ── #}
+{% if _em in ('BOTH', 'CREDIT_ONLY') %}
+<div class="card mb-4">
+    <div class="card-header bg-warning text-dark"><i class="bi bi-arrow-down-circle"></i> Credit Entry — Dimension Mapping</div>
+    <div class="card-body p-0">
+        {% if rule.credit_dim_json %}
+        {% set crd_dims = rule.credit_dim_json | from_json %}
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Dimension</th><th>Mode</th><th>Detail</th></tr></thead>
+            <tbody>
+            {% for dim, cfg in crd_dims.items() %}
+            <tr>
+                <td>{{ dim }}</td>
+                <td><span class="badge bg-primary">{{ cfg.mode }}</span></td>
+                <td>
+                    {% if cfg.mode == 'lookup' %}{{ cfg.lookup_column or '—' }}
+                    {% elif cfg.mode == 'fixed' %}{{ cfg.value or '—' }}
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="px-3 py-2 mb-0 text-muted">All dimensions: <span class="badge bg-secondary">same_as_source</span> (default — credit reverses at source dimensions)</p>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -112,9 +143,12 @@
 {# ── Rule Actions ── #}
 <div class="card mb-4">
     <div class="card-header">Actions</div>
-    <div class="card-body d-flex gap-2">
+    <div class="card-body d-flex gap-2 flex-wrap">
+        <a href="/rules/{{ rule.id }}/edit" class="btn btn-warning">
+            <i class="bi bi-pencil-square"></i> Edit Rule
+        </a>
         <form method="POST" action="/rules/{{ rule.id }}/toggle">
-            <button class="btn btn-{{ 'warning' if rule.is_active else 'success' }}">
+            <button class="btn btn-{{ 'secondary' if rule.is_active else 'success' }}">
                 <i class="bi bi-{{ 'pause-circle' if rule.is_active else 'play-circle' }}"></i>
                 {{ 'Deactivate Rule' if rule.is_active else 'Activate Rule' }}
             </button>

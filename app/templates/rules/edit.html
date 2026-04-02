@@ -1,7 +1,7 @@
 {% extends "layout/base.html" %}
-{% block title %}New Rule — BankPFT{% endblock %}
+{% block title %}Edit Rule — BankPFT{% endblock %}
 {% block content %}
-<h2 class="mb-4">Create Allocation Rule</h2>
+<h2 class="mb-4">Edit Rule: {{ rule.name }}</h2>
 
 <div class="card">
     <div class="card-body">
@@ -10,11 +10,11 @@
             {# ── Basic info ── #}
             <div class="mb-3">
                 <label class="form-label">Rule Name</label>
-                <input type="text" name="name" class="form-control" placeholder="e.g. Customer Shred Q1" required>
+                <input type="text" name="name" class="form-control" value="{{ rule.name }}" required>
             </div>
             <div class="mb-3">
                 <label class="form-label">Description</label>
-                <textarea name="description" class="form-control" rows="2"></textarea>
+                <textarea name="description" class="form-control" rows="2">{{ rule.description or '' }}</textarea>
             </div>
 
             {# ── Table / key selection ── #}
@@ -23,7 +23,7 @@
                     <label class="form-label">Source Table</label>
                     <select name="source_table" id="source_table" class="form-select">
                         {% for opt in rule_config.source_tables %}
-                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.source_table }}>{{ opt.label }}</option>
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule.source_table }}>{{ opt.label }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -31,7 +31,7 @@
                     <label class="form-label">Lookup Table</label>
                     <select name="lookup_table" id="lookup_table" class="form-select">
                         {% for opt in rule_config.lookup_tables %}
-                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.lookup_table }}>{{ opt.label }}</option>
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule.lookup_table }}>{{ opt.label }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -39,7 +39,7 @@
                     <label class="form-label">Output Table</label>
                     <select name="output_table" class="form-select">
                         {% for opt in rule_config.output_tables %}
-                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.output_table }}>{{ opt.label }}</option>
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule.output_table }}>{{ opt.label }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -47,27 +47,28 @@
                     <label class="form-label">Join Key</label>
                     <select name="join_key" class="form-select">
                         {% for opt in rule_config.join_keys %}
-                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.join_key }}>{{ opt.label }}</option>
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule.join_key }}>{{ opt.label }}</option>
                         {% endfor %}
                     </select>
                 </div>
             </div>
 
             {# ── Entry Mode ── #}
+            {% set cur_mode = rule.entry_mode or ('BOTH' if rule.generate_offset else 'DEBIT_ONLY') %}
             <div class="card mb-3 border-primary">
                 <div class="card-header bg-primary text-white"><i class="bi bi-arrow-left-right"></i> Entry Mode</div>
                 <div class="card-body">
                     <div class="d-flex gap-4">
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="entry_mode" id="em_both" value="BOTH" checked>
+                            <input class="form-check-input" type="radio" name="entry_mode" id="em_both" value="BOTH" {{ 'checked' if cur_mode == 'BOTH' }}>
                             <label class="form-check-label" for="em_both"><strong>Both</strong> — DEBIT + CREDIT</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="entry_mode" id="em_debit" value="DEBIT_ONLY">
+                            <input class="form-check-input" type="radio" name="entry_mode" id="em_debit" value="DEBIT_ONLY" {{ 'checked' if cur_mode == 'DEBIT_ONLY' }}>
                             <label class="form-check-label" for="em_debit"><strong>Debit only</strong></label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="entry_mode" id="em_credit" value="CREDIT_ONLY">
+                            <input class="form-check-input" type="radio" name="entry_mode" id="em_credit" value="CREDIT_ONLY" {{ 'checked' if cur_mode == 'CREDIT_ONLY' }}>
                             <label class="form-check-label" for="em_credit"><strong>Credit only</strong></label>
                         </div>
                     </div>
@@ -102,7 +103,7 @@
             <div class="card mb-3 border-warning" id="credit-dim-card">
                 <div class="card-header bg-warning text-dark"><i class="bi bi-arrow-down-circle"></i> Credit Entry — Dimension Mapping</div>
                 <div class="card-body p-0">
-                    <p class="text-muted px-3 pt-2 mb-1" style="font-size:0.85rem">Defaults to <strong>Same as Source</strong> for each dimension (offset reversal at source). Configure here to post the credit to a different dimension.</p>
+                    <p class="text-muted px-3 pt-2 mb-1" style="font-size:0.85rem">Defaults to <strong>Same as Source</strong> for each dimension. Configure here to post the credit to a different dimension.</p>
                     <table class="table table-sm mb-0" id="crd-dim-table">
                         <thead class="table-light"><tr><th>Dimension</th><th>Mode</th><th>Lookup Column / Fixed Value</th></tr></thead>
                         <tbody id="crd-dim-body"></tbody>
@@ -112,24 +113,32 @@
             <input type="hidden" name="credit_dim_json" id="credit_dim_json_input">
 
             {# ── Data Filter Editor ── #}
+            {% with existing_filters = rule.filter_json %}
             {% include "components/filter_editor.html" %}
+            {% endwith %}
 
-            <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Create Rule</button>
-            <a href="/rules" class="btn btn-outline-secondary ms-2">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Save Changes</button>
+            <a href="/rules/{{ rule.id }}" class="btn btn-outline-secondary ms-2">Cancel</a>
         </form>
     </div>
 </div>
 
 <script>
 (function() {
-    const RULE_CFG   = {{ rule_config | tojson }};
-    const srcSelect  = document.getElementById('source_table');
-    const lkpSelect  = document.getElementById('lookup_table');
-    const srcBody    = document.getElementById('src-dim-body');
-    const outBody    = document.getElementById('out-dim-body');
-    const crdBody    = document.getElementById('crd-dim-body');
-    const crdCard    = document.getElementById('credit-dim-card');
-    const debitCard  = document.querySelector('.card.border-success');
+    const RULE_CFG  = {{ rule_config | tojson }};
+    const RULE_INIT = {
+        source_dim: {{ rule.source_dim_json | from_json | tojson }},
+        output_dim: {{ rule.output_dim_json | from_json | tojson }},
+        credit_dim: {{ rule.credit_dim_json | from_json | tojson }},
+    };
+
+    const srcSelect = document.getElementById('source_table');
+    const lkpSelect = document.getElementById('lookup_table');
+    const srcBody   = document.getElementById('src-dim-body');
+    const outBody   = document.getElementById('out-dim-body');
+    const crdBody   = document.getElementById('crd-dim-body');
+    const crdCard   = document.getElementById('credit-dim-card');
+    const debitCard = document.querySelector('.card.border-success');
 
     function getEntryMode() {
         const sel = document.querySelector('input[name="entry_mode"]:checked');
@@ -154,7 +163,7 @@
                 <td><strong>${d.label}</strong><br><small class="text-muted">${d.column}</small></td>
                 <td style="width:180px">
                     <select class="form-select form-select-sm src-mode-sel">
-                        <option value="all" selected>All Members</option>
+                        <option value="all">All Members</option>
                         <option value="specific">Specific Members</option>
                     </select>
                 </td>
@@ -180,7 +189,7 @@
                 <td><strong>${d.label}</strong><br><small class="text-muted">${d.column}</small></td>
                 <td style="width:200px">
                     <select class="form-select form-select-sm out-mode-sel">
-                        <option value="same_as_source" selected>Same as Source</option>
+                        <option value="same_as_source">Same as Source</option>
                         <option value="lookup">From Lookup</option>
                         <option value="fixed">Fixed Value</option>
                     </select>
@@ -194,6 +203,35 @@
                 tr.querySelector('.out-lkp-sel').style.display   = this.value === 'lookup' ? '' : 'none';
                 tr.querySelector('.out-fixed-inp').style.display = this.value === 'fixed'  ? '' : 'none';
             });
+        });
+    }
+
+    function restoreSrcBody(savedDims) {
+        if (!savedDims) return;
+        srcBody.querySelectorAll('tr[data-dim]').forEach(tr => {
+            const cfg = savedDims[tr.dataset.dim];
+            if (!cfg) return;
+            const modeSel = tr.querySelector('.src-mode-sel');
+            const membInp = tr.querySelector('.src-members-inp');
+            modeSel.value = cfg.mode || 'all';
+            membInp.disabled = modeSel.value !== 'specific';
+            if (modeSel.value === 'specific') membInp.value = (cfg.members || []).join(', ');
+        });
+    }
+
+    function restoreOutBody(targetBody, savedDims) {
+        if (!savedDims) return;
+        targetBody.querySelectorAll('tr[data-dim]').forEach(tr => {
+            const cfg = savedDims[tr.dataset.dim];
+            if (!cfg) return;
+            const modeSel  = tr.querySelector('.out-mode-sel');
+            const lkpSel   = tr.querySelector('.out-lkp-sel');
+            const fixedInp = tr.querySelector('.out-fixed-inp');
+            modeSel.value = cfg.mode || 'same_as_source';
+            lkpSel.style.display   = cfg.mode === 'lookup' ? '' : 'none';
+            fixedInp.style.display = cfg.mode === 'fixed'  ? '' : 'none';
+            if (cfg.mode === 'lookup' && cfg.lookup_column) lkpSel.value = cfg.lookup_column;
+            if (cfg.mode === 'fixed'  && cfg.value)         fixedInp.value = cfg.value;
         });
     }
 
@@ -214,7 +252,6 @@
     }
 
     function serializeDims() {
-        // source_dim_json
         const srcObj = {};
         srcBody.querySelectorAll('tr[data-dim]').forEach(tr => {
             const dim     = tr.dataset.dim;
@@ -225,28 +262,31 @@
         });
         document.getElementById('source_dim_json_input').value =
             Object.keys(srcObj).length ? JSON.stringify(srcObj) : '';
-
-        // output_dim_json (DEBIT) and credit_dim_json (CREDIT)
         document.getElementById('output_dim_json_input').value = serializeDimMapBody(outBody);
         document.getElementById('credit_dim_json_input').value = serializeDimMapBody(crdBody);
     }
 
     function syncEntryCards() {
         const mode = getEntryMode();
-        debitCard.style.display  = (mode === 'BOTH' || mode === 'DEBIT_ONLY')  ? '' : 'none';
-        crdCard.style.display    = (mode === 'BOTH' || mode === 'CREDIT_ONLY') ? '' : 'none';
+        debitCard.style.display = (mode === 'BOTH' || mode === 'DEBIT_ONLY')  ? '' : 'none';
+        crdCard.style.display   = (mode === 'BOTH' || mode === 'CREDIT_ONLY') ? '' : 'none';
     }
 
-    function rebuild() {
+    function rebuild(restoreInit) {
         const src = srcSelect.value;
         const lkp = lkpSelect.value;
         buildSrcRows(src);
         buildDimMapRows(outBody, src, lkp);
         buildDimMapRows(crdBody, src, lkp);
+        if (restoreInit) {
+            restoreSrcBody(RULE_INIT.source_dim);
+            restoreOutBody(outBody, RULE_INIT.output_dim);
+            restoreOutBody(crdBody, RULE_INIT.credit_dim);
+        }
         syncEntryCards();
     }
 
-    srcSelect.addEventListener('change', rebuild);
+    srcSelect.addEventListener('change', () => rebuild(false));
     lkpSelect.addEventListener('change', function() {
         buildDimMapRows(outBody, srcSelect.value, this.value);
         buildDimMapRows(crdBody, srcSelect.value, this.value);
@@ -256,9 +296,8 @@
 
     document.getElementById('rule-form').addEventListener('submit', serializeDims);
 
-    // Initial build
-    rebuild();
+    // Initial build — restore saved state
+    rebuild(true);
 })();
 </script>
 {% endblock %}
-

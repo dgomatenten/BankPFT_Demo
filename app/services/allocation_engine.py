@@ -195,7 +195,15 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     # ── Parse new dimension configs ──
     source_dim_cfg = json.loads(rule.source_dim_json) if rule.source_dim_json else {}
     output_dim_cfg = json.loads(rule.output_dim_json) if rule.output_dim_json else {}
-    generate_offset = rule.generate_offset if rule.generate_offset is not None else True
+    credit_dim_cfg = json.loads(rule.credit_dim_json) if rule.credit_dim_json else {}
+
+    # Resolve entry mode: new entry_mode field takes precedence over legacy generate_offset
+    raw_mode = (rule.entry_mode or "").strip().upper() if getattr(rule, "entry_mode", None) else ""
+    if raw_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
+        # Fallback to legacy boolean
+        raw_mode = "BOTH" if (rule.generate_offset if rule.generate_offset is not None else True) else "DEBIT_ONLY"
+    emit_debit  = raw_mode in ("BOTH", "DEBIT_ONLY")
+    emit_credit = raw_mode in ("BOTH", "CREDIT_ONLY")
 
     join_key   = rule.join_key
     batch_id   = str(uuid.uuid4())
@@ -292,39 +300,45 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             tgt_org  = _resolve_dim_value(row, "org_unit_id",  output_dim_cfg, src_org,  target_org_col)
             out_cust = _resolve_dim_value(row, "customer_id",  output_dim_cfg, src_cust, target_org_col)
             out_prod = _resolve_dim_value(row, "product_code", output_dim_cfg, src_prod, target_org_col)
+            out_acct = _resolve_dim_value(row, acct_col,       output_dim_cfg, src_acct, target_org_col)
 
             # DEBIT — allocated to target
-            results.append(OutputModel(
-                batch_run_id=batch_id,
-                as_of_date=as_of_date,
-                entry_type="DEBIT",
-                allocation_id=str(row[id_col]),
-                source_account_id=src_acct,
-                customer_id=out_cust,
-                product_code=out_prod,
-                source_org_unit_id=src_org,
-                target_org_unit_id=tgt_org,
-                source_balance=src_bal,
-                allocated_balance=alloc_bal,
-                allocated_income=alloc_inc,
-                ratio_applied=ratio,
-                is_orphan=False,
-            ))
+            if emit_debit:
+                results.append(OutputModel(
+                    batch_run_id=batch_id,
+                    as_of_date=as_of_date,
+                    entry_type="DEBIT",
+                    allocation_id=str(row[id_col]),
+                    source_account_id=out_acct,
+                    customer_id=out_cust,
+                    product_code=out_prod,
+                    source_org_unit_id=src_org,
+                    target_org_unit_id=tgt_org,
+                    source_balance=src_bal,
+                    allocated_balance=alloc_bal,
+                    allocated_income=alloc_inc,
+                    ratio_applied=ratio,
+                    is_orphan=False,
+                ))
 
-            # CREDIT — offset reversal back to source
-            if generate_offset:
+            # CREDIT — offset reversal; dimensions resolved via credit_dim_cfg
+            if emit_credit:
+                crd_org  = _resolve_dim_value(row, "org_unit_id",  credit_dim_cfg, src_org,  target_org_col)
+                crd_cust = _resolve_dim_value(row, "customer_id",  credit_dim_cfg, src_cust, target_org_col)
+                crd_prod = _resolve_dim_value(row, "product_code", credit_dim_cfg, src_prod, target_org_col)
+                crd_acct = _resolve_dim_value(row, acct_col,       credit_dim_cfg, src_acct, target_org_col)
                 results.append(OutputModel(
                     batch_run_id=batch_id,
                     as_of_date=as_of_date,
                     entry_type="CREDIT",
                     allocation_id=str(row[id_col]),
-                    source_account_id=src_acct,
-                    customer_id=src_cust,        # credit always at source dimension
-                    product_code=src_prod,
+                    source_account_id=crd_acct,
+                    customer_id=crd_cust,
+                    product_code=crd_prod,
                     source_org_unit_id=src_org,
-                    target_org_unit_id=src_org,  # credit reverses at source org
+                    target_org_unit_id=crd_org,
                     source_balance=src_bal,
-                    allocated_balance=-alloc_bal, # negative = reversal
+                    allocated_balance=-alloc_bal,
                     allocated_income=-alloc_inc,
                     ratio_applied=ratio,
                     is_orphan=False,

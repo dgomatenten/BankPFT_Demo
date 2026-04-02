@@ -9,7 +9,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
-| **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters, separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and debit/credit offset generation. Rules can be created via form or imported from JSON |
+| **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser |
 | **Test Data Generator** | Generate master data, instrument data, GL data, and allocation ratio Excel files for testing |
@@ -25,8 +25,8 @@ Processing (PROC_INST_DATA, PROC_GL_DATA)
         ↓ Allocation Engine (Pandas join + ratio shredding)
         ↓ per-dimension source filter  →  join  →  DEBIT dim mapping (output_dim_json)
                                                    CREDIT dim mapping (credit_dim_json)
-Result  FCT_MGMT_INSTRUMENT  (DEBIT + CREDIT offset entries, instrument-level)
-        FCT_MGMT_LEDGER      (legacy ledger output)
+Result  FCT_MGMT_INSTRUMENT  (entry_mode: BOTH | DEBIT_ONLY | CREDIT_ONLY, instrument-level)
+        FCT_MGMT_LEDGER      (ledger output)
 ```
 
 Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_id`. Each customer's ratios must sum to 1.0 per allocation group. Org reclassifications are stored in `REF_ORG_RECLASS` as 1:1 org-to-org mappings (ratio always 1.0).
@@ -155,10 +155,9 @@ Database    =  uploaded data, workflow state, execution results           (WHAT 
 | Filter field/operator options | **JSON** `filter_config.json` | Available columns & operators per source table |
 | User's chosen rule config | **DB** `allocation_rule` | `source_table`, `lookup_table`, `output_table`, `join_key` saved per rule |
 | User's data filter conditions | **DB** `allocation_rule.filter_json` | JSON: `{"logic":"AND","conditions":[{"field":"..","operator":"..","value":".."}]}` || Source dimension member filters | **DB** `allocation_rule.source_dim_json` | Per-dimension: `{"org_unit_id":{"mode":"specific","members":["OU1"]}}` |
-| Debit dimension mapping | **DB** `allocation_rule.output_dim_json` | Per-dimension: `{"org_unit_id":{"mode":"lookup","lookup_column":"target_org_unit_id"}}` |
-| Credit dimension mapping | **DB** `allocation_rule.credit_dim_json` | Per-dimension: same modes. Omit to default all dims to `same_as_source` |
-| Debit/Credit offset generation | **DB** `allocation_rule.generate_offset` | `true` = double-entry (DEBIT + CREDIT) |
-| Offset account label | **DB** `allocation_rule.offset_account` | Optional GL label for the credit entry || Rule active/inactive state | **DB** `allocation_rule` | `is_active`, `status` |
+| Debit dimension mapping | **DB** `allocation_rule.output_dim_json` | Per-dimension (incl. `account_id`/`gl_account`): `{"account_id":{"mode":"same_as_source"},"org_unit_id":{"mode":"lookup","lookup_column":"target_org_unit_id"}}` |
+| Credit dimension mapping | **DB** `allocation_rule.credit_dim_json` | Per-dimension (incl. `account_id`/`gl_account`). Omit to default all dims to `same_as_source` |
+| Entry mode | **DB** `allocation_rule.entry_mode` | `BOTH` (default) = DEBIT + CREDIT, `DEBIT_ONLY`, or `CREDIT_ONLY` || Rule active/inactive state | **DB** `allocation_rule` | `is_active`, `status` |
 
 When a user creates a rule via the form, the dropdowns come from `rule_config.json`, but the selected values are **saved to the database**. Each rule can have different table/join combinations.
 
@@ -174,15 +173,15 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 
 **Engine flow:**
 ```
-1. Load AllocationRule from DB → source_table, join_key, filter_json, source_dim_json, output_dim_json, credit_dim_json, generate_offset
+1. Load AllocationRule from DB → source_table, join_key, filter_json, source_dim_json, output_dim_json, credit_dim_json, entry_mode
 2. Look up column definitions in allocation_config.json for each table
 3. Query source data (e.g. proc_inst_data) → apply filter_json → apply source_dim_json member filters
 4. Query lookup data (e.g. ref_static_allocation)
 5. Pandas LEFT JOIN on rule's join_key
 6. For each matched row: compute allocated_balance = source × ratio
 7. Resolve DEBIT output dimensions per output_dim_json (same-as-source / lookup column / fixed value)
-8. Write DEBIT entry to output table (fct_mgmt_instrument or fct_mgmt_ledger)
-9. If generate_offset=true: resolve CREDIT dimensions per credit_dim_json (defaults to same-as-source); write CREDIT entry (negative balance)
+8. If entry_mode ∈ {BOTH, DEBIT_ONLY}: write DEBIT entry to output table (fct_mgmt_instrument or fct_mgmt_ledger)
+9. If entry_mode ∈ {BOTH, CREDIT_ONLY}: resolve CREDIT dimensions per credit_dim_json (defaults to same-as-source); write CREDIT entry (negative balance)
 10. Orphan rows (no lookup match) → DEBIT only at source org (default_ratio from config)
 ```
 

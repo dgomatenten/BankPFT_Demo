@@ -1,0 +1,37 @@
+{
+  "name": "Customer Shred — Instrument to Mgmt Org",
+  "description": "Shred instrument balances from booking org to management org using customer-level static allocation ratios. Generates DEBIT at target org and CREDIT reversal at source org.",
+  "source_table": "proc_inst_data",
+  "lookup_table": "ref_static_allocation",
+  "output_table": "fct_mgmt_instrument",
+  "join_key": "customer_id",
+  "entry_mode": "BOTH",
+  "filter_json": {
+    "logic": "AND",
+    "conditions": [
+      {
+        "field": "product_code",
+        "operator": "in",
+        "value": "LOAN,DEPOSIT,SAVINGS"
+      }
+    ]
+  },
+  "source_dim_json": {
+    "account_id":   { "mode": "all" },
+    "org_unit_id":  { "mode": "all" },
+    "product_code": { "mode": "specific", "members": ["LOAN", "DEPOSIT", "SAVINGS"] },
+    "customer_id":  { "mode": "all" }
+  },
+  "output_dim_json": {
+    "account_id":   { "mode": "same_as_source" },
+    "org_unit_id":  { "mode": "lookup", "lookup_column": "target_org_unit_id" },
+    "product_code": { "mode": "same_as_source" },
+    "customer_id":  { "mode": "same_as_source" }
+  },
+  "credit_dim_json": {
+    "account_id":   { "mode": "fixed", "value": "GL_OFFSET_9000" },
+    "org_unit_id":  { "mode": "same_as_source" },
+    "product_code": { "mode": "same_as_source" },
+    "customer_id":  { "mode": "same_as_source" }
+  }
+}

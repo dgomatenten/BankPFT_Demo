@@ -80,6 +80,8 @@ def _apply_schema_migrations():
     if inspector.has_table("allocation_rule"):
         _add_col_if_missing("allocation_rule", "source_dim_json TEXT")
         _add_col_if_missing("allocation_rule", "output_dim_json TEXT")
+        _add_col_if_missing("allocation_rule", "credit_dim_json TEXT")
+        _add_col_if_missing("allocation_rule", "entry_mode VARCHAR(20) DEFAULT 'BOTH'")
         _add_col_if_missing("allocation_rule", "generate_offset INTEGER DEFAULT 1")
         _add_col_if_missing("allocation_rule", "offset_account VARCHAR(50)")
 

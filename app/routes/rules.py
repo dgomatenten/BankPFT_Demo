@@ -30,7 +30,10 @@ def new_rule():
         filter_raw      = request.form.get("filter_json", "").strip()
         src_dim_raw     = request.form.get("source_dim_json", "").strip()
         out_dim_raw     = request.form.get("output_dim_json", "").strip()
-        generate_offset = request.form.get("generate_offset") == "1"
+        crd_dim_raw     = request.form.get("credit_dim_json", "").strip()
+        entry_mode      = request.form.get("entry_mode", "BOTH").strip().upper()
+        if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
+            entry_mode = "BOTH"
         rule = AllocationRule(
             name=request.form["name"],
             description=request.form.get("description", ""),
@@ -41,8 +44,9 @@ def new_rule():
             filter_json=filter_raw if filter_raw else None,
             source_dim_json=src_dim_raw if src_dim_raw else None,
             output_dim_json=out_dim_raw if out_dim_raw else None,
-            generate_offset=generate_offset,
-            offset_account=request.form.get("offset_account", "").strip() or None,
+            credit_dim_json=crd_dim_raw if crd_dim_raw else None,
+            entry_mode=entry_mode,
+            generate_offset=(entry_mode != "CREDIT_ONLY"),
             created_by=current_user.username,
             status="ACTIVE",
         )
@@ -59,13 +63,12 @@ def new_rule():
 def import_rule():
     """Create an AllocationRule from an uploaded/pasted JSON definition."""
     if request.method == "POST":
-        # Accept file upload or pasted JSON text
-        raw = ""
-        uploaded = request.files.get("rule_file")
-        if uploaded and uploaded.filename:
-            raw = uploaded.read().decode("utf-8", errors="replace")
-        else:
-            raw = request.form.get("rule_json", "").strip()
+        # Accept pasted/JS-populated textarea first; fall back to raw file bytes
+        raw = request.form.get("rule_json", "").strip()
+        if not raw:
+            uploaded = request.files.get("rule_file")
+            if uploaded and uploaded.filename:
+                raw = uploaded.read().decode("utf-8", errors="replace").strip()
 
         if not raw:
             flash("No JSON provided.", "warning")
@@ -97,8 +100,12 @@ def import_rule():
             filter_json=_to_json(data.get("filter_json")),
             source_dim_json=_to_json(data.get("source_dim_json")),
             output_dim_json=_to_json(data.get("output_dim_json")),
+            credit_dim_json=_to_json(data.get("credit_dim_json")),
+            entry_mode=(
+                data.get("entry_mode") or
+                ("BOTH" if data.get("generate_offset", True) else "DEBIT_ONLY")
+            ),
             generate_offset=bool(data.get("generate_offset", True)),
-            offset_account=data.get("offset_account") or None,
             created_by=current_user.username,
             status="ACTIVE",
         )
@@ -116,6 +123,39 @@ def detail(rule_id):
     rule = AllocationRule.query.get_or_404(rule_id)
     allocations = RefStaticAllocation.query.filter_by(status="APPROVED").all()
     return render_template("rules/detail.html", rule=rule, allocations=allocations)
+
+
+@bp.route("/<int:rule_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_rule(rule_id):
+    rule = AllocationRule.query.get_or_404(rule_id)
+    if request.method == "POST":
+        filter_raw  = request.form.get("filter_json", "").strip()
+        src_dim_raw = request.form.get("source_dim_json", "").strip()
+        out_dim_raw = request.form.get("output_dim_json", "").strip()
+        crd_dim_raw = request.form.get("credit_dim_json", "").strip()
+        entry_mode  = request.form.get("entry_mode", "BOTH").strip().upper()
+        if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
+            entry_mode = "BOTH"
+
+        rule.name           = request.form["name"]
+        rule.description    = request.form.get("description", "")
+        rule.source_table   = request.form.get("source_table", rule.source_table)
+        rule.lookup_table   = request.form.get("lookup_table", rule.lookup_table)
+        rule.output_table   = request.form.get("output_table", rule.output_table)
+        rule.join_key       = request.form.get("join_key", rule.join_key)
+        rule.filter_json    = filter_raw if filter_raw else None
+        rule.source_dim_json = src_dim_raw if src_dim_raw else None
+        rule.output_dim_json = out_dim_raw if out_dim_raw else None
+        rule.credit_dim_json = crd_dim_raw if crd_dim_raw else None
+        rule.entry_mode     = entry_mode
+        rule.generate_offset = (entry_mode != "CREDIT_ONLY")
+        db.session.commit()
+        flash(f"Rule '{rule.name}' updated.", "success")
+        return redirect(url_for("rules.detail", rule_id=rule.id))
+
+    return render_template("rules/edit.html", rule=rule,
+                           rule_config=RULE_CONFIG, filter_config=FILTER_CONFIG)
 
 
 @bp.route("/<int:rule_id>/toggle", methods=["POST"])

@@ -13,23 +13,24 @@ This guide walks through every screen in the Management Allocation System, expla
 5. [Data Upload — Detail & Maker/Checker](#5-data-upload--detail--makechecker)
 6. [Allocation Rules — List](#6-allocation-rules--list)
 7. [Allocation Rules — New Rule](#7-allocation-rules--new-rule)
-8. [Allocation Rules — Debit / Credit Offset](#8-allocation-rules--debit--credit-offset)
+8. [Allocation Rules — Entry Mode](#8-allocation-rules--entry-mode)
 9. [Allocation Rules — Source Dimension Filters](#9-allocation-rules--source-dimension-filters)
 10. [Allocation Rules — Debit & Credit Dimension Mapping](#10-allocation-rules--debit--credit-dimension-mapping)
 11. [Allocation Rules — Data Filter Editor](#11-allocation-rules--data-filter-editor)
 12. [Allocation Rules — Detail](#12-allocation-rules--detail)
-13. [Allocation Rules — Import from JSON](#13-allocation-rules--import-from-json)
-14. [Batch Execution](#14-batch-execution)
-15. [Batch Execution — Detail](#15-batch-execution--detail)
-16. [Reports — Index](#16-reports--index)
-17. [Management Ledger Report](#17-management-ledger-report)
-18. [Operations Report](#18-operations-report)
-19. [Database Table Browser](#19-database-table-browser)
-20. [Table Browser — Data View](#20-table-browser--data-view)
-21. [Test Data Generator](#21-test-data-generator)
-22. [User Management](#22-user-management)
-23. [Group Management](#23-group-management)
-24. [Starting the Application](#24-starting-the-application)
+13. [Allocation Rules — Edit Rule](#13-allocation-rules--edit-rule)
+14. [Allocation Rules — Import from JSON](#14-allocation-rules--import-from-json)
+15. [Batch Execution](#15-batch-execution)
+16. [Batch Execution — Detail](#16-batch-execution--detail)
+17. [Reports — Index](#17-reports--index)
+18. [Management Ledger Report](#18-management-ledger-report)
+19. [Operations Report](#19-operations-report)
+20. [Database Table Browser](#20-database-table-browser)
+21. [Table Browser — Data View](#21-table-browser--data-view)
+22. [Test Data Generator](#22-test-data-generator)
+23. [User Management](#23-user-management)
+24. [Group Management](#24-group-management)
+25. [Starting the Application](#25-starting-the-application)
 
 ---
 
@@ -146,6 +147,7 @@ Shows all allocation rules with their active/inactive status.
 - **Source / Lookup / Output tables** — the tables this rule operates on
 - **Join Key** — the column used to match source data with allocation ratios
 - **Status** — ACTIVE or INACTIVE
+- **Edit** (pencil icon) — open the rule's edit form with all fields pre-populated
 - **Toggle / Delete** — activate/deactivate or remove a rule
 
 Rules are immediately active when created (no Maker/Checker workflow for rules).
@@ -166,7 +168,7 @@ Create a new allocation rule. The form is organised into five sections.
 3. **Lookup Table** — allocation ratio table to join with
 4. **Output Table** — where to write allocated results (`fct_mgmt_instrument` recommended)
 5. **Join Key** — column linking source to lookup (e.g. `customer_id`)
-6. **Debit / Credit Offset** — toggle double-entry generation (see section 8)
+6. **Entry Mode** — choose BOTH, Debit only, or Credit only (see section 8)
 7. **Source Dimension Filters** — per-dimension member filter (see section 9)
 8. **Debit & Credit Dimension Mapping** — per-dimension output value control (see section 10)
 9. **Data Filters** — row-level filter conditions (see section 11)
@@ -176,28 +178,28 @@ All dropdown options are driven by `rule_config.json`.
 
 ---
 
-## 8. Allocation Rules — Debit / Credit Offset
+## 8. Allocation Rules — Entry Mode
 
-**Location:** New Rule form — "Debit / Credit Offset" card
+**Location:** New Rule form — "Entry Mode" card
 
-Controls whether the allocation engine generates double-entry accounting entries.
+Controls which accounting entries the allocation engine generates for each matched row.
 
 **Options:**
 
 | Setting | Effect |
 |---|---|
-| **Generate Credit offset: ON** (default) | Two rows per matched record: a **DEBIT** (target dimensions + positive balance) and a **CREDIT** (source/configured dimensions + negative balance) |
-| **Generate Credit offset: OFF** | Single **DEBIT** row per matched record — balance moves to the target with no reversal |
-| **Offset Account** | Optional GL account label or code attached to the CREDIT entry for downstream reconciliation |
+| **Both** (default) | Two rows per matched record: a **DEBIT** (target dimensions + positive balance) and a **CREDIT** (source/configured dimensions + negative balance) |
+| **Debit only** | Single **DEBIT** row per matched record — balance moves to the target with no reversal |
+| **Credit only** | Single **CREDIT** row per matched record — reversal posted without a corresponding debit entry |
 
-**Example output for a 40% allocation, balance = 1000:**
+**Example output for a 40% allocation, balance = 1000, mode = Both:**
 
-| entry_type | org_unit | allocated_balance |
-|---|---|---|
-| DEBIT | OU_TARGET | +400 |
-| CREDIT | OU_SOURCE | −400 |
+| entry_type | account | org_unit | allocated_balance |
+|---|---|---|---|
+| DEBIT | ACT-001 | OU_TARGET | +400 |
+| CREDIT | GL-CLR-8000 | OU_SOURCE | −400 |
 
-> **Note:** When Credit offset is ON, the **Credit Entry — Dimension Mapping** section (see section 10) becomes visible so you can configure exactly where the credit is posted.
+> **Visibility:** Selecting **Debit only** hides the Credit Entry Dimension Mapping card. Selecting **Credit only** hides the Debit Entry Dimension Mapping card. **Both** shows both cards simultaneously.
 
 ---
 
@@ -218,6 +220,7 @@ For each dimension column in the selected source table, you can restrict which d
 
 | Dimension | Mode | Members |
 |---|---|---|
+| Account ID | All Members | — |
 | Customer ID | All Members | — |
 | Product Code | Specific Members | `LOAN, DEPOSIT` |
 | Org Unit | All Members | — |
@@ -230,7 +233,7 @@ Stored as `source_dim_json` in the database.
 
 **Location:** New Rule form — "Debit Entry — Dimension Mapping" (green) and "Credit Entry — Dimension Mapping" (yellow) cards
 
-Each entry type has its own independent dimension mapping table. The **Debit** card controls where allocated balances are posted; the **Credit** card controls where the equal-and-opposite reversal is posted. The Credit card is hidden when "Generate Credit offset" is OFF.
+Each entry type has its own independent dimension mapping table. The **Debit** card controls where allocated balances are posted; the **Credit** card controls where the equal-and-opposite reversal is posted. Card visibility follows the **Entry Mode** setting: the Debit card is hidden when **Credit only** is selected; the Credit card is hidden when **Debit only** is selected.
 
 **Modes per dimension (same for both Debit and Credit):**
 
@@ -246,14 +249,16 @@ Each entry type has its own independent dimension mapping table. The **Debit** c
 
 | Dimension | Mode | Detail |
 |---|---|---|
+| Account ID | Same as Source | — |
 | Org Unit | From Lookup | `target_org_unit_id` |
 | Product Code | Same as Source | — |
 | Customer ID | Same as Source | — |
 
-*Credit — reverse at source org (default behaviour when Credit card is left as-is):*
+*Credit — reverse at source org, post to GL clearing account:*
 
 | Dimension | Mode | Detail |
 |---|---|---|
+| Account ID | Fixed Value | `GL-CLR-8000` |
 | Org Unit | Same as Source | — |
 | Product Code | Same as Source | — |
 | Customer ID | Same as Source | — |
@@ -292,18 +297,41 @@ View a rule's full configuration.
 
 **Key elements:**
 - Source / Lookup / Output table names
-- **Offset Entry** badge — "DEBIT + CREDIT" or "DEBIT only"
-- **Offset Account** — GL label attached to credit entries
+- **Entry Mode** badge — "DEBIT + CREDIT", "DEBIT only", or "CREDIT only"
 - **Source Dimension Filters** card — shows mode and members per dimension
 - **Debit Entry — Dimension Mapping** card (green) — shows mode and detail per dimension for DEBIT
 - **Credit Entry — Dimension Mapping** card (yellow) — shows mode and detail per dimension for CREDIT; shows "same_as_source (default)" if not explicitly configured
 - **Data Filters** card — shows saved filter conditions
+- **Edit Rule** — opens the edit form with all fields pre-populated
 - **Toggle / Delete** actions
 - **Allocation ratios preview** — APPROVED ratios the rule would use
 
 ---
 
-## 13. Allocation Rules — Import from JSON
+## 13. Allocation Rules — Edit Rule
+
+**URL:** `/rules/<rule_id>/edit`
+
+Edit all fields of an existing allocation rule. Accessible from:
+
+- The **Edit** button (pencil icon) on the Rules List page
+- The **Edit Rule** button in the Actions card on the Rule Detail page
+
+**How to use:**
+
+1. Open any rule from the list or detail page and click **Edit Rule**
+2. All fields are pre-populated with the rule's current configuration
+3. Dimension mapping tables (Source Filters, Debit Mapping, Credit Mapping) are rebuilt and restored to their saved state automatically
+4. Data filter conditions are reloaded from the rule's saved filter configuration
+5. Make any changes and click **Save Changes**
+
+The rule is updated immediately and you are redirected back to the Detail page.
+
+> **Note:** Editing a rule does not affect previously completed batch runs — historical results retain the configuration that was active at the time.
+
+---
+
+## 14. Allocation Rules — Import from JSON
 
 **URL:** `/rules/import`
 
@@ -326,23 +354,25 @@ Create an allocation rule from a JSON file or pasted JSON text. Useful for versi
   "lookup_table": "ref_static_allocation",
   "output_table": "fct_mgmt_instrument",
   "join_key": "customer_id",
-  "generate_offset": true,
-  "offset_account": "GL_OFFSET_9000",
+  "entry_mode": "BOTH",
   "filter_json": {
     "logic": "AND",
     "conditions": [{"field": "product_code", "operator": "in", "value": "LOAN,DEPOSIT"}]
   },
   "source_dim_json": {
+    "account_id":   {"mode": "all"},
     "org_unit_id":  {"mode": "all"},
     "product_code": {"mode": "specific", "members": ["LOAN", "DEPOSIT"]},
     "customer_id":  {"mode": "all"}
   },
   "output_dim_json": {
+    "account_id":   {"mode": "same_as_source"},
     "org_unit_id":  {"mode": "lookup", "lookup_column": "target_org_unit_id"},
     "product_code": {"mode": "same_as_source"},
     "customer_id":  {"mode": "same_as_source"}
   },
   "credit_dim_json": {
+    "account_id":   {"mode": "fixed", "value": "GL-CLR-8000"},
     "org_unit_id":  {"mode": "same_as_source"},
     "product_code": {"mode": "same_as_source"},
     "customer_id":  {"mode": "same_as_source"}
@@ -350,11 +380,11 @@ Create an allocation rule from a JSON file or pasted JSON text. Useful for versi
 }
 ```
 
-Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**.
+Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**. Valid `entry_mode` values: `BOTH` (default), `DEBIT_ONLY`, `CREDIT_ONLY`.
 
 ---
 
-## 14. Batch Execution
+## 15. Batch Execution
 
 **URL:** `/batch`
 
@@ -374,15 +404,15 @@ Run allocation rules against processed data and view past batch runs.
 4. Allocation ratios are loaded from the lookup table (APPROVED status only)
 5. A LEFT JOIN matches source rows to ratios by the rule's join key
 6. For each matched row: `allocated_balance = source_balance × ratio`
-7. **DEBIT entry** — output dimensions resolved per `output_dim_json`
-8. If **Generate Offset = ON**: **CREDIT entry** — dimensions resolved per `credit_dim_json` (defaults to same-as-source), balance = negative
+7. If **entry_mode** = **BOTH** or **DEBIT_ONLY**: **DEBIT entry** — output dimensions resolved per `output_dim_json`
+8. If **entry_mode** = **BOTH** or **CREDIT_ONLY**: **CREDIT entry** — dimensions resolved per `credit_dim_json` (defaults to same-as-source), balance = negative
 9. **Orphan rows** (no matching ratio) — DEBIT only at source org (`default_ratio` from config)
 
 Past batch runs are listed below with status, source/output row counts, and links to execution logs.
 
 ---
 
-## 15. Batch Execution — Detail
+## 16. Batch Execution — Detail
 
 **URL:** `/batch/<batch_id>`
 
@@ -399,7 +429,7 @@ View details of a completed batch run.
 
 ---
 
-## 16. Reports — Index
+## 17. Reports — Index
 
 **URL:** `/reports`
 
@@ -415,7 +445,7 @@ Hub page with links to all available reports.
 
 ---
 
-## 17. Management Ledger Report
+## 18. Management Ledger Report
 
 **URL:** `/reports/ledger`
 
@@ -438,7 +468,7 @@ The primary output report.
 
 ---
 
-## 18. Operations Report
+## 19. Operations Report
 
 **URL:** `/reports/operations`
 
@@ -454,7 +484,7 @@ System activity and health overview.
 
 ---
 
-## 19. Database Table Browser
+## 20. Database Table Browser
 
 **URL:** `/reports/tables`
 
@@ -470,7 +500,7 @@ All tables are listed, including `fct_mgmt_instrument` for viewing DEBIT/CREDIT 
 
 ---
 
-## 20. Table Browser — Data View
+## 21. Table Browser — Data View
 
 **URL:** `/reports/tables?table=<table_name>`
 
@@ -489,7 +519,7 @@ Useful for verifying dimension data, checking staged records, or inspecting DEBI
 
 ---
 
-## 21. Test Data Generator
+## 22. Test Data Generator
 
 **URL:** `/testdata`
 
@@ -515,7 +545,7 @@ Generate realistic test data for the system.
 
 ---
 
-## 22. User Management
+## 23. User Management
 
 **URL:** `/admin/users` (Admin only)
 
@@ -534,7 +564,7 @@ Create, edit, and manage system users.
 
 ---
 
-## 23. Group Management
+## 24. Group Management
 
 **URL:** `/admin/groups` (Admin only)
 
@@ -557,7 +587,7 @@ A user’s effective permissions are the union of all their groups’ permission
 
 ---
 
-## 24. Starting the Application
+## 25. Starting the Application
 
 **Script:** `start.sh` in the project root
 

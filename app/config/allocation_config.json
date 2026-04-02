@@ -7,7 +7,7 @@
             "date_filter_column": "as_of_date",
             "account_id_column": "account_id",
             "balance_columns": ["balance", "interest_income"],
-            "dimension_columns": ["customer_id", "product_code", "org_unit_id"]
+            "dimension_columns": ["account_id", "customer_id", "product_code", "org_unit_id"]
         },
         "proc_gl_data": {
             "label": "General Ledger Data",
@@ -16,7 +16,7 @@
             "date_filter_column": "as_of_date",
             "account_id_column": "gl_account",
             "balance_columns": ["balance"],
-            "dimension_columns": ["org_unit_id"]
+            "dimension_columns": ["gl_account", "org_unit_id"]
         }
     },
 

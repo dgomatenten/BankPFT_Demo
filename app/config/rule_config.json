@@ -31,11 +31,13 @@
 
     "dimension_config": {
         "proc_inst_data": [
+            {"column": "account_id",   "label": "Account ID"},
             {"column": "customer_id",  "label": "Customer ID"},
             {"column": "product_code", "label": "Product Code"},
             {"column": "org_unit_id",  "label": "Org Unit"}
         ],
         "proc_gl_data": [
+            {"column": "gl_account",   "label": "GL Account"},
             {"column": "org_unit_id",  "label": "Org Unit"}
         ]
     },

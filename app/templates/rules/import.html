@@ -11,12 +11,13 @@
                 <form method="POST" enctype="multipart/form-data">
                     <div class="mb-3">
                         <label class="form-label">Upload JSON file</label>
-                        <input type="file" name="rule_file" class="form-control" accept=".json,application/json">
+                        <input type="file" name="rule_file" id="rule_file_input" class="form-control" accept=".json,application/json">
+                        <div class="form-text text-muted">Selecting a file will load its contents into the text area below for review.</div>
                     </div>
                     <div class="text-center text-muted my-2">— or —</div>
                     <div class="mb-3">
                         <label class="form-label">Paste JSON directly</label>
-                        <textarea name="rule_json" class="form-control font-monospace" rows="14"
+                        <textarea name="rule_json" id="rule_json_area" class="form-control font-monospace" rows="14"
                             placeholder='{
   "name": "Customer Shred Q1",
   "source_table": "proc_inst_data",
@@ -32,6 +33,11 @@
   },
   "output_dim_json": {
     "org_unit_id":  { "mode": "lookup",         "lookup_column": "target_org_unit_id" },
+    "product_code": { "mode": "same_as_source" },
+    "customer_id":  { "mode": "same_as_source" }
+  },
+  "credit_dim_json": {
+    "org_unit_id":  { "mode": "same_as_source" },
     "product_code": { "mode": "same_as_source" },
     "customer_id":  { "mode": "same_as_source" }
   }
@@ -57,11 +63,11 @@
                         <tr><td><code>lookup_table</code></td><td>No</td><td><code>ref_static_allocation</code> / <code>ref_org_reclass</code></td></tr>
                         <tr><td><code>output_table</code></td><td>No</td><td><code>fct_mgmt_instrument</code> / <code>fct_mgmt_ledger</code></td></tr>
                         <tr><td><code>join_key</code></td><td>No</td><td>Column linking source ↔ lookup</td></tr>
-                        <tr><td><code>generate_offset</code></td><td>No</td><td><code>true</code> = DEBIT + CREDIT</td></tr>
-                        <tr><td><code>offset_account</code></td><td>No</td><td>Optional GL label for credit entry</td></tr>
+                        <tr><td><code>entry_mode</code></td><td>No</td><td><code>BOTH</code> (default) | <code>DEBIT_ONLY</code> | <code>CREDIT_ONLY</code></td></tr>
                         <tr><td><code>filter_json</code></td><td>No</td><td><code>{"logic":"AND","conditions":[...]}</code></td></tr>
                         <tr><td><code>source_dim_json</code></td><td>No</td><td>Per-dimension source filter</td></tr>
-                        <tr><td><code>output_dim_json</code></td><td>No</td><td>Per-dimension output mapping</td></tr>
+                        <tr><td><code>output_dim_json</code></td><td>No</td><td>Per-dimension DEBIT dimension mapping</td></tr>
+                        <tr><td><code>credit_dim_json</code></td><td>No</td><td>Per-dimension CREDIT dimension mapping</td></tr>
                     </tbody>
                 </table>
                 <hr>
@@ -70,14 +76,37 @@
                     <li><code>"mode":"all"</code> — include all dimension members</li>
                     <li><code>"mode":"specific","members":[...]</code> — filter to listed values</li>
                 </ul>
-                <p class="mb-1"><strong>output_dim_json</strong> modes:</p>
+                <p class="mb-1"><strong>output_dim_json / credit_dim_json</strong> modes:</p>
                 <ul class="mb-0">
                     <li><code>"mode":"same_as_source"</code> — pass source value to output</li>
                     <li><code>"mode":"lookup","lookup_column":"..."</code> — read from joined lookup</li>
                     <li><code>"mode":"fixed","value":"..."</code> — hardcode a member value</li>
                 </ul>
+                <p class="text-muted mt-2 mb-0" style="font-size:0.8rem">Omitting <code>credit_dim_json</code> defaults all credit dimensions to <em>same_as_source</em>.</p>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('rule_file_input').addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const area = document.getElementById('rule_json_area');
+        area.value = e.target.result;
+        // Prettify if valid JSON
+        try {
+            area.value = JSON.stringify(JSON.parse(e.target.result), null, 2);
+        } catch(err) { /* leave as-is */ }
+    };
+    reader.onerror = function() {
+        alert('Could not read file. Please paste the JSON content directly.');
+    };
+    reader.readAsText(file);
+});
+</script>
 {% endblock %}
