@@ -342,6 +342,8 @@ The rule is updated immediately and you are redirected back to the Detail page.
 
 Create an allocation rule from a JSON file or pasted JSON text. Useful for version-controlling rule definitions or sharing configurations between environments.
 
+![Rule Import from JSON](images/19b_rule_import.png)
+
 **How to use:**
 1. Click **Import JSON** from the Rules List page
 2. Either **upload a `.json` file** or **paste JSON** into the text area
