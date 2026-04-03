@@ -1,0 +1,22 @@
+{
+  "operation": "export",
+  "export_id": "INST_PROC_EXPORT",
+  "name": "Processed Instruments Export",
+  "description": "Export processed instrument data to a fixed-width file.",
+  "source_table": "proc_inst_data",
+  "format": "fixed_length",
+  "include_header": true,
+  "filter_json": {
+    "logic": "AND",
+    "conditions": []
+  },
+  "fields": [
+    { "source_col": "account_id",      "header": "ACCOUNT_ID          ", "start": 1,  "length": 20, "type": "string" },
+    { "source_col": "customer_id",     "header": "CUSTOMER_ID    ",      "start": 21, "length": 15, "type": "string" },
+    { "source_col": "product_code",    "header": "PRODUCT_CODE  ",       "start": 36, "length": 10, "type": "string" },
+    { "source_col": "org_unit_id",     "header": "ORG_UNIT_ID    ",      "start": 46, "length": 15, "type": "string" },
+    { "source_col": "as_of_date",      "header": "AS_OF_DATE",           "start": 61, "length": 10, "type": "date",  "date_format": "%Y-%m-%d" },
+    { "source_col": "balance",         "header": "BALANCE             ", "start": 71, "length": 20, "type": "float", "transform": "round(float(value) * 100)", "decimals": 0 },
+    { "source_col": "interest_income", "header": "INTEREST_INC        ", "start": 91, "length": 20, "type": "float", "transform": "round(float(value) * 100)", "decimals": 0 }
+  ]
+}

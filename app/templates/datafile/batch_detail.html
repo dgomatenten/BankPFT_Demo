@@ -1,0 +1,75 @@
+{% extends "layout/base.html" %}
+{% block title %}Data File Batch Detail — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">
+  {% if batch.operation == 'IMPORT' %}
+  <i class="bi bi-file-earmark-arrow-down text-primary"></i> Import Batch
+  {% else %}
+  <i class="bi bi-file-earmark-arrow-up text-success"></i> Export Batch
+  {% endif %}
+</h2>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-3"><strong>Batch ID:</strong><br><small class="font-monospace">{{ batch.id }}</small></div>
+      <div class="col-md-2"><strong>Status:</strong><br>
+        <span class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else 'danger' if batch.status == 'FAILED' else 'info' }} fs-6">
+          {{ batch.status }}
+        </span>
+      </div>
+      <div class="col-md-2"><strong>Operation:</strong><br>
+        <span class="badge bg-{{ 'primary' if batch.operation == 'IMPORT' else 'success' }} fs-6">{{ batch.operation }}</span>
+      </div>
+      <div class="col-md-2"><strong>Run By:</strong><br>{{ batch.run_by }}</div>
+      <div class="col-md-3"><strong>Started:</strong><br>{{ batch.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+    </div>
+    <hr>
+    <div class="row">
+      <div class="col-md-4">
+        <strong>Format / Export ID:</strong><br>
+        <code>{{ batch.format_id }}</code><br>
+        <small class="text-muted">{{ batch.format_name or '' }}</small>
+      </div>
+      <div class="col-md-4">
+        <strong>File:</strong><br>
+        <span class="font-monospace">{{ batch.filename }}</span>
+      </div>
+      <div class="col-md-2">
+        <strong>Rows:</strong><br>
+        <span class="fs-5 fw-bold">{{ "{:,}".format(batch.row_count) }}</span>
+      </div>
+      <div class="col-md-2">
+        <strong>Row Errors:</strong><br>
+        {% if batch.error_count %}
+        <span class="fs-5 fw-bold text-danger">{{ batch.error_count }}</span>
+        {% else %}
+        <span class="text-muted">—</span>
+        {% endif %}
+      </div>
+    </div>
+    {% if batch.error_message %}
+    <hr>
+    <div class="alert alert-danger mb-0"><strong>Error:</strong> {{ batch.error_message }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if batch.operation == 'EXPORT' and batch.status == 'COMPLETED' %}
+<a href="/datafile/download/{{ batch.id }}" class="btn btn-success mb-3">
+  <i class="bi bi-download"></i> Download {{ batch.filename }}
+</a>
+{% endif %}
+
+{% if errors %}
+<div class="card mb-4 border-danger">
+  <div class="card-header bg-danger text-white"><i class="bi bi-exclamation-triangle"></i> Row-Level Errors (first {{ errors|length }})</div>
+  <div class="card-body p-0">
+    <pre class="m-0 p-3" style="background:#fff8f8;font-size:.8rem;max-height:320px;overflow-y:auto;">{% for e in errors %}{{ e }}
+{% endfor %}</pre>
+  </div>
+</div>
+{% endif %}
+
+<a href="/datafile/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Data File Management</a>
+{% endblock %}

@@ -1,0 +1,52 @@
+{
+  "operation": "import",
+  "format_id": "LOAN_FIXED",
+  "name": "Loan Data — Fixed Length",
+  "description": "Fixed-width loan file (loan.dat). Maps loan-specific source columns to stg_inst_data.",
+  "type": "fixed_length",
+  "target_table": "stg_inst_data",
+  "record_length": 120,
+  "skip_header_rows": 1,
+  "fields": [
+    {
+      "name": "account_id",
+      "start": 1, "length": 15, "type": "string",
+      "_comment": "Source field: loan_id — stored directly as account_id"
+    },
+    {
+      "name": "customer_id",
+      "start": 16, "length": 15, "type": "string",
+      "_comment": "Source field: borrower_id"
+    },
+    {
+      "name": "product_code",
+      "start": 31, "length": 10, "type": "string",
+      "transform": "upper(trim(value))",
+      "_comment": "Normalise product codes to uppercase"
+    },
+    {
+      "name": "org_unit_id",
+      "start": 41, "length": 10, "type": "string",
+      "transform": "concat('BR', lpad(trim(value), 4, '0'))",
+      "_comment": "Prefix branch number with BR and zero-pad to 4 digits: '12' → 'BR0012'"
+    },
+    {
+      "name": "as_of_date",
+      "start": 51, "length": 8, "type": "date",
+      "date_format": "%Y%m%d",
+      "_comment": "Source stores date as YYYYMMDD (no dashes)"
+    },
+    {
+      "name": "balance",
+      "start": 59, "length": 18, "type": "float",
+      "transform": "float(value) / 100.0",
+      "_comment": "Source stores amount in cents; divide by 100 to get dollars"
+    },
+    {
+      "name": "interest_income",
+      "start": 77, "length": 15, "type": "float",
+      "transform": "float(value) / 100.0",
+      "_comment": "Accrued interest in cents"
+    }
+  ]
+}

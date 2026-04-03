@@ -1,0 +1,20 @@
+{
+  "operation": "import",
+  "format_id": "GL_PIPE",
+  "name": "GL Data — Pipe Delimited (header-mapped)",
+  "description": "Pipe-separated GL file. use_header_names=true: column order resolved by matching header row to field names.",
+  "type": "delimited",
+  "delimiter": "|",
+  "quotechar": "\"",
+  "target_table": "stg_gl_data",
+  "skip_header_rows": 1,
+  "use_header_names": true,
+  "fields": [
+    { "name": "gl_account",  "type": "string" },
+    { "name": "org_unit_id", "type": "string" },
+    { "name": "as_of_date",  "type": "date",  "date_format": "%Y-%m-%d" },
+    { "name": "debit",       "type": "float", "transform": "float(value) / 100.0" },
+    { "name": "credit",      "type": "float", "transform": "float(value) / 100.0" },
+    { "name": "balance",     "type": "float", "transform": "float(value) / 100.0" }
+  ]
+}

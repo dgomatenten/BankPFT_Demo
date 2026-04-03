@@ -1,0 +1,238 @@
+{% extends "layout/base.html" %}
+{% block title %}Data File Management — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-1">Data File Management</h2>
+<p class="text-muted mb-4">Import fixed-length files from the inbox folder or export source data to a formatted file.</p>
+
+<div class="row g-4">
+
+  {# ── LEFT: IMPORT ─────────────────────────────────────────────────── #}
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-primary text-white"><i class="bi bi-file-earmark-arrow-down"></i> Import Fixed-Length File</div>
+      <div class="card-body">
+
+        {# Inbox file list #}
+        <h6 class="fw-bold mb-2">Inbox Files
+          <small class="text-muted fw-normal font-monospace">instance/datafile_inbox/</small>
+        </h6>
+        {% if inbox %}
+        <div class="table-responsive mb-3" style="max-height:220px;overflow-y:auto;">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light sticky-top"><tr>
+              <th>Filename</th><th>Size</th><th>Modified</th>
+            </tr></thead>
+            <tbody>
+            {% for f in inbox %}
+            <tr class="inbox-row" style="cursor:pointer;" data-filename="{{ f.filename }}" title="Click to select">
+              <td><i class="bi bi-file-text text-secondary me-1"></i>{{ f.filename }}</td>
+              <td class="text-muted">{{ "{:,}".format(f.size_bytes) }} B</td>
+              <td class="text-muted">{{ f.modified }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="alert alert-secondary py-2 mb-3">
+          No files in inbox. Place files in <code>instance/datafile_inbox/</code>.
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/datafile/import">
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Selected File</label>
+            <input type="text" name="filename" id="import-filename" class="form-control font-monospace" placeholder="Click a row above or type filename" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">File Format</label>
+            <select name="format_id" class="form-select" required>
+              <option value="">— select format —</option>
+              {% for fmt in formats %}
+              <option value="{{ fmt.format_id }}">{{ fmt.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {# Format reference card #}
+          <div id="format-info" class="mb-3" style="display:none;">
+            <div class="card border-info">
+              <div class="card-header bg-info text-white py-1 small fw-bold">Format Field Reference</div>
+              <div class="card-body p-0">
+                <div class="table-responsive" style="max-height:180px;overflow-y:auto;">
+                  <table class="table table-sm mb-0" id="format-fields-table">
+                    <thead><tr><th>#</th><th>Field</th><th>Start</th><th>Len</th><th>Type</th><th>Transform</th></tr></thead>
+                    <tbody id="format-fields-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100" {% if not inbox %}disabled{% endif %}>
+            <i class="bi bi-cloud-download"></i> Run Import
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ── RIGHT: EXPORT ────────────────────────────────────────────────── #}
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-success text-white"><i class="bi bi-file-earmark-arrow-up"></i> Export Data to File</div>
+      <div class="card-body">
+        <form method="POST" action="/datafile/export">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Export Configuration</label>
+            <select name="export_id" id="export-select" class="form-select" required>
+              <option value="">— select export —</option>
+              {% for exp in exports %}
+              <option value="{{ exp.export_id }}"
+                      data-source="{{ exp.source_table }}"
+                      data-desc="{{ exp.description or '' }}"
+                      data-filter="{{ exp.filter_json | tojson }}">
+                {{ exp.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">As-of Date <small class="text-muted">(optional — filters date-partitioned tables)</small></label>
+            <input type="date" name="as_of_date" class="form-control">
+          </div>
+
+          {# Export config preview #}
+          <div id="export-info" class="mb-3" style="display:none;">
+            <div class="card border-success">
+              <div class="card-header bg-success text-white py-1 small fw-bold">Export Configuration Preview</div>
+              <div class="card-body p-2 small">
+                <div class="mb-1"><strong>Source table:</strong> <code id="exp-table"></code></div>
+                <div class="mb-1"><strong>Description:</strong> <span id="exp-desc" class="text-muted"></span></div>
+                <div><strong>Active filters:</strong> <span id="exp-filters"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-success w-100">
+            <i class="bi bi-download"></i> Run Export
+          </button>
+        </form>
+
+        <hr>
+        <h6 class="fw-bold">Recent Exports
+          <small class="text-muted fw-normal font-monospace">instance/datafile_outbox/</small>
+        </h6>
+        <div class="table-responsive" style="max-height:180px;overflow-y:auto;">
+          <table class="table table-sm mb-0">
+            <thead class="table-light sticky-top"><tr>
+              <th>File</th><th>Rows</th><th>When</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for b in history if b.operation == 'EXPORT' %}
+            <tr>
+              <td class="font-monospace small">{{ b.filename }}</td>
+              <td>{{ "{:,}".format(b.row_count) }}</td>
+              <td class="text-muted small">{{ b.started_at.strftime('%m-%d %H:%M') }}</td>
+              <td>
+                {% if b.status == 'COMPLETED' %}
+                <a href="/datafile/download/{{ b.id }}" class="btn btn-sm btn-outline-success py-0"><i class="bi bi-download"></i></a>
+                {% else %}
+                <span class="badge bg-danger">FAILED</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-muted">No exports yet.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── IMPORT HISTORY ───────────────────────────────────────────────────────── #}
+<div class="card mt-4">
+  <div class="card-header"><i class="bi bi-clock-history"></i> Import History</div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead class="table-light">
+        <tr><th>Batch ID</th><th>Format</th><th>File</th><th>Target Table</th><th>Status</th><th>Rows</th><th>Errors</th><th>Started</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for b in history if b.operation == 'IMPORT' %}
+      <tr>
+        <td class="font-monospace small">{{ b.id[:12] }}…</td>
+        <td>{{ b.format_name or b.format_id }}</td>
+        <td class="font-monospace small">{{ b.filename }}</td>
+        <td><code>{{ b.target_table }}</code></td>
+        <td>
+          <span class="badge bg-{{ 'success' if b.status == 'COMPLETED' else 'danger' if b.status == 'FAILED' else 'info' }}">
+            {{ b.status }}
+          </span>
+        </td>
+        <td>{{ "{:,}".format(b.row_count) }}</td>
+        <td>{% if b.error_count %}<span class="text-danger fw-bold">{{ b.error_count }}</span>{% else %}—{% endif %}</td>
+        <td class="text-muted small">{{ b.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td><a href="/datafile/batch/{{ b.id }}" class="btn btn-sm btn-outline-secondary py-0">Detail</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="text-muted p-3">No imports yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Format metadata for JS ────────────────────────────────────────────────── #}
+<script>
+const FORMATS = {{ formats | tojson }};
+
+// Click inbox row → fill filename input
+document.querySelectorAll('.inbox-row').forEach(row => {
+  row.addEventListener('click', () => {
+    document.getElementById('import-filename').value = row.dataset.filename;
+    document.querySelectorAll('.inbox-row').forEach(r => r.classList.remove('table-primary'));
+    row.classList.add('table-primary');
+  });
+});
+
+// Format select → show field reference
+document.querySelector('select[name="format_id"]').addEventListener('change', function() {
+  const fmt = FORMATS.find(f => f.format_id === this.value);
+  const box = document.getElementById('format-info');
+  const body = document.getElementById('format-fields-body');
+  if (!fmt) { box.style.display = 'none'; return; }
+  body.innerHTML = '';
+  fmt.fields.forEach((f, i) => {
+    body.innerHTML += `<tr>
+      <td>${i+1}</td>
+      <td class="font-monospace">${f.name}</td>
+      <td>${f.start}</td>
+      <td>${f.length}</td>
+      <td><span class="badge bg-secondary">${f.type}</span></td>
+      <td class="text-muted small font-monospace">${f.transform || '—'}</td>
+    </tr>`;
+  });
+  box.style.display = '';
+});
+
+// Export select → show config preview
+document.getElementById('export-select').addEventListener('change', function() {
+  const opt = this.options[this.selectedIndex];
+  const box = document.getElementById('export-info');
+  if (!opt.value) { box.style.display = 'none'; return; }
+  document.getElementById('exp-table').textContent = opt.dataset.source || '—';
+  document.getElementById('exp-desc').textContent = opt.dataset.desc || '—';
+  const filter = JSON.parse(opt.dataset.filter || '{}');
+  const conds = (filter.conditions || []).filter(c => c.value);
+  document.getElementById('exp-filters').textContent =
+    conds.length ? conds.map(c => `${c.field} ${c.operator} "${c.value}"`).join(' ' + (filter.logic||'AND') + ' ')
+                 : 'none (all rows)';
+  box.style.display = '';
+});
+</script>
+{% endblock %}

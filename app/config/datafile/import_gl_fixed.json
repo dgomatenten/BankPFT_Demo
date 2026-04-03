@@ -1,0 +1,18 @@
+{
+  "operation": "import",
+  "format_id": "GL_FIXED",
+  "name": "GL Data — Fixed Length",
+  "description": "Fixed-width GL balance file. Each record is 100 chars.",
+  "type": "fixed_length",
+  "target_table": "stg_gl_data",
+  "record_length": 100,
+  "skip_header_rows": 1,
+  "fields": [
+    { "name": "gl_account",  "start": 1,  "length": 20, "type": "string" },
+    { "name": "org_unit_id", "start": 21, "length": 15, "type": "string" },
+    { "name": "as_of_date",  "start": 36, "length": 10, "type": "date",  "date_format": "%Y-%m-%d" },
+    { "name": "debit",       "start": 46, "length": 20, "type": "float", "transform": "float(value) / 100.0" },
+    { "name": "credit",      "start": 66, "length": 20, "type": "float", "transform": "float(value) / 100.0" },
+    { "name": "balance",     "start": 86, "length": 15, "type": "float", "transform": "float(value) / 100.0" }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "operation": "export",
+  "export_id": "INST_CSV_EXPORT",
+  "name": "Processed Instruments Export — CSV",
+  "description": "Export processed instrument data as a comma-separated file.",
+  "source_table": "proc_inst_data",
+  "format": "delimited",
+  "delimiter": ",",
+  "quotechar": "\"",
+  "include_header": true,
+  "filter_json": {
+    "logic": "AND",
+    "conditions": []
+  },
+  "fields": [
+    { "source_col": "account_id",      "header": "account_id",      "type": "string" },
+    { "source_col": "customer_id",     "header": "customer_id",     "type": "string" },
+    { "source_col": "product_code",    "header": "product_code",    "type": "string" },
+    { "source_col": "org_unit_id",     "header": "org_unit_id",     "type": "string" },
+    { "source_col": "as_of_date",      "header": "as_of_date",      "type": "date",  "date_format": "%Y-%m-%d" },
+    { "source_col": "balance",         "header": "balance",         "type": "float", "decimals": 2 },
+    { "source_col": "interest_income", "header": "interest_income", "type": "float", "decimals": 2 }
+  ]
+}

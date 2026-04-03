@@ -1,0 +1,23 @@
+{
+  "operation": "export",
+  "export_id": "ALLOC_RESULT_EXPORT",
+  "name": "Allocation Results Export",
+  "description": "Export DEBIT entries from the management ledger to a fixed-width file.",
+  "source_table": "fct_mgmt_ledger",
+  "format": "fixed_length",
+  "include_header": true,
+  "filter_json": {
+    "logic": "AND",
+    "conditions": [
+      { "field": "entry_type", "operator": "eq", "value": "DEBIT" }
+    ]
+  },
+  "fields": [
+    { "source_col": "batch_run_id",       "header": "BATCH_RUN_ID        ", "start": 1,  "length": 36, "type": "string" },
+    { "source_col": "as_of_date",         "header": "AS_OF_DATE",           "start": 37, "length": 10, "type": "date",  "date_format": "%Y-%m-%d" },
+    { "source_col": "source_account_id",  "header": "ACCOUNT_ID          ", "start": 47, "length": 20, "type": "string" },
+    { "source_col": "customer_id",        "header": "CUSTOMER_ID    ",      "start": 67, "length": 15, "type": "string" },
+    { "source_col": "target_org_unit_id", "header": "TARGET_ORG     ",      "start": 82, "length": 15, "type": "string" },
+    { "source_col": "allocated_balance",  "header": "ALLOC_BAL           ", "start": 97, "length": 20, "type": "float", "decimals": 2 }
+  ]
+}

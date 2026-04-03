@@ -1,0 +1,21 @@
+{
+  "operation": "import",
+  "format_id": "INST_CSV",
+  "name": "Instrument Data — CSV (Comma Delimited)",
+  "description": "Comma-separated instrument file. First row is a header (skipped). Fields mapped by column index.",
+  "type": "delimited",
+  "delimiter": ",",
+  "quotechar": "\"",
+  "target_table": "stg_inst_data",
+  "skip_header_rows": 1,
+  "use_header_names": false,
+  "fields": [
+    { "name": "account_id",      "column": 0, "type": "string" },
+    { "name": "customer_id",     "column": 1, "type": "string" },
+    { "name": "product_code",    "column": 2, "type": "string" },
+    { "name": "org_unit_id",     "column": 3, "type": "string" },
+    { "name": "as_of_date",      "column": 4, "type": "date",  "date_format": "%Y-%m-%d" },
+    { "name": "balance",         "column": 5, "type": "float", "transform": "float(value) / 100.0" },
+    { "name": "interest_income", "column": 6, "type": "float", "transform": "float(value) / 100.0" }
+  ]
+}

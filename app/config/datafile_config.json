@@ -1,0 +1,42 @@
+{
+  "_comment": "Global settings for the Data File Management module. Import/export rules live in app/config/datafile/*.json",
+  "inbox_folder": "datafile_inbox",
+  "outbox_folder": "datafile_outbox",
+
+  "_transform_reference": {
+    "_comment": "Copy any expression below into a field's 'transform' key. 'value' = current raw field value.",
+    "arithmetic": [
+      "float(value) / 100.0",
+      "round(float(value) * 1.1, 2)",
+      "int(value) + 1000",
+      "abs(float(value))",
+      "math.floor(float(value) / 10) * 10"
+    ],
+    "string_case": [
+      "upper(value)", "lower(value)", "trim(value)", "ltrim(value)", "rtrim(value)"
+    ],
+    "substring": [
+      "left(value, 5)", "right(value, 4)", "substr(value, 2, 6)", "value[0:8]"
+    ],
+    "padding": [
+      "lpad(value, 10, '0')", "rpad(value, 20)", "lpad(trim(value), 8, '0')"
+    ],
+    "replace_concat": [
+      "replace(value, '-', '')",
+      "concat('PRE-', value)",
+      "concat(left(value, 3), '-', right(value, 4))"
+    ],
+    "conditional_case": [
+      "'DEBIT' if float(value) > 0 else 'CREDIT'",
+      "'Y' if value in ['A','B','C'] else 'N'",
+      "'LARGE' if float(value) > 1000000 else ('MED' if float(value) > 10000 else 'SMALL')"
+    ],
+    "null_default": [
+      "nvl(value, 'N/A')",
+      "iif(trim(value) == '', 'UNSET', upper(value))"
+    ],
+    "safe_conversion": [
+      "to_float(value) * 100", "to_int(value, -1)", "round(to_float(value), 4)"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "operation": "import",
+  "format_id": "INST_FIXED",
+  "name": "Instrument Data — Fixed Length",
+  "description": "Fixed-width instrument balance file. Each record is 120 chars.",
+  "type": "fixed_length",
+  "target_table": "stg_inst_data",
+  "record_length": 120,
+  "skip_header_rows": 1,
+  "fields": [
+    { "name": "account_id",      "start": 1,  "length": 20, "type": "string" },
+    { "name": "customer_id",     "start": 21, "length": 15, "type": "string" },
+    { "name": "product_code",    "start": 36, "length": 10, "type": "string" },
+    { "name": "org_unit_id",     "start": 46, "length": 15, "type": "string" },
+    { "name": "as_of_date",      "start": 61, "length": 10, "type": "date",  "date_format": "%Y-%m-%d" },
+    { "name": "balance",         "start": 71, "length": 20, "type": "float", "transform": "float(value) / 100.0" },
+    { "name": "interest_income", "start": 91, "length": 20, "type": "float", "transform": "float(value) / 100.0" }
+  ]
+}

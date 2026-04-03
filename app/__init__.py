@@ -13,6 +13,7 @@ import app.models.allocation  # noqa
 import app.models.workflow  # noqa
 import app.models.auth  # noqa
 import app.models.ftp  # noqa
+import app.models.datafile  # noqa
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
@@ -55,6 +56,8 @@ def create_app(config_class=Config):
     from app.routes.auth import bp as auth_bp
     from app.routes.admin import bp as admin_bp
     from app.routes.ftp import bp as ftp_bp
+    from app.routes.datafile import bp as datafile_bp
+    from app.routes.api import bp as api_bp
 
     flask_app.register_blueprint(dashboard_bp)
     flask_app.register_blueprint(upload_bp, url_prefix="/upload")
@@ -65,6 +68,8 @@ def create_app(config_class=Config):
     flask_app.register_blueprint(auth_bp, url_prefix="/auth")
     flask_app.register_blueprint(admin_bp, url_prefix="/admin")
     flask_app.register_blueprint(ftp_bp, url_prefix="/ftp")
+    flask_app.register_blueprint(datafile_bp, url_prefix="/datafile")
+    flask_app.register_blueprint(api_bp, url_prefix="/api/v1")
 
     with flask_app.app_context():
         db.create_all()
