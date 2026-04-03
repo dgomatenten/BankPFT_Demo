@@ -1,9 +1,10 @@
+import os
 from datetime import date, datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app.models.workflow import AllocationRule, BatchRun
 from app.models.ftp import FtpRun
-from app.services.allocation_engine import run_allocation
+from app.services.allocation_engine import run_allocation, BATCH_LOG_DIR
 from app.services.ftp_engine import run_ftp
 
 bp = Blueprint("batch", __name__)
@@ -80,4 +81,9 @@ def run_ftp_batch():
 @login_required
 def detail(batch_id):
     batch = BatchRun.query.get_or_404(batch_id)
-    return render_template("batch/detail.html", batch=batch)
+    log_content = None
+    log_path = os.path.join(BATCH_LOG_DIR, f"batch_{batch_id}.log")
+    if os.path.exists(log_path):
+        with open(log_path, encoding="utf-8") as _f:
+            log_content = _f.read()
+    return render_template("batch/detail.html", batch=batch, log_content=log_content)
