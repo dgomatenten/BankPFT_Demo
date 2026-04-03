@@ -144,7 +144,11 @@ def import_rule():
 @login_required
 def detail(rule_id):
     rule = AllocationRule.query.get_or_404(rule_id)
-    allocations = RefStaticAllocation.query.filter_by(status="APPROVED").all()
+    allocations = (
+        RefStaticAllocation.query.filter_by(status="APPROVED").all()
+        if rule.lookup_table == "ref_static_allocation"
+        else []
+    )
     return render_template("rules/detail.html", rule=rule, allocations=allocations)
 
 
