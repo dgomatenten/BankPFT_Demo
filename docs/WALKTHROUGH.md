@@ -389,6 +389,23 @@ Create an allocation rule from a JSON file or pasted JSON text. Useful for versi
 
 Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**. Valid `entry_mode` values: `BOTH` (default), `DEBIT_ONLY`, `CREDIT_ONLY`.
 
+### How the Rule Is Stored
+
+After a successful import, the system redirects to the **Rule Detail** page. Every field from the JSON is persisted and displayed:
+
+![Stored Rule Detail](images/19c_rule_stored_detail.png)
+
+| Section | What is shown |
+|---|---|
+| **Header card** | ID, Name, Status (ACTIVE), Created By, Created timestamp |
+| **Config row** | Source table, Lookup table, Output table, Entry Mode badge, Join Key(s) |
+| **Description** | Free-text notes from the `description` field |
+| **Source Dimension Filters** | One row per dimension — mode (`all` / `specific`) and any pinned members |
+| **Debit Entry — Dimension Mapping** | Target dimension modes (`same_as_source`, `lookup`, `fixed`) with lookup column or fixed value |
+| **Credit Entry — Dimension Mapping** | Same structure for the credit-side entry (only shown when `entry_mode` is `BOTH` or `CREDIT_ONLY`) |
+| **Actions** | Edit Rule / Deactivate Rule / Delete Rule buttons |
+| **Approved Allocation Ratios** | Pre-joined lookup rows that will be applied when the rule runs in a batch |
+
 ---
 
 ## 15. Batch Execution
