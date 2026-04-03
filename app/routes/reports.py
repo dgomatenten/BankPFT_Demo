@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from flask_login import login_required
+from flask_login import login_required, current_user
 from app.models import db
 from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccount
 from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
@@ -102,7 +102,11 @@ def _build_pk_value(row, pk_cols):
 
 
 @bp.route("/tables/<table_name>/edit/<path:pk_value>", methods=["GET", "POST"])
+@login_required
 def table_edit(table_name, pk_value):
+    if not current_user.is_admin:
+        flash("Access denied. Admin privileges required.", "danger")
+        return redirect(url_for("reports.tables"))
     if table_name not in ALL_MODELS:
         flash("Unknown table.", "danger")
         return redirect(url_for("reports.tables"))
@@ -155,7 +159,11 @@ def table_edit(table_name, pk_value):
 
 
 @bp.route("/tables/<table_name>/delete/<path:pk_value>", methods=["POST"])
+@login_required
 def table_delete(table_name, pk_value):
+    if not current_user.is_admin:
+        flash("Access denied. Admin privileges required.", "danger")
+        return redirect(url_for("reports.tables"))
     if table_name not in ALL_MODELS:
         flash("Unknown table.", "danger")
         return redirect(url_for("reports.tables"))

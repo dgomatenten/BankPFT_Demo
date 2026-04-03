@@ -60,6 +60,17 @@ def create_app(config_class=Config):
     # Custom Jinja filter for parsing JSON in templates
     flask_app.jinja_env.filters["from_json"] = lambda s: json.loads(s) if s else {}
 
+    # Global error handlers — prevent stack traces leaking to users
+    from flask import render_template as _rt
+
+    @flask_app.errorhandler(404)
+    def not_found(e):
+        return _rt("errors/404.html"), 404
+
+    @flask_app.errorhandler(500)
+    def server_error(e):
+        return _rt("errors/500.html"), 500
+
     return flask_app
 
 
