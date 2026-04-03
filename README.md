@@ -11,7 +11,9 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic |
-| **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser |
+| **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
+| **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
+| **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, and allocation ratio Excel files for testing |
 
 ## Architecture
@@ -41,6 +43,14 @@ Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_
 - **Deployment:** Gunicorn, Docker
 
 ## Quick Start
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_KEY` | `dev-secret-change-in-production` | Flask session signing key — **set this in production** |
+| `DATABASE_URL` | `sqlite:///instance/bankpft.db` | SQLAlchemy connection string |
+| `FLASK_DEBUG` | `0` | Set to `1` to enable debug mode (development only) |
 
 ### Local (recommended — `start.sh`)
 

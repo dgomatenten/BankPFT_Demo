@@ -31,6 +31,7 @@ This guide walks through every screen in the Management Allocation System, expla
 23. [User Management](#23-user-management)
 24. [Group Management](#24-group-management)
 25. [Starting the Application](#25-starting-the-application)
+26. [PWA — Install as Standalone App](#26-pwa--install-as-standalone-app)
 
 ---
 
@@ -498,6 +499,8 @@ Browse, search, and edit data in any database table.
 
 All tables are listed, including `fct_mgmt_instrument` for viewing DEBIT/CREDIT entries from allocation runs.
 
+> **Access control:** **Edit** and **Delete** row actions are visible only to Admin users.
+
 ---
 
 ## 21. Table Browser — Data View
@@ -512,7 +515,7 @@ View table data with pagination and inline editing.
 - **Table selector** — switch between tables
 - **Column headers** — all columns in the selected table
 - **Data rows** — paginated (configurable page size)
-- **Edit / Delete** — inline actions for each row
+- **Edit / Delete** — inline actions for each row (**Admin only**)
 - **Pagination** — navigate through large tables
 
 Useful for verifying dimension data, checking staged records, or inspecting DEBIT/CREDIT allocation entries.
@@ -618,6 +621,33 @@ The `start.sh` script handles virtual environment creation, dependency installat
 | Install requirements.txt | ✔ | ✔ |
 | Create `instance/` and `uploads/` dirs | ✔ | ✔ |
 | Start Flask debug server (foreground) | ✔ | ✕ |
+| Start Gunicorn daemon (background) | ✕ | ✔ |
+
+> **Debug mode** is **disabled by default**. Set the `FLASK_DEBUG=1` environment variable only in development. In production, error pages show a friendly message instead of a stack trace.
+
+---
+
+## 26. PWA — Install as Standalone App
+
+BankPFT ships a [Web App Manifest](https://developer.mozilla.org/en-US/docs/Web/Manifest) (`/static/manifest.json`) that enables installation as a standalone Progressive Web App. When launched from the desktop shortcut, the browser frame — including the address bar — is hidden.
+
+**How to install:**
+
+1. Open the app in **Chrome** or **Edge**
+2. Look for the **install icon** (desktop icon or "+" symbol) in the address bar, or open the browser menu and select **"Install Management Allocation System"**
+3. Click **Install** — a desktop shortcut is created
+4. Launch from the shortcut — the app opens full-screen with no browser chrome
+
+**Supported browsers:** Chrome 73+, Edge 79+, Samsung Internet 8.2+. Firefox does not support standalone display mode.
+
+**Manifest settings:**
+
+| Setting | Value |
+|---|---|
+| Display | `standalone` (no address bar) |
+| Theme color | `#1a237e` (dark blue) |
+| Start URL | `/` (Dashboard) |
+| Icons | 192×192 and 512×512 PNG |
 | Start Gunicorn daemon (background) | ✕ | ✔ |
 | Write PID to `bankpft.pid` | ✕ | ✔ |
 | Write logs to `bankpft.log` | ✕ | ✔ |
