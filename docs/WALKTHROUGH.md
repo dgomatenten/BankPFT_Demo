@@ -956,6 +956,182 @@ The `transform` field on an import field is a safe expression evaluated at row l
 | `nvl(value, 'UNKNOWN')` | `''` → `'UNKNOWN'` |
 | `value[0:8]` | `'20260101extra'` → `'20260101'` |
 
+### Transform Demo Files
+
+Two fully-annotated demo JSON files are provided as copy-paste references:
+
+| File | Purpose |
+|---|---|
+| `app/config/datafile/import_transform_demo.json` | 10 import transform categories — raw string `value` from file |
+| `app/config/datafile/export_transform_demo.json` | 9 export transform categories — Python DB value (str/float/date/None) |
+
+Every field in these files has a `_comment` explaining the transform and showing an input → output example. Copy any field block directly into a production rule JSON.
+
+#### Import Transform Categories
+
+**1. No transform** — value stored as-is after whitespace stripping
+```json
+{ "name": "account_id", "start": 1, "length": 15, "type": "string" }
+```
+
+**2. String case & trim**
+```json
+{ "name": "product_code", "start": 16, "length": 10, "type": "string",
+  "transform": "upper(trim(value))" }
+```
+`' loan '` → `'LOAN'`
+
+**3. Padding & prefix/suffix**
+```json
+{ "name": "org_unit_id", "start": 86, "length": 4, "type": "string",
+  "transform": "concat('BR', lpad(trim(value), 4, '0'))" }
+```
+`'12'` → `'BR0012'`
+
+```json
+{ "name": "reference_code", "start": 103, "length": 10, "type": "string",
+  "transform": "concat('REF-', trim(value), '-2026')" }
+```
+`'001'` → `'REF-001-2026'`
+
+**4. Substring & slice**
+```json
+{ "name": "year_part",   "transform": "left(value, 4)" }
+{ "name": "month_part",  "transform": "substr(value, 4, 6)" }
+{ "name": "last_4_chars","transform": "right(value, 4)" }
+{ "name": "slice_syntax","transform": "value[0:8]" }
+```
+`'20260101'` → `'2026'` / `'01'` / `'0101'` / `'20260101'`
+
+**5. Replace & strip characters**
+```json
+{ "name": "clean_amount", "transform": "replace(value, ',', '')" }
+{ "name": "normalised_id", "transform": "replace(replace(value, '-', ''), ' ', '')" }
+```
+`'1,234,567'` → `'1234567'` / `'ACC-001 X'` → `'ACC001X'`
+
+**6. Numeric conversion & scaling**
+```json
+{ "name": "balance",  "type": "float", "transform": "to_float(value) / 100" }
+{ "name": "rate_bps", "type": "float", "transform": "to_float(value) / 10000" }
+{ "name": "quantity", "type": "float", "transform": "to_int(value)" }
+{ "name": "amount_rounded", "transform": "round(to_float(replace(value, ',', '')) / 100, 2)" }
+```
+`'25000000'` → `250000.0` | `'535'` → `0.0535` | `'1,234,567'` → `12345.67`
+
+**7. Conditional (IF / CASE)**
+```json
+{ "name": "entry_type", "transform": "'DEBIT' if to_float(value) > 0 else 'CREDIT'" }
+{ "name": "entry_type_iif", "transform": "iif(to_float(value) > 0, 'DEBIT', 'CREDIT')" }
+{ "name": "risk_bucket",
+  "transform": "'HIGH' if to_int(value) >= 80 else ('MED' if to_int(value) >= 50 else 'LOW')" }
+{ "name": "in_list_check",
+  "transform": "'Y' if upper(trim(value)) in ['LOAN', 'DEPOSIT', 'MTG'] else 'N'" }
+```
+
+**8. Null / empty default**
+```json
+{ "name": "nullable_field", "transform": "nvl(value, 'UNKNOWN')" }
+{ "name": "zero_for_blank", "transform": "to_float(nvl(value, '0'))" }
+{ "name": "priority_field", "transform": "coalesce(trim(value), 'DEFAULT')" }
+```
+
+**9. Date parsing** — use `date_format`, no `transform` needed
+```json
+{ "name": "as_of_date", "type": "date", "date_format": "%Y%m%d" }   // YYYYMMDD
+{ "name": "as_of_date", "type": "date", "date_format": "%d%m%Y" }   // DDMMYYYY
+{ "name": "as_of_date", "type": "date", "date_format": "%Y-%m-%d" } // ISO (default)
+```
+
+**10. Combined / chained transforms**
+```json
+{ "name": "normalised_org",
+  "transform": "concat('OU-', lpad(replace(trim(value), 'BR', ''), 4, '0'))" }
+```
+`'BR  7'` → `'OU-0007'`
+
+```json
+{ "name": "masked_account",
+  "transform": "concat(left(value, 4), '****', right(value, 4))" }
+```
+`'ACC-12345678'` → `'ACC-****5678'`
+
+---
+
+#### Export Transform Categories
+
+For export fields, `value` is the Python value from the database (may be `str`, `int`, `float`, `date`, or `None`). Use `str(value)` when a string function is needed on a non-string column.
+
+**1. No transform** — written as-is (string pads/truncates to `length`)
+```json
+{ "source_col": "account_id", "header": "ACCOUNT_ID", "start": 1, "length": 20, "type": "string" }
+```
+
+**2. String case**
+```json
+{ "source_col": "product_code", "transform": "upper(str(value))" }  // 'loan' → 'LOAN'
+{ "source_col": "status",       "transform": "lower(str(value))" }  // 'ACTIVE' → 'active'
+```
+
+**3. Padding & prefix**
+```json
+{ "source_col": "org_unit_id", "transform": "lpad(str(value), 10, '0')" }
+{ "source_col": "customer_id", "transform": "concat('CUST-', lpad(str(value), 12, '0'))" }
+```
+`'OU001'` → `'00000OU001'` | `'C001'` → `'CUST-000000000C001'`
+
+**4. Numeric scaling**
+```json
+{ "source_col": "balance",         "transform": "round(to_float(value) * 100)",  "decimals": 0 }
+{ "source_col": "interest_income", "transform": "round(to_float(value) * 10000)","decimals": 0 }
+{ "source_col": "balance",                                                         "decimals": 2 }
+```
+`250000.0` → `25000000` (cents) | `0.0535` → `535` (bps) | `250000.0` → `'250000.00'`
+
+**5. Date reformatting** — use `date_format`
+```json
+{ "source_col": "as_of_date", "type": "date", "date_format": "%Y-%m-%d" } // 2026-01-01
+{ "source_col": "as_of_date", "type": "date", "date_format": "%Y%m%d" }   // 20260101
+{ "source_col": "as_of_date", "type": "date", "date_format": "%d%m%Y" }   // 01012026
+```
+
+**6. Conditional**
+```json
+{ "source_col": "balance", "header": "DR_CR_IND",
+  "transform": "'DEBIT ' if to_float(value) >= 0 else 'CREDIT'" }
+{ "source_col": "balance", "header": "SIGN",
+  "transform": "'+' if to_float(value) >= 0 else '-'" }
+{ "source_col": "product_code", "header": "PRODUCT_GROUP",
+  "transform": "'LENDING' if upper(str(value)) in ['LOAN','MTG','OD'] else ('DEPOSIT' if upper(str(value)) in ['SAV','DEP','TD'] else 'OTHER')" }
+```
+
+**7. Null default (NVL)**
+```json
+{ "source_col": "base_rate",   "transform": "to_float(nvl(value, '0'))", "decimals": 6 }
+{ "source_col": "cost_of_fund","transform": "round(to_float(nvl(value, '0')) * 100, 0)", "decimals": 0 }
+```
+`NULL` → `0.000000` | `NULL` → `0`
+
+**8. Replace & clean**
+```json
+{ "source_col": "org_unit_id", "transform": "replace(str(value), 'BR', '')" }
+{ "source_col": "account_id",  "transform": "replace(replace(str(value), '-', ''), ' ', '')" }
+```
+`'BR0012'` → `'0012'` | `'ACC-001 X'` → `'ACC001X'`
+
+**9. Combined / chained**
+```json
+{ "source_col": "balance", "header": "SIGNED_CENTS",
+  "transform": "concat('+' if to_float(value) >= 0 else '-', lpad(str(round(abs(to_float(value)) * 100)), 18, '0'))" }
+```
+`250000.0` → `'+000000000025000000'`
+
+```json
+{ "source_col": "balance", "header": "DISPLAY_AMT",
+  "transform": "lpad(str(round(to_float(nvl(value, '0')) * 100)), 20, '0')" }
+```
+Full pipeline: null-safe → scale cents → round → zero-pad to 20 chars.
+
 ### Folder Paths
 
 Configured in `app/config/datafile_config.json`:

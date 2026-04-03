@@ -502,12 +502,29 @@ Field transforms are safe-eval expressions. Available functions:
 | Slice | `value[0:5]` |
 
 **Examples:**
-```
-"transform": "concat('BR', lpad(value, 4, '0'))"     # → BR0042
-"transform": "to_float(value) / 100"                  # cents → dollars
-"transform": "'DEBIT' if to_float(value) > 0 else 'CREDIT'"
-"transform": "nvl(value, 'UNKNOWN')"
-```
+
+| Transform expression | Input → Output |
+|---|---|
+| `concat('BR', lpad(value, 4, '0'))` | `'12'` → `'BR0012'` |
+| `to_float(value) / 100` | `'25000000'` → `250000.0` |
+| `upper(trim(value))` | `' loan '` → `'LOAN'` |
+| `'DEBIT' if to_float(value) > 0 else 'CREDIT'` | `'500'` → `'DEBIT'` |
+| `nvl(value, 'UNKNOWN')` | `''` → `'UNKNOWN'` |
+| `'HIGH' if to_int(value) >= 80 else ('MED' if to_int(value) >= 50 else 'LOW')` | `'90'` → `'HIGH'` |
+| `'Y' if upper(trim(value)) in ['LOAN','MTG'] else 'N'` | `'loan'` → `'Y'` |
+| `replace(value, ',', '')` | `'1,234,567'` → `'1234567'` |
+| `round(to_float(replace(value, ',', '')) / 100, 2)` | `'1,234,567'` → `12345.67` |
+| `value[0:8]` | `'20260101extra'` → `'20260101'` |
+| `concat(left(value, 4), '****', right(value, 4))` | `'ACC-12345678'` → `'ACC-****5678'` |
+
+Full annotated demo files for every transform category:
+
+| File | Description |
+|---|---|
+| `app/config/datafile/import_transform_demo.json` | 10 import categories (raw string `value` from file) |
+| `app/config/datafile/export_transform_demo.json` | 9 export categories (Python DB value — str/float/date/None) |
+
+Each field in those files has a `_comment` with an input → output example. Copy any block directly into a production rule.
 
 ### UI
 
