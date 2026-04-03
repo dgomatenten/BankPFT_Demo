@@ -10,18 +10,19 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
-| **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic |
+| **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic. FTP runs can also be triggered from the same batch page |
+| **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
-| **Test Data Generator** | Generate master data, instrument data, GL data, and allocation ratio Excel files for testing |
+| **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
 
 ## Architecture
 
 ```
 Dimensions (Org Unit, Product, Customer, Account)
         ↓ validation
-Staging (STG_INST_DATA, STG_GL_DATA)
+Staging (STG_INST_DATA, STG_GL_DATA, REF_INTEREST_RATE)
         ↓ Maker/Checker approval
 Processing (PROC_INST_DATA, PROC_GL_DATA)
         ↓ Allocation Engine (Pandas join + ratio shredding)
@@ -29,6 +30,11 @@ Processing (PROC_INST_DATA, PROC_GL_DATA)
                                                    CREDIT dim mapping (credit_dim_json)
 Result  FCT_MGMT_INSTRUMENT  (entry_mode: BOTH | DEBIT_ONLY | CREDIT_ONLY, instrument-level)
         FCT_MGMT_LEDGER      (ledger output)
+
+FTP Engine (separate)
+        REF_INTEREST_RATE (approved) → moving-average lookup → base_rate per instrument
+        cost_of_fund = balance × base_rate × (days_in_month / days_in_year)
+        Results written back to PROC_INST_DATA.base_rate / PROC_INST_DATA.cost_of_fund
 ```
 
 Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_id`. Each customer's ratios must sum to 1.0 per allocation group. Org reclassifications are stored in `REF_ORG_RECLASS` as 1:1 org-to-org mappings (ratio always 1.0).
@@ -112,6 +118,7 @@ app/
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
 │   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger, FctMgmtInstrument
+│   ├── ftp.py               # RefInterestRate, FtpProductConfig, FtpRun
 │   └── workflow.py          # UploadBatch, AllocationRule, BatchRun
 ├── routes/
 │   ├── auth.py              # Login, logout, change password
@@ -119,14 +126,16 @@ app/
 │   ├── dashboard.py         # Home dashboard
 │   ├── upload.py            # Data upload with Maker/Checker
 │   ├── rules.py             # Allocation rule CRUD + JSON import
-│   ├── batch.py             # Batch execution
+│   ├── batch.py             # Batch execution (Allocation + FTP)
+│   ├── ftp.py               # FTP dashboard, config CRUD, rate browser, run detail
 │   ├── reports.py           # Reports & table browser
 │   └── testdata.py          # Test data generation
 ├── services/
 │   ├── __init__.py          # Maker/Checker state machine (group-aware)
 │   ├── upload_service.py    # Config-driven file parsing & validation
 │   ├── allocation_engine.py # Config-driven Pandas shredding engine
-│   └── testdata_service.py  # Test data generators
+│   ├── ftp_engine.py        # FTP moving-average engine (run_ftp)
+│   └── testdata_service.py  # Test data generators (incl. FTP rate seeding)
 └── templates/               # Jinja2 / Bootstrap 5 templates
 ```
 
@@ -205,6 +214,46 @@ The system supports multiple lookup tables that the allocation engine can join a
 |---|---|---|---|
 | `ref_static_allocation` | Shred balances across orgs by customer-level ratios | `customer_id` | Variable (must sum to 1.0 per group) |
 | `ref_org_reclass` | Reclassify one org unit to another (1:1 mapping) | `org_unit_id` | Always 1.0 |
+
+## Fund Transfer Pricing (FTP)
+
+The FTP engine is independent of the allocation engine and operates on `proc_inst_data` directly.
+
+### Data Model
+
+| Table | Purpose |
+|---|---|
+| `ref_interest_rate` | Uploaded rate curves (Maker/Checker approved). Columns: `effective_date`, `interest_rate_code`, `term`, `term_mult`, `rate` |
+| `ftp_product_config` | Per-product FTP settings: method, rate code, tenor (term+mult), lookback window (avg_period+mult) |
+| `ftp_run` | Execution log: as_of_date, status, instruments processed/matched/skipped |
+
+### Calculation Method: MOVING_AVG
+
+```
+1. For the instrument's product_code, look up FtpProductConfig (rate_code, term, term_mult, avg_period, avg_period_mult)
+2. Compute lookback_start = as_of_date − avg_period × avg_period_mult
+3. Query ref_interest_rate WHERE interest_rate_code=rate_code AND term=term AND term_mult=term_mult
+   AND effective_date BETWEEN lookback_start AND as_of_date AND status='APPROVED'
+4. base_rate = simple average of those rate values
+5. days_in_month = calendar days in the as_of_date's month
+6. days_in_year  = 366 if leap year else 365
+7. cost_of_fund  = balance × base_rate × (days_in_month / days_in_year)
+8. Write base_rate and cost_of_fund back to proc_inst_data
+```
+
+### FTP Upload Type
+
+Interest rates are uploaded via the standard upload screen using **Data Type: Interest Rate**. The upload is validated (column checks, date cast) and follows the DRAFT → PENDING → APPROVED workflow before the FTP engine can use the rates.
+
+### FTP Configuration (`/ftp/config`)
+
+| Field | Example | Description |
+|---|---|---|
+| Product Code | `PROD-LON` | Must match a value in `dim_product` |
+| Method | `MOVING_AVG` | Currently the only supported method |
+| Rate Code | `SWAP_RATE` | Must match `interest_rate_code` in the rate table |
+| Term / Term Mult | `5 / Y` | Tenor point to use from the rate curve |
+| Avg Period / Mult | `3 / M` | Length of the moving-average lookback window |
 
 Both tables follow the Maker/Checker workflow (DRAFT → PENDING → APPROVED) and are uploaded via the standard upload screen.
 

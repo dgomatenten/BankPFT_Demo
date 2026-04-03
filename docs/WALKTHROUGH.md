@@ -22,16 +22,20 @@ This guide walks through every screen in the Management Allocation System, expla
 14. [Allocation Rules — Import from JSON](#14-allocation-rules--import-from-json)
 15. [Batch Execution](#15-batch-execution)
 16. [Batch Execution — Detail](#16-batch-execution--detail)
-17. [Reports — Index](#17-reports--index)
-18. [Management Ledger Report](#18-management-ledger-report)
-19. [Operations Report](#19-operations-report)
-20. [Database Table Browser](#20-database-table-browser)
-21. [Table Browser — Data View](#21-table-browser--data-view)
-22. [Test Data Generator](#22-test-data-generator)
-23. [User Management](#23-user-management)
-24. [Group Management](#24-group-management)
-25. [Starting the Application](#25-starting-the-application)
-26. [PWA — Install as Standalone App](#26-pwa--install-as-standalone-app)
+17. [Fund Transfer Pricing — Dashboard](#17-fund-transfer-pricing--dashboard)
+18. [Fund Transfer Pricing — Product Config](#18-fund-transfer-pricing--product-config)
+19. [Fund Transfer Pricing — Interest Rates Browser](#19-fund-transfer-pricing--interest-rates-browser)
+20. [Fund Transfer Pricing — Run Detail](#20-fund-transfer-pricing--run-detail)
+21. [Reports — Index](#21-reports--index)
+22. [Management Ledger Report](#22-management-ledger-report)
+23. [Operations Report](#23-operations-report)
+24. [Database Table Browser](#24-database-table-browser)
+25. [Table Browser — Data View](#25-table-browser--data-view)
+26. [Test Data Generator](#26-test-data-generator)
+27. [User Management](#27-user-management)
+28. [Group Management](#28-group-management)
+29. [Starting the Application](#29-starting-the-application)
+30. [PWA — Install as Standalone App](#30-pwa--install-as-standalone-app)
 
 ---
 
@@ -389,14 +393,17 @@ Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**.
 
 **URL:** `/batch`
 
-Run allocation rules against processed data and view past batch runs.
+Run allocation rules or FTP calculations against processed data and view past run history.
 
 ![Batch Execution](images/06_batch_execution.png)
 
-**How to use:**
+The page is divided into two run panels side-by-side and two separate history tables below.
+
+### Run Allocation Batch
+
 1. **Select a Rule** — choose from active allocation rules
 2. **As-of Date** — the date to filter source data
-3. **Click Run Allocation** — executes the Pandas-based allocation engine
+3. **Click Run** — executes the Pandas-based allocation engine
 
 **What happens during execution:**
 1. Source data is loaded from the configured table (filtered by date)
@@ -409,7 +416,18 @@ Run allocation rules against processed data and view past batch runs.
 8. If **entry_mode** = **BOTH** or **CREDIT_ONLY**: **CREDIT entry** — dimensions resolved per `credit_dim_json` (defaults to same-as-source), balance = negative
 9. **Orphan rows** (no matching ratio) — DEBIT only at source org (`default_ratio` from config)
 
-Past batch runs are listed below with status, source/output row counts, and links to execution logs.
+### Run FTP Batch
+
+1. **As-of Date** — the calculation date
+2. **Click Run FTP** — triggers the FTP moving-average engine
+
+**What the FTP engine does:**
+1. Loads all active `ftp_product_config` records
+2. For each distinct product, queries `proc_inst_data` for instruments on the as-of date
+3. Computes the moving-average `base_rate` from approved interest rate history over the lookback window
+4. Writes `base_rate` and `cost_of_fund = balance × base_rate × (days_in_month / days_in_year)` back to each instrument row
+
+The **Allocation Batch History** and **FTP Run History** tables are shown separately below the run forms.
 
 ---
 
@@ -430,7 +448,90 @@ View details of a completed batch run.
 
 ---
 
-## 17. Reports — Index
+## 17. Fund Transfer Pricing — Dashboard
+
+**URL:** `/ftp/`
+
+The FTP dashboard is the entry point for all FTP operations.
+
+![FTP Dashboard](images/19_ftp_dashboard.png)
+
+**Key elements:**
+- **Run FTP Calculation** form — select an as-of date and click **Run FTP** to trigger the engine
+- **FTP Run History** table — lists past runs with status, instrument counts, and links to detail pages
+- **FTP Config** button — navigate to the product config list
+- **Interest Rates** button — open the rate browser
+- **Upload Rates** button — shortcut to the Data Upload page (for uploading new rate files)
+
+---
+
+## 18. Fund Transfer Pricing — Product Config
+
+**URL:** `/ftp/config`
+
+Manage per-product FTP calculation parameters.
+
+![FTP Config List](images/20_ftp_config_list.png)
+
+**Config form fields:**
+
+![FTP Config Form](images/21_ftp_config_form.png)
+
+| Field | Description |
+|---|---|
+| **Product Code** | Must match a product in `dim_product` (e.g. `PROD-LON`) |
+| **Method** | Calculation method — currently only `MOVING_AVG` is supported |
+| **Rate Code** | Interest rate code to look up in `ref_interest_rate` (e.g. `SWAP_RATE`) |
+| **Term / Mult** | Tenor of the rate point to use (e.g. `5 Y` = 5-year rate) |
+| **Avg Period / Mult** | Length of the moving-average window (e.g. `3 M` = 3-month average) |
+| **Active** | Whether this config is used in FTP runs |
+
+The FTP engine skips any instrument whose product code has no active config — those instruments appear in the **Skipped** count on the run detail.
+
+---
+
+## 19. Fund Transfer Pricing — Interest Rates Browser
+
+**URL:** `/ftp/rates`
+
+Browse uploaded and approved interest rates with filtering.
+
+![FTP Rates Browser](images/22_ftp_rates_list.png)
+
+**Filters:** Date, Rate Code, Status (DRAFT / PENDING / APPROVED / REJECTED)
+
+Rates are uploaded via the standard upload screen (Data Type: **Interest Rate**) and follow the DRAFT → PENDING → APPROVED workflow. Only APPROVED rates are used in FTP calculations.
+
+**Expected Excel columns for Interest Rate upload:**
+
+| Column | Type | Description |
+|---|---|---|
+| `effective_date` | date | Rate observation date |
+| `interest_rate_code` | string | Rate identifier (e.g. `SWAP_RATE`) |
+| `term` | integer | Tenor number (e.g. `3`) |
+| `term_mult` | string | Tenor unit: D = day, M = month, Y = year |
+| `rate` | float | Rate as decimal (e.g. `0.0535` = 5.35%) |
+
+---
+
+## 20. Fund Transfer Pricing — Run Detail
+
+**URL:** `/ftp/run/<run_id>`
+
+View details of a completed FTP run.
+
+![FTP Run Detail](images/23_ftp_run_detail.png)
+
+**Key elements:**
+- Run metadata: as-of date, status, run by, timestamps
+- **Instruments Processed** — total rows found for the as-of date
+- **Instruments Matched** — rows where an active FTP config was found (base_rate/cost_of_fund written)
+- **Instruments Skipped** — rows with no active FTP config for their product code
+- Error message if the run failed
+
+---
+
+## 21. Reports — Index
 
 **URL:** `/reports`
 
@@ -444,9 +545,15 @@ Hub page with links to all available reports.
 - **Database Table Browser** — browse and edit any database table
 - **Execution Log** — linked from batch detail pages
 
+**Available reports:**
+- **Management Ledger** — aggregated allocation results
+- **Operations Report** — system activity summary
+- **Database Table Browser** — browse and edit any database table
+- **Execution Log** — linked from batch detail pages
+
 ---
 
-## 18. Management Ledger Report
+## 22. Management Ledger Report
 
 **URL:** `/reports/ledger`
 
@@ -469,7 +576,7 @@ The primary output report.
 
 ---
 
-## 19. Operations Report
+## 23. Operations Report
 
 **URL:** `/reports/operations`
 
@@ -485,7 +592,7 @@ System activity and health overview.
 
 ---
 
-## 20. Database Table Browser
+## 24. Database Table Browser
 
 **URL:** `/reports/tables`
 
@@ -497,13 +604,13 @@ Browse, search, and edit data in any database table.
 1. **Select a table** from the dropdown
 2. **Click Browse** — view the table's data with pagination
 
-All tables are listed, including `fct_mgmt_instrument` for viewing DEBIT/CREDIT entries from allocation runs.
+All tables are listed, including `fct_mgmt_instrument` for DEBIT/CREDIT entries, `ref_interest_rate` for rate curves, `ftp_product_config` for FTP settings, and `ftp_run` for FTP run history.
 
 > **Access control:** **Edit** and **Delete** row actions are visible only to Admin users.
 
 ---
 
-## 21. Table Browser — Data View
+## 25. Table Browser — Data View
 
 **URL:** `/reports/tables?table=<table_name>`
 
@@ -522,7 +629,7 @@ Useful for verifying dimension data, checking staged records, or inspecting DEBI
 
 ---
 
-## 22. Test Data Generator
+## 26. Test Data Generator
 
 **URL:** `/testdata`
 
@@ -532,23 +639,28 @@ Generate realistic test data for the system.
 
 **Available generators:**
 
-| Generator | What it creates |
-|---|---|
-| **Generate Master Data** | Dimension tables: Org Units, Products, Customers, Accounts |
-| **Generate Instrument Data** | Sample instrument balances (Excel file) |
-| **Generate Allocation Ratios** | Sample allocation ratios (Excel file) |
-| **Generate Upload Templates** | Empty Excel templates with correct column headers |
-| **Generate Allocation Test Data** | Pre-built allocation test dataset |
+| Section | Generator | What it creates |
+|---|---|---|
+| Master Data | Generate Master Data | Dimension tables: Org Units, Products, Customers, Accounts |
+| Instrument Data | Generate Instruments | 500+ instrument records in `proc_inst_data` (auto-approved) |
+| Allocation Ratios | Generate Allocations (DB) | Allocation ratios for 10 customers, auto-approved |
+| Allocation Ratios | Generate Alloc Ratio Test File | Excel file with 50 customers for upload testing |
+| Excel Templates | Generate Templates | Blank Excel templates for all upload types (including Interest Rate) |
+| FTP / Interest Rates | Generate Rate Data (DB) | 30 days × 3 codes × 4 tenors = 360 approved rows in `ref_interest_rate` |
+| FTP / Interest Rates | Seed FTP Product Configs | FTP configs for PROD-LON, PROD-MTG, PROD-DEP, PROD-SAV, PROD-CRD |
+| FTP / Interest Rates | Generate Rate Test File | `interest_rate_testdata.xlsx` (360 rows) for upload testing |
 
-**Typical first-time setup:**
-1. Click **Generate Master Data** first (populates dimension tables)
-2. Click **Generate Instrument Data** (creates an Excel file for upload)
-3. Click **Generate Allocation Ratios** (creates ratio data for upload)
-4. Go to Data Upload and upload the generated files
+**Typical end-to-end setup:**
+1. Generate **Master Data** (populates dimension tables)
+2. Generate **Instruments** (seeds instrument records ready for allocation and FTP)
+3. Generate **Allocations (DB)** (seeds approved allocation ratios)
+4. Generate **Rate Data (DB)** (seeds 30 days of approved interest rates)
+5. **Seed FTP Product Configs** (configures FTP engine per product)
+6. Go to **Batch Execution** → Run Allocation + Run FTP
 
 ---
 
-## 23. User Management
+## 27. User Management
 
 **URL:** `/admin/users` (Admin only)
 
@@ -567,7 +679,7 @@ Create, edit, and manage system users.
 
 ---
 
-## 24. Group Management
+## 28. Group Management
 
 **URL:** `/admin/groups` (Admin only)
 
@@ -590,7 +702,7 @@ A user’s effective permissions are the union of all their groups’ permission
 
 ---
 
-## 25. Starting the Application
+## 29. Starting the Application
 
 **Script:** `start.sh` in the project root
 
@@ -627,7 +739,7 @@ The `start.sh` script handles virtual environment creation, dependency installat
 
 ---
 
-## 26. PWA — Install as Standalone App
+## 30. PWA — Install as Standalone App
 
 BankPFT ships a [Web App Manifest](https://developer.mozilla.org/en-US/docs/Web/Manifest) (`/static/manifest.json`) that enables installation as a standalone Progressive Web App. When launched from the desktop shortcut, the browser frame — including the address bar — is hidden.
 
@@ -674,19 +786,30 @@ Open http://localhost:5000 after starting in any mode.
 │   Login      │────>│  Test Data   │────>│  Upload File │────>│   Approve    │────>│  Create Rule │────>│ Run Batch    │
 │   (any user) │     │  Generator   │     │  (Maker)     │     │  (Checker)   │     │  (or Import) │     │ Allocation   │
 └─────────────┘     └──────────────┘     └──────────────┘     └─────────────┘     └──────────────┘     └──────────────┘
-                                                                                                                 │
-                                                                                                                 ▼
-                                                                                                          ┌──────────────┐
-                                                                                                          │  View Ledger │
-                                                                                                          │  Report      │
-                                                                                                          └──────────────┘
+                           │                                                                                      │
+                           │ also seeds rate data                                                                 ▼
+                           │ + FTP product configs                                                         ┌──────────────┐
+                           ▼                                                                               │  View Ledger │
+                    ┌──────────────┐     ┌──────────────┐     ┌──────────────┐                            │  Report      │
+                    │Upload Interest│───>│ Approve Rates │───>│  Run FTP     │                            └──────────────┘
+                    │ Rate File    │     │  (Checker)   │     │  (Batch page)│
+                    └──────────────┘     └──────────────┘     └──────────────┘
+                                                                      │
+                                                                      ▼
+                                                               ┌──────────────┐
+                                                               │ FTP Run Dtl  │
+                                                               │base_rate &   │
+                                                               │cost_of_fund  │
+                                                               └──────────────┘
 ```
 
 1. **Start the app** — run `./start.sh` from the project root
 2. **Login** as maker1 (or any user with Maker permissions)
-3. **Generate** test data (or prepare your own Excel/CSV files)
+3. **Generate** test data — master data, instruments, allocation ratios, interest rates, FTP configs
 4. **Upload** files via Data Upload — validation runs automatically
 5. **Login** as checker1 (different from the Maker) to approve uploads
 6. **Create or import** an allocation rule with optional dimension filters, output mapping, and debit/credit offset
-7. **Execute** a batch run to allocate balances using the rule
-8. **Review** results in the Management Ledger Report — DEBIT entries show reallocated balances; CREDIT entries confirm the double-entry reversal
+7. **Execute** an allocation batch run to shred balances using the rule
+8. **Configure** FTP product configs (or use the seeded defaults from Test Data)
+9. **Run FTP** from the Batch Execution page — computes base_rate and cost_of_fund per instrument
+10. **Review** allocation results in the Management Ledger Report; FTP results in the FTP Run Detail or via the Table Browser (`proc_inst_data.base_rate`, `proc_inst_data.cost_of_fund`)
