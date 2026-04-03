@@ -36,6 +36,12 @@ This guide walks through every screen in the Management Allocation System, expla
 28. [Group Management](#28-group-management)
 29. [Starting the Application](#29-starting-the-application)
 30. [PWA — Install as Standalone App](#30-pwa--install-as-standalone-app)
+31. [Data File Management — Overview](#31-data-file-management--overview)
+32. [Data File Management — Batch History](#32-data-file-management--batch-history)
+33. [Data File Management — Batch Detail](#33-data-file-management--batch-detail)
+34. [REST API — Overview](#34-rest-api--overview)
+35. [REST API — Data File Endpoints](#35-rest-api--data-file-endpoints)
+36. [REST API — Batch Endpoints](#36-rest-api--batch-endpoints)
 
 ---
 
@@ -866,3 +872,479 @@ Open http://localhost:5000 after starting in any mode.
 8. **Configure** FTP product configs (or use the seeded defaults from Test Data)
 9. **Run FTP** from the Batch Execution page — computes base_rate and cost_of_fund per instrument
 10. **Review** allocation results in the Management Ledger Report; FTP results in the FTP Run Detail or via the Table Browser (`proc_inst_data.base_rate`, `proc_inst_data.cost_of_fund`)
+
+---
+
+## 31. Data File Management — Overview
+
+**URL:** `/datafile/`
+
+Data File Management provides a JSON-configured batch file I/O engine for loading files from an **inbox** folder and writing output to an **outbox** folder. It operates independently of the Excel upload workflow and does not use the Maker/Checker process.
+
+### File Format Support
+
+| Format | Config key | Field mapping |
+|---|---|---|
+| Fixed-length | `"type": "fixed_length"` | Slice each field by `start` (byte offset) and `length` |
+| Delimited | `"type": "delimited"` | Split by `delimiter`, map by `column` index or `use_header_names: true` |
+
+Common delimiters: `","` (CSV), `"|"` (pipe), `"\t"` (tab), or any single character.
+
+### Per-file Rule JSON
+
+Each import or export is defined in its own JSON file under `app/config/datafile/`. The service scans the directory at startup and registers every file automatically.
+
+**Import rule structure:**
+```json
+{
+  "operation": "import",
+  "format_id": "LOAN_FIXED",
+  "name": "Loan File — Fixed Length",
+  "description": "Fixed-width 120-char loan records.",
+  "type": "fixed_length",
+  "record_length": 120,
+  "target_table": "stg_inst_data",
+  "fields": [
+    { "name": "account_id",    "start": 0,  "length": 12, "type": "string" },
+    { "name": "branch_code",   "start": 12, "length": 4,  "type": "string",
+      "transform": "concat('BR', lpad(value, 4, '0'))" },
+    { "name": "balance",       "start": 16, "length": 14, "type": "decimal",
+      "transform": "to_float(value) / 100" },
+    { "name": "maturity_date", "start": 30, "length": 8,  "type": "date",
+      "date_format": "YYYYMMDD" }
+  ]
+}
+```
+
+**Export rule structure:**
+```json
+{
+  "operation": "export",
+  "export_id": "INST_PROC_EXPORT",
+  "name": "Processed Instruments Export",
+  "source_table": "proc_inst_data",
+  "format": "fixed_length",
+  "fields": [
+    { "name": "account_id",  "length": 20, "align": "left",  "pad": " " },
+    { "name": "balance",     "length": 18, "align": "right", "pad": " " }
+  ]
+}
+```
+
+For delimited exports, set `"format": "delimited"`, `"delimiter": ","`, and optionally `"include_header": true`.
+
+### Transform Expression Sandbox
+
+The `transform` field on an import field is a safe expression evaluated at row load time. The variable `value` holds the raw (stripped) string from the file.
+
+| Category | Available functions / syntax |
+|---|---|
+| String | `upper(v)`, `lower(v)`, `trim(v)`, `ltrim(v)`, `rtrim(v)`, `left(v,n)`, `right(v,n)`, `substr(v,s,e)`, `lpad(v,n,c)`, `rpad(v,n,c)`, `replace(v,old,new)`, `concat(a,b,...)`, `startswith(v,p)`, `endswith(v,p)`, `contains(v,p)` |
+| Conditional | `iif(cond, a, b)`, `a if cond else b`, `nvl(v, default)`, `coalesce(a, b, ...)` |
+| Conversion | `to_float(v)`, `to_int(v)` |
+| Arithmetic | `+`, `-`, `*`, `/`, `//`, `%`, `**` |
+| Slice | `value[0:5]` |
+
+**Examples:**
+
+| Transform expression | Input → Output |
+|---|---|
+| `concat('BR', lpad(value, 4, '0'))` | `'12'` → `'BR0012'` |
+| `to_float(value) / 100` | `'25000000'` → `250000.0` |
+| `upper(trim(value))` | `' loan '` → `'LOAN'` |
+| `'DEBIT' if to_float(value) > 0 else 'CREDIT'` | `'500'` → `'DEBIT'` |
+| `nvl(value, 'UNKNOWN')` | `''` → `'UNKNOWN'` |
+| `value[0:8]` | `'20260101extra'` → `'20260101'` |
+
+### Folder Paths
+
+Configured in `app/config/datafile_config.json`:
+
+```json
+{
+  "global": {
+    "inbox_folder":  "uploads/inbox",
+    "outbox_folder": "uploads/outbox"
+  }
+}
+```
+
+Place input files in `uploads/inbox/` before triggering an import (via UI or API). Export output files are written to `uploads/outbox/` with a timestamp suffix.
+
+---
+
+## 32. Data File Management — Batch History
+
+**URL:** `/datafile/`
+
+Lists all data file import and export runs in reverse chronological order.
+
+**Columns:**
+
+| Column | Description |
+|---|---|
+| **ID** | Short UUID (links to detail page) |
+| **Operation** | `import` or `export` |
+| **Format / Export ID** | The rule ID used (e.g. `LOAN_FIXED`, `INST_PROC_EXPORT`) |
+| **File** | Source filename (import) or generated output filename (export) |
+| **Target / Source Table** | Database table read from or written to |
+| **Status** | `RUNNING`, `COMPLETED`, or `FAILED` |
+| **Rows** | Number of rows processed |
+| **Errors** | Number of row-level errors |
+| **Run By** | Username who triggered the run |
+| **Completed** | Timestamp |
+
+Click any batch ID to view full details and per-row errors.
+
+---
+
+## 33. Data File Management — Batch Detail
+
+**URL:** `/datafile/<batch_id>`
+
+Full detail page for a single import or export run.
+
+**Key sections:**
+
+- **Summary card** — operation, format/export ID, status, filename, target table, row count, error count, run by, started/completed timestamps, and error message (if failed)
+- **Row Errors** — table of per-row errors with row number, field name, raw value, and error description. Shown only when `error_count > 0`
+
+Errors do not stop the import — rows with errors are skipped and the remaining rows are loaded. The batch status is `COMPLETED` unless a fatal error occurs.
+
+---
+
+## 34. REST API — Overview
+
+**Base URL:** `/api/v1/`
+
+All API endpoints use **HTTP Basic Auth** with existing user credentials. No session cookies or tokens are required. All request bodies and responses are JSON.
+
+### Authentication
+
+Add an `Authorization` header to every request:
+
+```bash
+curl -u admin:admin http://localhost:5000/api/v1/datafile/formats
+```
+
+Or construct the header manually:
+
+```
+Authorization: Basic <base64(username:password)>
+```
+
+**401 response** (invalid or missing credentials):
+```json
+{"error": "Unauthorized — provide valid credentials via HTTP Basic Auth"}
+```
+
+The response also includes a `WWW-Authenticate: Basic realm="BankPFT API"` header.
+
+### HTTP Status Codes
+
+| Code | Meaning |
+|---|---|
+| `200` | Success |
+| `400` | Bad request — missing or invalid body field |
+| `401` | Unauthorized — invalid or missing credentials |
+| `404` | Resource not found |
+| `422` | Run triggered but completed with errors (check `error_message` / `errors` field) |
+
+### Available Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/datafile/formats` | List available import format IDs |
+| `GET` | `/api/v1/datafile/exports` | List available export config IDs |
+| `POST` | `/api/v1/datafile/import` | Trigger a file import |
+| `POST` | `/api/v1/datafile/export` | Trigger a file export |
+| `GET` | `/api/v1/datafile/batch/<id>` | Get import/export batch status |
+| `GET` | `/api/v1/batch/rules` | List active allocation rules |
+| `POST` | `/api/v1/batch/allocation` | Run an allocation batch |
+| `GET` | `/api/v1/batch/allocation/<id>` | Get allocation batch status |
+| `POST` | `/api/v1/batch/ftp` | Run the FTP calculation engine |
+| `GET` | `/api/v1/batch/ftp/<id>` | Get FTP run status |
+
+---
+
+## 35. REST API — Data File Endpoints
+
+### GET `/api/v1/datafile/formats`
+
+Returns all registered import format definitions (loaded from `app/config/datafile/import_*.json`).
+
+**Response:**
+```json
+{
+  "formats": [
+    {
+      "format_id": "LOAN_FIXED",
+      "name": "Loan File — Fixed Length",
+      "description": "Fixed-width 120-char loan records.",
+      "type": "fixed_length",
+      "target_table": "stg_inst_data"
+    }
+  ]
+}
+```
+
+---
+
+### GET `/api/v1/datafile/exports`
+
+Returns all registered export configurations (loaded from `app/config/datafile/export_*.json`).
+
+**Response:**
+```json
+{
+  "exports": [
+    {
+      "export_id": "INST_PROC_EXPORT",
+      "name": "Processed Instruments Export",
+      "description": "...",
+      "format": "fixed_length",
+      "source_table": "proc_inst_data"
+    }
+  ]
+}
+```
+
+---
+
+### POST `/api/v1/datafile/import`
+
+Triggers a data file import. The file must already exist in the configured inbox folder.
+
+**Request body:**
+```json
+{ "format_id": "LOAN_FIXED", "filename": "loan.dat" }
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `format_id` | Yes | Must match a registered import rule |
+| `filename` | Yes | Filename only (no path). File must be present in the inbox folder |
+
+**Success response (`200`):**
+```json
+{
+  "batch_id": "21ef93cb-b7af-4073-8c2f-8417b2a40f8d",
+  "operation": "import",
+  "format_id": "LOAN_FIXED",
+  "filename": "loan.dat",
+  "target_table": "stg_inst_data",
+  "status": "COMPLETED",
+  "row_count": 3,
+  "error_count": 0,
+  "errors": [],
+  "error_message": null,
+  "run_by": "admin",
+  "started_at": "2026-01-01T09:00:00Z",
+  "completed_at": "2026-01-01T09:00:01Z"
+}
+```
+
+If rows were loaded but some had field errors, the response returns `422` with `error_count > 0` and an `errors` list (up to 20 entries):
+
+```json
+{
+  "status": "COMPLETED",
+  "row_count": 10,
+  "error_count": 2,
+  "errors": [
+    { "row": 3, "field": "balance", "raw_value": "INVALID", "error": "cannot convert to float" }
+  ]
+}
+```
+
+---
+
+### POST `/api/v1/datafile/export`
+
+Triggers a data file export. Output is written to the outbox folder.
+
+**Request body:**
+```json
+{ "export_id": "INST_PROC_EXPORT", "as_of_date": "2026-01-01" }
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `export_id` | Yes | Must match a registered export rule |
+| `as_of_date` | No | `YYYY-MM-DD` — filter source data by date. Defaults to today |
+
+**Success response (`200`):**
+```json
+{
+  "batch_id": "8f1e1f89-62d0-4baa-b6d9-39a74eae20f3",
+  "operation": "export",
+  "format_id": "INST_PROC_EXPORT",
+  "filename": "INST_PROC_EXPORT_20260101_090000.dat",
+  "status": "COMPLETED",
+  "row_count": 55,
+  "error_count": 0,
+  "errors": [],
+  "started_at": "2026-01-01T09:00:00Z",
+  "completed_at": "2026-01-01T09:00:01Z"
+}
+```
+
+---
+
+### GET `/api/v1/datafile/batch/<batch_id>`
+
+Returns the current status of any data file batch (import or export).
+
+**Example:**
+```bash
+curl -u admin:admin http://localhost:5000/api/v1/datafile/batch/21ef93cb-b7af-4073-8c2f-8417b2a40f8d
+```
+
+Response shape is identical to the `POST /import` or `POST /export` response.
+
+---
+
+## 36. REST API — Batch Endpoints
+
+### GET `/api/v1/batch/rules`
+
+Returns all active allocation rules.
+
+**Response:**
+```json
+{
+  "rules": [
+    {
+      "rule_id": 1,
+      "name": "Customer Shred — Static Alloc",
+      "description": "Shred instrument balances by customer ratio.",
+      "source_table": "proc_inst_data",
+      "lookup_table": "ref_static_allocation",
+      "output_table": "fct_mgmt_instrument"
+    }
+  ]
+}
+```
+
+---
+
+### POST `/api/v1/batch/allocation`
+
+Runs an allocation batch synchronously and returns the result.
+
+**Request body:**
+```json
+{ "rule_id": 1, "as_of_date": "2026-01-01" }
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `rule_id` | Yes | Integer ID of an active allocation rule |
+| `as_of_date` | No | `YYYY-MM-DD` — defaults to today |
+
+**Success response (`200`):**
+```json
+{
+  "batch_id": "a1b2c3d4-...",
+  "rule_id": 1,
+  "as_of_date": "2026-01-01",
+  "status": "COMPLETED",
+  "source_row_count": 120,
+  "output_row_count": 240,
+  "orphan_count": 0,
+  "source_total": 5000000.0,
+  "output_total": 5000000.0,
+  "run_by": "admin",
+  "error_message": null,
+  "started_at": "2026-01-01T09:00:00Z",
+  "completed_at": "2026-01-01T09:00:02Z"
+}
+```
+
+**If the rule is not found or inactive → `404`:**
+```json
+{ "error": "rule_id 99 not found or inactive" }
+```
+
+---
+
+### GET `/api/v1/batch/allocation/<batch_id>`
+
+Returns the status of a previously triggered allocation batch. Same response shape as `POST /batch/allocation`.
+
+---
+
+### POST `/api/v1/batch/ftp`
+
+Runs the FTP moving-average engine for a given as-of date.
+
+**Request body:**
+```json
+{ "as_of_date": "2026-01-01" }
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `as_of_date` | No | `YYYY-MM-DD` — defaults to today |
+
+**Success response (`200`):**
+```json
+{
+  "run_id": "f0a1b2c3-...",
+  "as_of_date": "2026-01-01",
+  "status": "COMPLETED",
+  "instruments_processed": 500,
+  "instruments_matched": 480,
+  "instruments_skipped": 20,
+  "run_by": "admin",
+  "error_message": null,
+  "started_at": "2026-01-01T09:00:00Z",
+  "completed_at": "2026-01-01T09:00:03Z"
+}
+```
+
+---
+
+### GET `/api/v1/batch/ftp/<run_id>`
+
+Returns the status of a previously triggered FTP run. Same response shape as `POST /batch/ftp`.
+
+---
+
+### curl Quick Reference
+
+```bash
+BASE=http://localhost:5000
+AUTH="-u admin:admin"
+
+# List available import formats
+curl $AUTH $BASE/api/v1/datafile/formats
+
+# Trigger a file import
+curl $AUTH -X POST -H 'Content-Type: application/json' \
+  -d '{"format_id":"LOAN_FIXED","filename":"loan.dat"}' \
+  $BASE/api/v1/datafile/import
+
+# Trigger a file export
+curl $AUTH -X POST -H 'Content-Type: application/json' \
+  -d '{"export_id":"INST_PROC_EXPORT","as_of_date":"2026-01-01"}' \
+  $BASE/api/v1/datafile/export
+
+# List active allocation rules
+curl $AUTH $BASE/api/v1/batch/rules
+
+# Run an allocation batch
+curl $AUTH -X POST -H 'Content-Type: application/json' \
+  -d '{"rule_id":1,"as_of_date":"2026-01-01"}' \
+  $BASE/api/v1/batch/allocation
+
+# Run FTP
+curl $AUTH -X POST -H 'Content-Type: application/json' \
+  -d '{"as_of_date":"2026-01-01"}' \
+  $BASE/api/v1/batch/ftp
+
+# Poll status
+curl $AUTH $BASE/api/v1/datafile/batch/<batch_id>
+curl $AUTH $BASE/api/v1/batch/allocation/<batch_id>
+curl $AUTH $BASE/api/v1/batch/ftp/<run_id>
+```

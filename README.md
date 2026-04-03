@@ -13,6 +13,8 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic. FTP runs can also be triggered from the same batch page |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
+| **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default) |
+| **REST API** | HTTP Basic Auth API at `/api/v1/` — trigger data file imports/exports, run allocation batches, run FTP batches, and poll status. All responses JSON |
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
@@ -112,13 +114,20 @@ app/
 │   ├── validation_rules.json  # Validation rule definitions (enabled/severity/stop)
 │   ├── rule_config.json       # Allocation rule form options & defaults
 │   ├── filter_config.json     # Filterable columns & operators per source table
-│   └── allocation_config.json # Allocation engine settings
+│   ├── allocation_config.json # Allocation engine settings
+│   ├── datafile_config.json   # Data file global settings (inbox/outbox paths)
+│   └── datafile/              # Per-file import & export rule JSONs
+│       ├── import_loan.json       # example: fixed-length loan file → stg_inst_data
+│       ├── import_inst_csv.json   # example: CSV instrument file
+│       ├── export_inst_proc.json  # example: fixed-length export
+│       └── ...                    # one JSON per import or export rule
 ├── models/
 │   ├── auth.py              # User, Group, UserGroup (login & role management)
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
 │   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger, FctMgmtInstrument
 │   ├── ftp.py               # RefInterestRate, FtpProductConfig, FtpRun
+│   ├── datafile.py          # DataFileBatch (import/export run history)
 │   └── workflow.py          # UploadBatch, AllocationRule, BatchRun
 ├── routes/
 │   ├── auth.py              # Login, logout, change password
@@ -129,12 +138,15 @@ app/
 │   ├── batch.py             # Batch execution (Allocation + FTP)
 │   ├── ftp.py               # FTP dashboard, config CRUD, rate browser, run detail
 │   ├── reports.py           # Reports & table browser
+│   ├── datafile.py          # Data File Management UI (inbox/outbox, batch history)
+│   ├── api.py               # REST API v1 (HTTP Basic Auth, JSON)
 │   └── testdata.py          # Test data generation
 ├── services/
 │   ├── __init__.py          # Maker/Checker state machine (group-aware)
 │   ├── upload_service.py    # Config-driven file parsing & validation
 │   ├── allocation_engine.py # Config-driven Pandas shredding engine
 │   ├── ftp_engine.py        # FTP moving-average engine (run_ftp)
+│   ├── datafile_service.py  # Fixed-length & delimited import/export engine
 │   └── testdata_service.py  # Test data generators (incl. FTP rate seeding)
 └── templates/               # Jinja2 / Bootstrap 5 templates
 ```
@@ -426,6 +438,182 @@ Rules can be defined as JSON and imported via `/rules/import`. This allows batch
   }
 }
 ```
+
+## Data File Management
+
+A JSON-configured batch file I/O engine that reads from an **inbox** folder and writes to an **outbox** folder, independent of the Excel upload workflow.
+
+### File Format Support
+
+| Format | Config key | Description |
+|---|---|---|
+| Fixed-length | `"type": "fixed_length"` | Slice fields by `start` / `length` positions |
+| Delimited (CSV, pipe, tab, custom) | `"type": "delimited"` | Split by `delimiter`, map by column index or header name |
+
+### Per-file Rule JSON
+
+Each import or export is defined in its own JSON file under `app/config/datafile/`. The service scans the directory at startup.
+
+**Import example** (`app/config/datafile/import_loan.json`):
+```json
+{
+  "operation": "import",
+  "format_id": "LOAN_FIXED",
+  "name": "Loan File — Fixed Length",
+  "type": "fixed_length",
+  "record_length": 120,
+  "target_table": "stg_inst_data",
+  "fields": [
+    { "name": "account_id",   "start": 0,  "length": 12, "type": "string" },
+    { "name": "branch_code",  "start": 12, "length": 4,  "type": "string",
+      "transform": "concat('BR', lpad(value, 4, '0'))" },
+    { "name": "balance",      "start": 16, "length": 14, "type": "decimal",
+      "transform": "to_float(value) / 100" },
+    { "name": "maturity_date","start": 30, "length": 8,  "type": "date",
+      "date_format": "YYYYMMDD" }
+  ]
+}
+```
+
+**Export example** (`app/config/datafile/export_inst_proc.json`):
+```json
+{
+  "operation": "export",
+  "export_id": "INST_PROC_EXPORT",
+  "name": "Processed Instruments Export",
+  "source_table": "proc_inst_data",
+  "format": "fixed_length",
+  "fields": [
+    { "name": "account_id", "length": 20, "align": "left",  "pad": " " },
+    { "name": "balance",    "length": 18, "align": "right", "pad": " " }
+  ]
+}
+```
+
+### Transform Expression Sandbox
+
+Field transforms are safe-eval expressions. Available functions:
+
+| Category | Functions |
+|---|---|
+| String | `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `left`, `right`, `substr`, `lpad`, `rpad`, `replace`, `concat`, `startswith`, `endswith`, `contains` |
+| Conditional | `iif(cond, a, b)`, inline `a if cond else b`, `nvl(val, default)`, `coalesce(a, b, ...)` |
+| Conversion | `to_float(v)`, `to_int(v)` |
+| Slice | `value[0:5]` |
+
+**Examples:**
+```
+"transform": "concat('BR', lpad(value, 4, '0'))"     # → BR0042
+"transform": "to_float(value) / 100"                  # cents → dollars
+"transform": "'DEBIT' if to_float(value) > 0 else 'CREDIT'"
+"transform": "nvl(value, 'UNKNOWN')"
+```
+
+### UI
+
+- **`/datafile/`** — batch history with status, row counts, and error summaries
+- **`/datafile/<batch_id>`** — full batch detail with per-row error list
+
+---
+
+## REST API
+
+All endpoints are mounted at `/api/v1/` and require **HTTP Basic Auth** using existing user credentials.
+
+```bash
+curl -u admin:admin http://localhost:5000/api/v1/datafile/formats
+```
+
+### Authentication
+
+Every request must include an `Authorization: Basic <base64(user:pass)>` header.
+Invalid credentials return `401` with a `WWW-Authenticate` challenge.
+
+### Data File Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/datafile/formats` | List available import format IDs |
+| `GET` | `/api/v1/datafile/exports` | List available export config IDs |
+| `POST` | `/api/v1/datafile/import` | Trigger an import run |
+| `POST` | `/api/v1/datafile/export` | Trigger an export run |
+| `GET` | `/api/v1/datafile/batch/<id>` | Get import/export batch status |
+
+**POST `/api/v1/datafile/import`**
+```json
+{ "format_id": "LOAN_FIXED", "filename": "loan.dat" }
+```
+
+**POST `/api/v1/datafile/export`**
+```json
+{ "export_id": "INST_PROC_EXPORT", "as_of_date": "2026-01-01" }
+```
+
+**Response (import/export):**
+```json
+{
+  "batch_id": "21ef93cb-b7af-4073-8c2f-8417b2a40f8d",
+  "operation": "import",
+  "format_id": "LOAN_FIXED",
+  "filename": "loan.dat",
+  "target_table": "stg_inst_data",
+  "status": "COMPLETED",
+  "row_count": 3,
+  "error_count": 0,
+  "errors": [],
+  "started_at": "2026-01-01T00:00:00Z",
+  "completed_at": "2026-01-01T00:00:01Z"
+}
+```
+
+### Allocation Batch Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/batch/rules` | List active allocation rules |
+| `POST` | `/api/v1/batch/allocation` | Run an allocation batch |
+| `GET` | `/api/v1/batch/allocation/<id>` | Get allocation batch status |
+| `POST` | `/api/v1/batch/ftp` | Run the FTP calculation engine |
+| `GET` | `/api/v1/batch/ftp/<id>` | Get FTP run status |
+
+**POST `/api/v1/batch/allocation`**
+```json
+{ "rule_id": 1, "as_of_date": "2026-01-01" }
+```
+
+**POST `/api/v1/batch/ftp`**
+```json
+{ "as_of_date": "2026-01-01" }
+```
+
+**Response (allocation batch):**
+```json
+{
+  "batch_id": "...",
+  "rule_id": 1,
+  "as_of_date": "2026-01-01",
+  "status": "COMPLETED",
+  "source_row_count": 120,
+  "output_row_count": 240,
+  "orphan_count": 0,
+  "source_total": 5000000.0,
+  "output_total": 5000000.0,
+  "started_at": "2026-01-01T00:00:00Z",
+  "completed_at": "2026-01-01T00:00:02Z"
+}
+```
+
+### HTTP Status Codes
+
+| Code | Meaning |
+|---|---|
+| `200` | Success |
+| `400` | Bad request (missing/invalid body field) |
+| `401` | Unauthorized (missing or wrong credentials) |
+| `404` | Resource not found |
+| `422` | Run triggered but completed with errors (check `error_message` / `errors`) |
+
+---
 
 ## start.sh Reference
 
