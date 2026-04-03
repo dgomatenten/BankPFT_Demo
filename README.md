@@ -556,14 +556,93 @@ Invalid credentials return `401` with a `WWW-Authenticate` challenge.
 | `POST` | `/api/v1/datafile/export` | Trigger an export run |
 | `GET` | `/api/v1/datafile/batch/<id>` | Get import/export batch status |
 
-**POST `/api/v1/datafile/import`**
-```json
-{ "format_id": "LOAN_FIXED", "filename": "loan.dat" }
+#### Import — curl examples (one per format)
+
+```bash
+# List formats first to see available format_ids
+curl -u admin:admin http://localhost:5000/api/v1/datafile/formats
+
+# Fixed-length loan file
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"format_id": "LOAN_FIXED", "filename": "loan.dat"}' \
+  http://localhost:5000/api/v1/datafile/import
+
+# Fixed-length instrument file
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"format_id": "INST_FIXED", "filename": "instruments_20260101.dat"}' \
+  http://localhost:5000/api/v1/datafile/import
+
+# CSV instrument file
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"format_id": "INST_CSV", "filename": "instruments_20260101.csv"}' \
+  http://localhost:5000/api/v1/datafile/import
+
+# Fixed-length GL file
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"format_id": "GL_FIXED", "filename": "gl_20260101.dat"}' \
+  http://localhost:5000/api/v1/datafile/import
+
+# Pipe-delimited GL file (header-mapped)
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"format_id": "GL_PIPE", "filename": "gl_20260101.txt"}' \
+  http://localhost:5000/api/v1/datafile/import
 ```
 
-**POST `/api/v1/datafile/export`**
-```json
-{ "export_id": "INST_PROC_EXPORT", "as_of_date": "2026-01-01" }
+#### Export — curl examples (one per export)
+
+```bash
+# List exports first to see available export_ids
+curl -u admin:admin http://localhost:5000/api/v1/datafile/exports
+
+# Fixed-length processed instruments export
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"export_id": "INST_PROC_EXPORT", "as_of_date": "2026-01-01"}' \
+  http://localhost:5000/api/v1/datafile/export
+
+# CSV instruments export
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"export_id": "INST_CSV_EXPORT", "as_of_date": "2026-01-01"}' \
+  http://localhost:5000/api/v1/datafile/export
+
+# Allocation results export (DEBIT entries only)
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"export_id": "ALLOC_RESULT_EXPORT", "as_of_date": "2026-01-01"}' \
+  http://localhost:5000/api/v1/datafile/export
+
+# Omit as_of_date to default to today
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"export_id": "INST_PROC_EXPORT"}' \
+  http://localhost:5000/api/v1/datafile/export
+```
+
+#### Python examples
+
+```python
+import requests
+
+BASE = "http://localhost:5000"
+AUTH = ("admin", "admin")
+
+# Import a CSV instrument file
+r = requests.post(f"{BASE}/api/v1/datafile/import",
+                  json={"format_id": "INST_CSV", "filename": "instruments_20260101.csv"},
+                  auth=AUTH)
+batch = r.json()
+print(batch["status"], "rows:", batch["row_count"], "errors:", batch["error_count"])
+
+# Poll batch status
+import requests
+status = requests.get(f"{BASE}/api/v1/datafile/batch/{batch['batch_id']}", auth=AUTH).json()
+if status["error_count"] > 0:
+    for err in status["errors"]:
+        print(f"  Row {err['row']} | {err['field']} = '{err['raw_value']}' → {err['error']}")
+
+# Export CSV instruments for a specific date
+r = requests.post(f"{BASE}/api/v1/datafile/export",
+                  json={"export_id": "INST_CSV_EXPORT", "as_of_date": "2026-01-01"},
+                  auth=AUTH)
+result = r.json()
+print(result["status"], "rows:", result["row_count"], "file:", result["filename"])
 ```
 
 **Response (import/export):**
@@ -572,12 +651,15 @@ Invalid credentials return `401` with a `WWW-Authenticate` challenge.
   "batch_id": "21ef93cb-b7af-4073-8c2f-8417b2a40f8d",
   "operation": "import",
   "format_id": "LOAN_FIXED",
+  "format_name": "Loan Data — Fixed Length",
   "filename": "loan.dat",
   "target_table": "stg_inst_data",
   "status": "COMPLETED",
   "row_count": 3,
   "error_count": 0,
   "errors": [],
+  "error_message": null,
+  "run_by": "admin",
   "started_at": "2026-01-01T00:00:00Z",
   "completed_at": "2026-01-01T00:00:01Z"
 }

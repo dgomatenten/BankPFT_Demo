@@ -1247,19 +1247,21 @@ The response also includes a `WWW-Authenticate: Basic realm="BankPFT API"` heade
 
 ### GET `/api/v1/datafile/formats`
 
-Returns all registered import format definitions (loaded from `app/config/datafile/import_*.json`).
+Returns all registered import format definitions.
 
-**Response:**
+```bash
+curl -u admin:admin http://localhost:5000/api/v1/datafile/formats
+```
+
+**Response — real format IDs available in this system:**
 ```json
 {
   "formats": [
-    {
-      "format_id": "LOAN_FIXED",
-      "name": "Loan File — Fixed Length",
-      "description": "Fixed-width 120-char loan records.",
-      "type": "fixed_length",
-      "target_table": "stg_inst_data"
-    }
+    { "format_id": "LOAN_FIXED",  "name": "Loan Data — Fixed Length",                     "type": "fixed_length", "target_table": "stg_inst_data" },
+    { "format_id": "INST_FIXED",  "name": "Instrument Data — Fixed Length",               "type": "fixed_length", "target_table": "stg_inst_data" },
+    { "format_id": "INST_CSV",    "name": "Instrument Data — CSV (Comma Delimited)",      "type": "delimited",    "target_table": "stg_inst_data" },
+    { "format_id": "GL_FIXED",    "name": "GL Data — Fixed Length",                       "type": "fixed_length", "target_table": "stg_gl_data" },
+    { "format_id": "GL_PIPE",     "name": "GL Data — Pipe Delimited (header-mapped)",     "type": "delimited",    "target_table": "stg_gl_data" }
   ]
 }
 ```
@@ -1268,19 +1270,19 @@ Returns all registered import format definitions (loaded from `app/config/datafi
 
 ### GET `/api/v1/datafile/exports`
 
-Returns all registered export configurations (loaded from `app/config/datafile/export_*.json`).
+Returns all registered export configurations.
 
-**Response:**
+```bash
+curl -u admin:admin http://localhost:5000/api/v1/datafile/exports
+```
+
+**Response — real export IDs available in this system:**
 ```json
 {
   "exports": [
-    {
-      "export_id": "INST_PROC_EXPORT",
-      "name": "Processed Instruments Export",
-      "description": "...",
-      "format": "fixed_length",
-      "source_table": "proc_inst_data"
-    }
+    { "export_id": "INST_PROC_EXPORT",   "name": "Processed Instruments Export",         "format": "fixed_length", "source_table": "proc_inst_data" },
+    { "export_id": "INST_CSV_EXPORT",    "name": "Processed Instruments Export — CSV",   "format": "delimited",    "source_table": "proc_inst_data" },
+    { "export_id": "ALLOC_RESULT_EXPORT","name": "Allocation Results Export",             "format": "fixed_length", "source_table": "fct_mgmt_ledger" }
   ]
 }
 ```
@@ -1289,17 +1291,83 @@ Returns all registered export configurations (loaded from `app/config/datafile/e
 
 ### POST `/api/v1/datafile/import`
 
-Triggers a data file import. The file must already exist in the configured inbox folder.
-
-**Request body:**
-```json
-{ "format_id": "LOAN_FIXED", "filename": "loan.dat" }
-```
+Triggers a data file import. The file must already exist in the configured inbox folder (`uploads/inbox/`).
 
 | Field | Required | Description |
 |---|---|---|
-| `format_id` | Yes | Must match a registered import rule |
-| `filename` | Yes | Filename only (no path). File must be present in the inbox folder |
+| `format_id` | Yes | Must match a registered import rule (see formats list above) |
+| `filename` | Yes | Filename only — no path, no `..`. File must exist in the inbox folder |
+
+#### Example calls for each format
+
+**Fixed-length loan file (`LOAN_FIXED`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"format_id": "LOAN_FIXED", "filename": "loan.dat"}' \
+     http://localhost:5000/api/v1/datafile/import
+```
+
+**Fixed-length instrument file (`INST_FIXED`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"format_id": "INST_FIXED", "filename": "instruments_20260101.dat"}' \
+     http://localhost:5000/api/v1/datafile/import
+```
+
+**CSV instrument file (`INST_CSV`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"format_id": "INST_CSV", "filename": "instruments_20260101.csv"}' \
+     http://localhost:5000/api/v1/datafile/import
+```
+
+**Fixed-length GL file (`GL_FIXED`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"format_id": "GL_FIXED", "filename": "gl_20260101.dat"}' \
+     http://localhost:5000/api/v1/datafile/import
+```
+
+**Pipe-delimited GL file with header names (`GL_PIPE`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"format_id": "GL_PIPE", "filename": "gl_20260101.txt"}' \
+     http://localhost:5000/api/v1/datafile/import
+```
+
+**Python equivalent**
+```python
+import requests
+
+BASE = "http://localhost:5000"
+AUTH = ("admin", "admin")
+
+# Import a fixed-length loan file
+r = requests.post(
+    f"{BASE}/api/v1/datafile/import",
+    json={"format_id": "LOAN_FIXED", "filename": "loan.dat"},
+    auth=AUTH
+)
+print(r.status_code, r.json())
+
+# Import a CSV instrument file
+r = requests.post(
+    f"{BASE}/api/v1/datafile/import",
+    json={"format_id": "INST_CSV", "filename": "instruments_20260101.csv"},
+    auth=AUTH
+)
+print(r.status_code, r.json())
+```
 
 **Success response (`200`):**
 ```json
@@ -1307,6 +1375,7 @@ Triggers a data file import. The file must already exist in the configured inbox
   "batch_id": "21ef93cb-b7af-4073-8c2f-8417b2a40f8d",
   "operation": "import",
   "format_id": "LOAN_FIXED",
+  "format_name": "Loan Data — Fixed Length",
   "filename": "loan.dat",
   "target_table": "stg_inst_data",
   "status": "COMPLETED",
@@ -1320,34 +1389,99 @@ Triggers a data file import. The file must already exist in the configured inbox
 }
 ```
 
-If rows were loaded but some had field errors, the response returns `422` with `error_count > 0` and an `errors` list (up to 20 entries):
-
+**Partial success with row errors (`422`):** Rows with parse errors are skipped; valid rows are still loaded.
 ```json
 {
+  "batch_id": "...",
   "status": "COMPLETED",
   "row_count": 10,
   "error_count": 2,
   "errors": [
-    { "row": 3, "field": "balance", "raw_value": "INVALID", "error": "cannot convert to float" }
+    { "row": 3, "field": "balance",  "raw_value": "INVALID", "error": "cannot convert to float" },
+    { "row": 7, "field": "as_of_date","raw_value": "99999999","error": "date parse failed" }
   ]
 }
+```
+
+**Bad request (`400`) — missing or invalid field:**
+```json
+{ "error": "format_id is required" }
+{ "error": "filename is invalid or missing" }
 ```
 
 ---
 
 ### POST `/api/v1/datafile/export`
 
-Triggers a data file export. Output is written to the outbox folder.
-
-**Request body:**
-```json
-{ "export_id": "INST_PROC_EXPORT", "as_of_date": "2026-01-01" }
-```
+Triggers a data file export. Output is written to `uploads/outbox/` with a timestamp in the filename.
 
 | Field | Required | Description |
 |---|---|---|
-| `export_id` | Yes | Must match a registered export rule |
-| `as_of_date` | No | `YYYY-MM-DD` — filter source data by date. Defaults to today |
+| `export_id` | Yes | Must match a registered export rule (see exports list above) |
+| `as_of_date` | No | `YYYY-MM-DD` — filter source rows by date. Defaults to today |
+
+#### Example calls for each export
+
+**Fixed-length processed instruments export (`INST_PROC_EXPORT`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"export_id": "INST_PROC_EXPORT", "as_of_date": "2026-01-01"}' \
+     http://localhost:5000/api/v1/datafile/export
+```
+
+**CSV instruments export (`INST_CSV_EXPORT`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"export_id": "INST_CSV_EXPORT", "as_of_date": "2026-01-01"}' \
+     http://localhost:5000/api/v1/datafile/export
+```
+
+**Allocation results export (DEBIT entries only, `ALLOC_RESULT_EXPORT`)**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"export_id": "ALLOC_RESULT_EXPORT", "as_of_date": "2026-01-01"}' \
+     http://localhost:5000/api/v1/datafile/export
+```
+
+**Omit `as_of_date` to default to today**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"export_id": "INST_PROC_EXPORT"}' \
+     http://localhost:5000/api/v1/datafile/export
+```
+
+**Python equivalent**
+```python
+import requests
+
+BASE = "http://localhost:5000"
+AUTH = ("admin", "admin")
+
+# Export fixed-length instruments for a specific date
+r = requests.post(
+    f"{BASE}/api/v1/datafile/export",
+    json={"export_id": "INST_PROC_EXPORT", "as_of_date": "2026-01-01"},
+    auth=AUTH
+)
+result = r.json()
+print(result["status"], "rows:", result["row_count"], "file:", result["filename"])
+
+# Export CSV instruments (no date filter — all rows)
+r = requests.post(
+    f"{BASE}/api/v1/datafile/export",
+    json={"export_id": "INST_CSV_EXPORT"},
+    auth=AUTH
+)
+print(r.json())
+```
 
 **Success response (`200`):**
 ```json
@@ -1355,25 +1489,63 @@ Triggers a data file export. Output is written to the outbox folder.
   "batch_id": "8f1e1f89-62d0-4baa-b6d9-39a74eae20f3",
   "operation": "export",
   "format_id": "INST_PROC_EXPORT",
+  "format_name": "Processed Instruments Export",
   "filename": "INST_PROC_EXPORT_20260101_090000.dat",
   "status": "COMPLETED",
   "row_count": 55,
   "error_count": 0,
   "errors": [],
+  "error_message": null,
+  "run_by": "admin",
   "started_at": "2026-01-01T09:00:00Z",
   "completed_at": "2026-01-01T09:00:01Z"
 }
+```
+
+**Bad request (`400`) — missing export_id:**
+```json
+{ "error": "export_id is required" }
 ```
 
 ---
 
 ### GET `/api/v1/datafile/batch/<batch_id>`
 
-Returns the current status of any data file batch (import or export).
+Poll the status of any import or export batch using the `batch_id` from the trigger response.
 
-**Example:**
 ```bash
-curl -u admin:admin http://localhost:5000/api/v1/datafile/batch/21ef93cb-b7af-4073-8c2f-8417b2a40f8d
+# Replace the UUID with the batch_id returned by the import or export call
+curl -u admin:admin \
+     http://localhost:5000/api/v1/datafile/batch/21ef93cb-b7af-4073-8c2f-8417b2a40f8d
+```
+
+**Python — trigger and poll pattern**
+```python
+import requests, time
+
+BASE = "http://localhost:5000"
+AUTH = ("admin", "admin")
+
+# 1. Trigger the import
+r = requests.post(
+    f"{BASE}/api/v1/datafile/import",
+    json={"format_id": "INST_FIXED", "filename": "instruments_20260101.dat"},
+    auth=AUTH
+)
+batch_id = r.json()["batch_id"]
+
+# 2. Poll until done (runs synchronously, but pattern works for long batches too)
+while True:
+    status = requests.get(f"{BASE}/api/v1/datafile/batch/{batch_id}", auth=AUTH).json()
+    print(status["status"], "rows:", status["row_count"], "errors:", status["error_count"])
+    if status["status"] in ("COMPLETED", "FAILED"):
+        break
+    time.sleep(1)
+
+# 3. Check for row-level errors
+if status["error_count"] > 0:
+    for err in status["errors"]:
+        print(f"  Row {err['row']} | {err['field']} = '{err['raw_value']}' → {err['error']}")
 ```
 
 Response shape is identical to the `POST /import` or `POST /export` response.
