@@ -103,7 +103,10 @@ def new_user():
 
         group_ids = request.form.getlist("groups")
         for gid in group_ids:
-            g = Group.query.get(int(gid))
+            try:
+                g = Group.query.get(int(gid))
+            except ValueError:
+                continue
             if g:
                 user.groups.append(g)
 
@@ -132,7 +135,10 @@ def edit_user(user_id):
         user.groups.clear()
         group_ids = request.form.getlist("groups")
         for gid in group_ids:
-            g = Group.query.get(int(gid))
+            try:
+                g = Group.query.get(int(gid))
+            except ValueError:
+                continue
             if g:
                 user.groups.append(g)
 

@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from app.models import db
 from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccount
 from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
-from app.models.allocation import RefStaticAllocation, FctMgmtLedger
+from app.models.allocation import RefStaticAllocation, FctMgmtLedger, FctMgmtInstrument, RefOrgReclass
 from app.models.workflow import UploadBatch, AllocationRule, BatchRun
 from sqlalchemy import func, inspect as sa_inspect
 
@@ -25,11 +25,15 @@ ALL_MODELS = {
     "stg_gl_data": StgGlData,
     "proc_gl_data": ProcGlData,
     "ref_static_allocation": RefStaticAllocation,
+    "ref_org_reclass": RefOrgReclass,
     "fct_mgmt_ledger": FctMgmtLedger,
+    "fct_mgmt_instrument": FctMgmtInstrument,
     "upload_batch": UploadBatch,
     "allocation_rule": AllocationRule,
     "batch_run": BatchRun,
 }
+
+VALID_GROUP_BY = {"target_org_unit_id", "source_org_unit_id", "product_code", "customer_id", "entry_type"}
 
 
 @bp.route("/")
@@ -39,6 +43,9 @@ def index():
 
 @bp.route("/tables")
 def tables():
+    if not current_user.is_admin:
+        flash("Access denied. Admin privileges required.", "danger")
+        return redirect(url_for("reports.index"))
     table_stats = []
     for name, model in ALL_MODELS.items():
         count = model.query.count()
@@ -190,6 +197,8 @@ def operations():
 def ledger():
     # Pivot: by target_org_unit_id, product_code, customer_id
     group_by = request.args.get("group_by", "target_org_unit_id")
+    if group_by not in VALID_GROUP_BY:
+        group_by = "target_org_unit_id"
     batch_id = request.args.get("batch_id", None)
 
     query = db.session.query(

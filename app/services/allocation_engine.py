@@ -270,11 +270,13 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
         # ── 5. Join source ↔ lookup ──
         # join_key may be a comma-separated list for multi-column joins
-        join_cols = [k.strip() for k in join_key.split(",") if k.strip()]
-        if len(join_cols) == 1:
-            join_cols = join_cols[0]  # pandas accepts str or list
+        join_col_list = [k.strip() for k in join_key.split(",") if k.strip()]
+        if not join_col_list:
+            raise ValueError(f"Rule '{rule.name}' has no join key configured.")
+        primary_join_col = join_col_list[0]
+        pandas_join = join_col_list[0] if len(join_col_list) == 1 else join_col_list
         merged = source_data.merge(
-            alloc_data, on=join_cols, how=ALLOC_CONFIG.get("join_type", "left")
+            alloc_data, on=pandas_join, how=ALLOC_CONFIG.get("join_type", "left")
         )
 
         id_col         = lkp_cfg["id_column"]
@@ -292,7 +294,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         for _, row in matched.iterrows():
             src_acct = str(row.get(acct_col, ""))
             src_org  = str(row.get("org_unit_id", ""))
-            src_cust = str(row.get("customer_id", row.get(join_key, "")))
+            src_cust = str(row.get("customer_id", row.get(primary_join_col, "")))
             src_prod = str(row.get("product_code", ""))
             src_bal  = float(row[balance_cols[0]])
             ratio    = float(row[ratio_col])
@@ -363,11 +365,10 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                     entry_type="DEBIT",
                     allocation_id=None,
                     source_account_id=str(row.get(acct_col, "")),
-                    customer_id=str(row.get("customer_id", row.get(join_key, ""))),
+                    customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
                     product_code=str(row.get("product_code", "")),
                     source_org_unit_id=src_org,
                     target_org_unit_id=src_org,
-                    source_balance=src_bal,
                     allocated_balance=src_bal * default_ratio,
                     allocated_income=alloc_inc,
                     ratio_applied=default_ratio,
@@ -396,8 +397,6 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
     return batch
 
-
-import os
 import json
 import uuid
 from datetime import datetime

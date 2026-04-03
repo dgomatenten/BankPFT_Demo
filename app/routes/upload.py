@@ -2,9 +2,10 @@ import os
 import json
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
+from sqlalchemy import text
 from app.models import db
 from app.models.workflow import UploadBatch
-from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
+from app.models.staging import StgInstData, StgGlData
 from app.models.allocation import RefStaticAllocation, RefOrgReclass
 from app.services.upload_service import allowed_file, process_upload, UPLOAD_CONFIG
 from app.services import transition, WorkflowError
@@ -48,7 +49,7 @@ def new_upload():
 
         return redirect(url_for("upload.detail", batch_id=batch.id))
 
-    data_types = {k: v for k, v in UPLOAD_CONFIG["data_types"].items()}
+    data_types = UPLOAD_CONFIG["data_types"]
     return render_template("upload/new.html", data_types=data_types)
 
 
@@ -58,25 +59,22 @@ def detail(batch_id):
     batch = UploadBatch.query.get_or_404(batch_id)
     errors = json.loads(batch.errors_json) if batch.errors_json else []
 
-    # Load staged data preview
+    # Load staged data preview — derive columns from upload_config.json
     preview_rows = []
     preview_cols = []
-    if batch.data_type == "INSTRUMENT":
-        stg = StgInstData.query.filter_by(upload_batch_id=batch_id).limit(20).all()
-        preview_cols = ["account_id", "customer_id", "product_code", "org_unit_id", "balance", "interest_income", "as_of_date"]
-        preview_rows = [{c: getattr(r, c) for c in preview_cols} for r in stg]
-    elif batch.data_type == "GL":
-        stg = StgGlData.query.filter_by(upload_batch_id=batch_id).limit(20).all()
-        preview_cols = ["gl_account", "org_unit_id", "debit", "credit", "balance", "as_of_date"]
-        preview_rows = [{c: getattr(r, c) for c in preview_cols} for r in stg]
-    elif batch.data_type == "ALLOCATION":
-        stg = RefStaticAllocation.query.filter_by(upload_batch_id=batch_id).limit(20).all()
-        preview_cols = ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio", "status"]
-        preview_rows = [{c: getattr(r, c) for c in preview_cols} for r in stg]
-    elif batch.data_type == "ORG_RECLASS":
-        stg = RefOrgReclass.query.filter_by(upload_batch_id=batch_id).limit(20).all()
-        preview_cols = ["reclass_id", "source_org_unit_id", "target_org_unit_id", "ratio", "status"]
-        preview_rows = [{c: getattr(r, c) for c in preview_cols} for r in stg]
+    _PREVIEW_MODELS = {
+        "INSTRUMENT": (StgInstData, []),
+        "GL": (StgGlData, []),
+        "ALLOCATION": (RefStaticAllocation, ["status"]),
+        "ORG_RECLASS": (RefOrgReclass, ["status"]),
+    }
+    type_cfg = UPLOAD_CONFIG["data_types"].get(batch.data_type, {})
+    preview_info = _PREVIEW_MODELS.get(batch.data_type)
+    if preview_info:
+        model_cls, extra_cols = preview_info
+        preview_cols = list(type_cfg.get("column_mapping", {}).keys()) + extra_cols
+        stg = model_cls.query.filter_by(upload_batch_id=batch_id).limit(20).all()
+        preview_rows = [{c: getattr(r, c, None) for c in preview_cols} for r in stg]
 
     return render_template("upload/detail.html", batch=batch, errors=errors,
                            preview_cols=preview_cols, preview_rows=preview_rows)
@@ -140,29 +138,18 @@ def delete(batch_id):
 
 
 def _promote_instrument(batch_id: str):
-    rows = StgInstData.query.filter_by(upload_batch_id=batch_id).all()
-    for r in rows:
-        db.session.add(ProcInstData(
-            upload_batch_id=r.upload_batch_id,
-            as_of_date=r.as_of_date,
-            account_id=r.account_id,
-            customer_id=r.customer_id,
-            product_code=r.product_code,
-            org_unit_id=r.org_unit_id,
-            balance=r.balance,
-            interest_income=r.interest_income,
-        ))
+    db.session.execute(text(
+        "INSERT INTO proc_inst_data "
+        "(upload_batch_id, as_of_date, account_id, customer_id, product_code, org_unit_id, balance, interest_income) "
+        "SELECT upload_batch_id, as_of_date, account_id, customer_id, product_code, org_unit_id, balance, interest_income "
+        "FROM stg_inst_data WHERE upload_batch_id = :batch_id"
+    ), {"batch_id": batch_id})
 
 
 def _promote_gl(batch_id: str):
-    rows = StgGlData.query.filter_by(upload_batch_id=batch_id).all()
-    for r in rows:
-        db.session.add(ProcGlData(
-            upload_batch_id=r.upload_batch_id,
-            as_of_date=r.as_of_date,
-            gl_account=r.gl_account,
-            org_unit_id=r.org_unit_id,
-            debit=r.debit,
-            credit=r.credit,
-            balance=r.balance,
-        ))
+    db.session.execute(text(
+        "INSERT INTO proc_gl_data "
+        "(upload_batch_id, as_of_date, gl_account, org_unit_id, debit, credit, balance) "
+        "SELECT upload_batch_id, as_of_date, gl_account, org_unit_id, debit, credit, balance "
+        "FROM stg_gl_data WHERE upload_batch_id = :batch_id"
+    ), {"batch_id": batch_id})

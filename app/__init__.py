@@ -4,6 +4,7 @@ from app.config import Config
 from app.models import db
 import json
 import os
+import re
 
 # Pre-import model modules to avoid local variable shadowing in create_app
 import app.models.dimensions  # noqa
@@ -27,6 +28,16 @@ def create_app(config_class=Config):
 
     db.init_app(flask_app)
     login_manager.init_app(flask_app)
+
+    # Warn if the app is running with the insecure dev secret key
+    _dev_key = "dev-secret-change-in-production"
+    if flask_app.secret_key == _dev_key and not flask_app.debug:
+        import warnings
+        warnings.warn(
+            "SECRET_KEY is set to the insecure development default. "
+            "Set the SECRET_KEY environment variable before deploying.",
+            stacklevel=2,
+        )
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -81,6 +92,11 @@ def _apply_schema_migrations():
     inspector = inspect(db.engine)
 
     def _add_col_if_missing(table, col_def):
+        # Validate identifiers to prevent DDL injection
+        _ident = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+        col_name = col_def.split()[0]
+        if not _ident.match(table) or not _ident.match(col_name):
+            raise ValueError(f"Invalid DDL identifier: table={table!r}, col={col_name!r}")
         cols = {c["name"] for c in inspector.get_columns(table)}
         col_name = col_def.split()[0]
         if col_name not in cols:
@@ -114,17 +130,22 @@ def _seed_defaults():
     db.session.add_all([makers, checkers, admins])
     db.session.flush()
 
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin")
     admin = User(username="admin", display_name="Administrator")
-    admin.set_password("admin")
+    admin.set_password(admin_password)
     admin.groups.append(admins)
+    db.session.add(admin)
 
-    maker = User(username="maker1", display_name="Maker User 1")
-    maker.set_password("maker1")
-    maker.groups.append(makers)
+    # Seed demo users only in debug / dev mode
+    if os.environ.get("FLASK_DEBUG", "0") == "1":
+        maker = User(username="maker1", display_name="Maker User 1")
+        maker.set_password("maker1")
+        maker.groups.append(makers)
 
-    checker = User(username="checker1", display_name="Checker User 1")
-    checker.set_password("checker1")
-    checker.groups.append(checkers)
+        checker = User(username="checker1", display_name="Checker User 1")
+        checker.set_password("checker1")
+        checker.groups.append(checkers)
 
-    db.session.add_all([admin, maker, checker])
+        db.session.add_all([maker, checker])
+
     db.session.commit()

@@ -16,6 +16,28 @@ with open(_FILTER_CFG_PATH) as _f:
 bp = Blueprint("rules", __name__)
 
 
+def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
+    """Extract and normalise shared rule form fields from request.form."""
+    entry_mode = request.form.get("entry_mode", "BOTH").strip().upper()
+    if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
+        entry_mode = "BOTH"
+    join_keys = request.form.getlist("join_keys")
+    join_key = ",".join(k.strip() for k in join_keys if k.strip()) or fallback_join_key
+    filter_raw = request.form.get("filter_json", "").strip()
+    src_dim_raw = request.form.get("source_dim_json", "").strip()
+    out_dim_raw = request.form.get("output_dim_json", "").strip()
+    crd_dim_raw = request.form.get("credit_dim_json", "").strip()
+    return {
+        "entry_mode": entry_mode,
+        "join_key": join_key,
+        "generate_offset": (entry_mode != "CREDIT_ONLY"),
+        "filter_json": filter_raw or None,
+        "source_dim_json": src_dim_raw or None,
+        "output_dim_json": out_dim_raw or None,
+        "credit_dim_json": crd_dim_raw or None,
+    }
+
+
 @bp.route("/")
 @login_required
 def list_rules():
@@ -27,28 +49,20 @@ def list_rules():
 @login_required
 def new_rule():
     if request.method == "POST":
-        filter_raw      = request.form.get("filter_json", "").strip()
-        src_dim_raw     = request.form.get("source_dim_json", "").strip()
-        out_dim_raw     = request.form.get("output_dim_json", "").strip()
-        crd_dim_raw     = request.form.get("credit_dim_json", "").strip()
-        entry_mode      = request.form.get("entry_mode", "BOTH").strip().upper()
-        if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
-            entry_mode = "BOTH"
-        join_keys = request.form.getlist("join_keys")
-        join_key  = ",".join(k.strip() for k in join_keys if k.strip()) or "customer_id"
+        form = _parse_rule_form(fallback_join_key="customer_id")
         rule = AllocationRule(
             name=request.form["name"],
             description=request.form.get("description", ""),
             source_table=request.form.get("source_table", "proc_inst_data"),
             lookup_table=request.form.get("lookup_table", "ref_static_allocation"),
             output_table=request.form.get("output_table", "fct_mgmt_instrument"),
-            join_key=join_key,
-            filter_json=filter_raw if filter_raw else None,
-            source_dim_json=src_dim_raw if src_dim_raw else None,
-            output_dim_json=out_dim_raw if out_dim_raw else None,
-            credit_dim_json=crd_dim_raw if crd_dim_raw else None,
-            entry_mode=entry_mode,
-            generate_offset=(entry_mode != "CREDIT_ONLY"),
+            join_key=form["join_key"],
+            filter_json=form["filter_json"],
+            source_dim_json=form["source_dim_json"],
+            output_dim_json=form["output_dim_json"],
+            credit_dim_json=form["credit_dim_json"],
+            entry_mode=form["entry_mode"],
+            generate_offset=form["generate_offset"],
             created_by=current_user.username,
             status="ACTIVE",
         )
@@ -139,28 +153,19 @@ def detail(rule_id):
 def edit_rule(rule_id):
     rule = AllocationRule.query.get_or_404(rule_id)
     if request.method == "POST":
-        filter_raw  = request.form.get("filter_json", "").strip()
-        src_dim_raw = request.form.get("source_dim_json", "").strip()
-        out_dim_raw = request.form.get("output_dim_json", "").strip()
-        crd_dim_raw = request.form.get("credit_dim_json", "").strip()
-        entry_mode  = request.form.get("entry_mode", "BOTH").strip().upper()
-        if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
-            entry_mode = "BOTH"
-        join_keys = request.form.getlist("join_keys")
-        join_key  = ",".join(k.strip() for k in join_keys if k.strip()) or rule.join_key
-
+        form = _parse_rule_form(fallback_join_key=rule.join_key)
         rule.name           = request.form["name"]
         rule.description    = request.form.get("description", "")
         rule.source_table   = request.form.get("source_table", rule.source_table)
         rule.lookup_table   = request.form.get("lookup_table", rule.lookup_table)
         rule.output_table   = request.form.get("output_table", rule.output_table)
-        rule.join_key       = join_key
-        rule.filter_json    = filter_raw if filter_raw else None
-        rule.source_dim_json = src_dim_raw if src_dim_raw else None
-        rule.output_dim_json = out_dim_raw if out_dim_raw else None
-        rule.credit_dim_json = crd_dim_raw if crd_dim_raw else None
-        rule.entry_mode     = entry_mode
-        rule.generate_offset = (entry_mode != "CREDIT_ONLY")
+        rule.join_key       = form["join_key"]
+        rule.filter_json    = form["filter_json"]
+        rule.source_dim_json = form["source_dim_json"]
+        rule.output_dim_json = form["output_dim_json"]
+        rule.credit_dim_json = form["credit_dim_json"]
+        rule.entry_mode     = form["entry_mode"]
+        rule.generate_offset = form["generate_offset"]
         db.session.commit()
         flash(f"Rule '{rule.name}' updated.", "success")
         return redirect(url_for("rules.detail", rule_id=rule.id))

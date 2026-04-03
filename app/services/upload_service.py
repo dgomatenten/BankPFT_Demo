@@ -146,7 +146,10 @@ def _cast_value(value, col_cfg):
     """Cast a DataFrame cell value according to column_mapping config."""
     col_type = col_cfg["type"]
     if col_type == "date":
-        return pd.to_datetime(value).date()
+        try:
+            return pd.to_datetime(value).date()
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Cannot parse '{value}' as a date: {exc}") from exc
     elif col_type == "float":
         return float(value) if pd.notna(value) else col_cfg.get("default", 0)
     else:  # string
@@ -163,7 +166,7 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
     batch = UploadBatch(
         id=batch_id,
         data_type=data_type,
-        filename=secure_filename(filepath.split("/")[-1]),
+        filename=secure_filename(os.path.basename(filepath)),
         status="DRAFT" if errors else "PENDING",
         row_count=len(df),
         error_count=len(errors),
@@ -178,18 +181,26 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
         col_mapping = type_cfg["column_mapping"]
         staging_model = _STAGING_MODELS[type_cfg["staging_table"]]
 
-        for _, row in df.iterrows():
-            record_data = {"upload_batch_id": batch_id}
-            for col_name, col_cfg in col_mapping.items():
-                value = row.get(col_name, col_cfg.get("default"))
-                record_data[col_name] = _cast_value(value, col_cfg)
+        try:
+            for _, row in df.iterrows():
+                record_data = {"upload_batch_id": batch_id}
+                for col_name, col_cfg in col_mapping.items():
+                    value = row.get(col_name, col_cfg.get("default"))
+                    record_data[col_name] = _cast_value(value, col_cfg)
 
-            # Add extra fields for allocation / reclass records
-            if data_type in ("ALLOCATION", "ORG_RECLASS"):
-                record_data["status"] = "PENDING"
-                record_data["maker_id"] = maker_id
+                # Add extra fields for allocation / reclass records
+                if data_type in ("ALLOCATION", "ORG_RECLASS"):
+                    record_data["status"] = "PENDING"
+                    record_data["maker_id"] = maker_id
 
-            db.session.add(staging_model(**record_data))
+                db.session.add(staging_model(**record_data))
+        except (ValueError, TypeError) as exc:
+            batch.status = "DRAFT"
+            cast_errors = [str(exc)]
+            batch.error_count = len(cast_errors)
+            batch.errors_json = json.dumps(cast_errors)
+            db.session.commit()
+            return batch
 
     db.session.commit()
     return batch
