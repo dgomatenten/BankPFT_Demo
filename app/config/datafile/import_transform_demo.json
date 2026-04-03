@@ -1,0 +1,278 @@
+{
+  "_doc": "DEMO — import transform examples. All 'transform' expressions use the variable 'value' which holds the raw (stripped) string read from the file. This format_id is for reference only; the target_table columns below may not all exist in a real table.",
+
+  "operation": "import",
+  "format_id": "TRANSFORM_DEMO_IMPORT",
+  "name": "Transform Examples — Import (Demo)",
+  "description": "Demonstrates every available transform category for fixed-length and delimited import. Not wired to a real file — copy any field block into a production rule.",
+  "type": "fixed_length",
+  "record_length": 200,
+  "skip_header_rows": 0,
+  "target_table": "stg_inst_data",
+
+  "fields": [
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "1. NO TRANSFORM — value stored as-is",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "account_id",
+      "start": 1, "length": 15, "type": "string",
+      "_comment": "No transform: raw value is stored directly after whitespace stripping."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "2. STRING CASE & TRIM",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "product_code",
+      "start": 16, "length": 10, "type": "string",
+      "transform": "upper(trim(value))",
+      "_comment": "' loan ' → 'LOAN'  |  trim removes leading/trailing spaces, upper converts to uppercase."
+    },
+    {
+      "name": "status_flag",
+      "start": 26, "length": 10, "type": "string",
+      "transform": "lower(trim(value))",
+      "_comment": "'  ACTIVE  ' → 'active'"
+    },
+    {
+      "name": "description_field",
+      "start": 36, "length": 30, "type": "string",
+      "transform": "trim(value)",
+      "_comment": "Remove leading/trailing spaces only, keep original case."
+    },
+    {
+      "name": "left_trim_only",
+      "start": 66, "length": 10, "type": "string",
+      "transform": "ltrim(value)",
+      "_comment": "Remove leading spaces only."
+    },
+    {
+      "name": "right_trim_only",
+      "start": 76, "length": 10, "type": "string",
+      "transform": "rtrim(value)",
+      "_comment": "Remove trailing spaces only."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "3. PADDING & PREFIX/SUFFIX",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "org_unit_id",
+      "start": 86, "length": 4, "type": "string",
+      "transform": "concat('BR', lpad(trim(value), 4, '0'))",
+      "_comment": "'12' → 'BR0012'  |  lpad zero-pads to 4 chars, concat prepends the 'BR' prefix."
+    },
+    {
+      "name": "account_padded",
+      "start": 90, "length": 8, "type": "string",
+      "transform": "lpad(trim(value), 10, '0')",
+      "_comment": "'123' → '0000000123'  |  left-pad with zeros to total length 10."
+    },
+    {
+      "name": "code_right_padded",
+      "start": 98, "length": 5, "type": "string",
+      "transform": "rpad(trim(value), 8, ' ')",
+      "_comment": "'ABC' → 'ABC     '  |  right-pad with spaces to total length 8."
+    },
+    {
+      "name": "reference_code",
+      "start": 103, "length": 10, "type": "string",
+      "transform": "concat('REF-', trim(value), '-2026')",
+      "_comment": "'001' → 'REF-001-2026'  |  concat accepts any number of arguments."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "4. SUBSTRING & SLICE",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "year_part",
+      "start": 113, "length": 8, "type": "string",
+      "transform": "left(value, 4)",
+      "_comment": "'20260101' → '2026'  |  left(v, n) keeps the first n characters."
+    },
+    {
+      "name": "month_part",
+      "start": 113, "length": 8, "type": "string",
+      "transform": "substr(value, 4, 6)",
+      "_comment": "'20260101' → '01'  |  substr(v, start, end) — 0-based, end is exclusive."
+    },
+    {
+      "name": "slice_syntax",
+      "start": 113, "length": 8, "type": "string",
+      "transform": "value[0:8]",
+      "_comment": "Python slice syntax works the same way: value[0:8] keeps first 8 chars."
+    },
+    {
+      "name": "last_4_chars",
+      "start": 121, "length": 10, "type": "string",
+      "transform": "right(value, 4)",
+      "_comment": "'ACCT_1234' → '1234'  |  right(v, n) keeps the last n characters."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "5. REPLACE & STRIP CHARACTERS",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "clean_amount",
+      "start": 131, "length": 15, "type": "string",
+      "transform": "replace(value, ',', '')",
+      "_comment": "'1,234,567' → '1234567'  |  remove thousands separators before numeric conversion."
+    },
+    {
+      "name": "normalised_id",
+      "start": 146, "length": 15, "type": "string",
+      "transform": "replace(replace(value, '-', ''), ' ', '')",
+      "_comment": "'ACC-001 X' → 'ACC001X'  |  chain replace() calls to strip multiple characters."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "6. NUMERIC CONVERSION & SCALING",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "balance",
+      "start": 161, "length": 18, "type": "float",
+      "transform": "to_float(value) / 100",
+      "_comment": "Source stores balance in cents (integer); divide by 100 to get dollars. '25000000' → 250000.0"
+    },
+    {
+      "name": "rate_bps",
+      "start": 179, "length": 6, "type": "float",
+      "transform": "to_float(value) / 10000",
+      "_comment": "Source stores rate in basis points; divide by 10000 to get decimal. '535' → 0.0535"
+    },
+    {
+      "name": "quantity",
+      "start": 185, "length": 8, "type": "float",
+      "transform": "to_int(value)",
+      "_comment": "Strict integer parse — fails loudly if value is not a whole number. '42' → 42"
+    },
+    {
+      "name": "amount_rounded",
+      "start": 161, "length": 18, "type": "float",
+      "transform": "round(to_float(replace(value, ',', '')) / 100, 2)",
+      "_comment": "Full pipeline: strip commas → convert → scale → round to 2 dp. '1,234,567' → 12345.67"
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "7. CONDITIONAL (IF / CASE)",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "entry_type",
+      "start": 1, "length": 15, "type": "string",
+      "transform": "'DEBIT' if to_float(value) > 0 else 'CREDIT'",
+      "_comment": "Positive amount → 'DEBIT', negative → 'CREDIT'. Equivalent to SQL CASE WHEN."
+    },
+    {
+      "name": "entry_type_iif",
+      "start": 1, "length": 15, "type": "string",
+      "transform": "iif(to_float(value) > 0, 'DEBIT', 'CREDIT')",
+      "_comment": "iif(condition, true_value, false_value) — same as the ternary above, Excel-style."
+    },
+    {
+      "name": "risk_bucket",
+      "start": 1, "length": 3, "type": "string",
+      "transform": "'HIGH' if to_int(value) >= 80 else ('MED' if to_int(value) >= 50 else 'LOW')",
+      "_comment": "Nested ternary for range mapping: 80+ → HIGH, 50-79 → MED, <50 → LOW."
+    },
+    {
+      "name": "in_list_check",
+      "start": 16, "length": 10, "type": "string",
+      "transform": "'Y' if upper(trim(value)) in ['LOAN', 'DEPOSIT', 'MTG'] else 'N'",
+      "_comment": "Set membership test: map approved product codes to 'Y', everything else to 'N'."
+    },
+    {
+      "name": "not_in_list",
+      "start": 16, "length": 10, "type": "string",
+      "transform": "'EXCLUDED' if upper(trim(value)) in ['INTERNAL', 'TEST'] else trim(value)",
+      "_comment": "Flag internal/test records; pass real values through unchanged."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "8. NULL / EMPTY DEFAULT (NVL / COALESCE)",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "nullable_field",
+      "start": 26, "length": 10, "type": "string",
+      "transform": "nvl(value, 'UNKNOWN')",
+      "_comment": "If value is blank/None after strip, return 'UNKNOWN'. Same as SQL NVL or ISNULL."
+    },
+    {
+      "name": "priority_field",
+      "start": 1, "length": 15, "type": "string",
+      "transform": "coalesce(trim(value), 'DEFAULT')",
+      "_comment": "Returns the first non-null, non-empty argument. Useful when chaining multiple fallbacks."
+    },
+    {
+      "name": "zero_for_blank",
+      "start": 161, "length": 18, "type": "float",
+      "transform": "to_float(nvl(value, '0'))",
+      "_comment": "If the balance field is blank, default to 0 before converting to float."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "9. DATE REFORMATTING",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "as_of_date_yyyymmdd",
+      "start": 113, "length": 8, "type": "date",
+      "date_format": "%Y%m%d",
+      "_comment": "Parse YYYYMMDD (e.g. '20260101') → Python date 2026-01-01. No transform needed; use date_format."
+    },
+    {
+      "name": "as_of_date_ddmmyyyy",
+      "start": 113, "length": 8, "type": "date",
+      "date_format": "%d%m%Y",
+      "_comment": "Parse DDMMYYYY (e.g. '01012026') → 2026-01-01."
+    },
+    {
+      "name": "as_of_date_iso",
+      "start": 113, "length": 10, "type": "date",
+      "date_format": "%Y-%m-%d",
+      "_comment": "Parse ISO date string '2026-01-01' (default format; date_format may be omitted)."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "10. COMBINED / CHAINED TRANSFORMS",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "name": "normalised_org",
+      "start": 86, "length": 6, "type": "string",
+      "transform": "concat('OU-', lpad(replace(trim(value), 'BR', ''), 4, '0'))",
+      "_comment": "Step 1: trim spaces. Step 2: strip 'BR' prefix. Step 3: zero-pad to 4. Step 4: prepend 'OU-'. 'BR  7' → 'OU-0007'"
+    },
+    {
+      "name": "sign_adjusted_balance",
+      "start": 161, "length": 18, "type": "float",
+      "transform": "to_float(value) / 100 * (-1 if upper(trim(value))[-1:] == 'D' else 1)",
+      "_comment": "Some sources suffix 'D' for debit (negative). Strip sign indicator and apply sign: '50000D' → -500.0"
+    },
+    {
+      "name": "masked_account",
+      "start": 1, "length": 15, "type": "string",
+      "transform": "concat(left(value, 4), '****', right(value, 4))",
+      "_comment": "'ACC-12345678' → 'ACC-****5678'  |  mask middle characters for display/audit fields."
+    }
+  ]
+}

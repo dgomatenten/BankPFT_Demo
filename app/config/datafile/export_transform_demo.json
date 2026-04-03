@@ -1,0 +1,236 @@
+{
+  "_doc": "DEMO — export transform examples. All 'transform' expressions use the variable 'value' which holds the Python value read from the database column (may be str, int, float, date, or None). This export_id is for reference only.",
+
+  "operation": "export",
+  "export_id": "TRANSFORM_DEMO_EXPORT",
+  "name": "Transform Examples — Export (Demo)",
+  "description": "Demonstrates every available transform category for fixed-length and delimited export. Not wired to a real output file — copy any field block into a production export rule.",
+  "source_table": "proc_inst_data",
+  "format": "fixed_length",
+  "include_header": true,
+  "filter_json": {
+    "logic": "AND",
+    "conditions": []
+  },
+
+  "fields": [
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "1. NO TRANSFORM — value written as-is",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "account_id",
+      "header": "ACCOUNT_ID",
+      "start": 1, "length": 20, "type": "string",
+      "_comment": "String column: padded/truncated to 20 chars. No transform needed."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "2. STRING CASE & TRIM",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "product_code",
+      "header": "PRODUCT_CODE",
+      "start": 21, "length": 12, "type": "string",
+      "transform": "upper(str(value))",
+      "_comment": "'loan' → 'LOAN'  |  Normalise to uppercase before writing."
+    },
+    {
+      "source_col": "status",
+      "header": "STATUS",
+      "start": 33, "length": 10, "type": "string",
+      "transform": "lower(str(value))",
+      "_comment": "'ACTIVE' → 'active'  |  Force lowercase in output file."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "3. PADDING & PREFIX/SUFFIX",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "org_unit_id",
+      "header": "ORG_UNIT_ID",
+      "start": 43, "length": 10, "type": "string",
+      "transform": "lpad(str(value), 10, '0')",
+      "_comment": "'OU001' → '00000OU001'  |  Zero-pad org unit to fixed 10-char field."
+    },
+    {
+      "source_col": "customer_id",
+      "header": "CUST_REF",
+      "start": 53, "length": 18, "type": "string",
+      "transform": "concat('CUST-', lpad(str(value), 12, '0'))",
+      "_comment": "'C001' → 'CUST-000000000C001'  |  Add prefix and pad internal key for downstream system."
+    },
+    {
+      "source_col": "account_id",
+      "header": "PADDED_ACCT",
+      "start": 71, "length": 25, "type": "string",
+      "transform": "rpad(str(value), 25, ' ')",
+      "_comment": "Right-pad with spaces to fill the 25-char field (same effect as default fixed_length padding, shown here explicitly)."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "4. NUMERIC SCALING & FORMATTING",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "balance",
+      "header": "BALANCE_CENTS",
+      "start": 96, "length": 20, "type": "float",
+      "transform": "round(to_float(value) * 100)",
+      "decimals": 0,
+      "_comment": "Database stores dollars (250000.0); output file wants cents integer: 250000.0 → 25000000"
+    },
+    {
+      "source_col": "interest_income",
+      "header": "INCOME_BPS",
+      "start": 116, "length": 12, "type": "float",
+      "transform": "round(to_float(value) * 10000)",
+      "decimals": 0,
+      "_comment": "Rate decimal (0.0535) → basis points integer (535) for legacy system."
+    },
+    {
+      "source_col": "balance",
+      "header": "BALANCE_FMT",
+      "start": 128, "length": 20, "type": "float",
+      "decimals": 2,
+      "_comment": "Write balance with 2 decimal places. 250000.0 → '250000.00'. No transform — decimals handles formatting."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "5. DATE REFORMATTING",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "as_of_date",
+      "header": "AS_OF_DATE",
+      "start": 148, "length": 10, "type": "date",
+      "date_format": "%Y-%m-%d",
+      "_comment": "Write ISO date '2026-01-01'. date_format controls output format — no transform needed."
+    },
+    {
+      "source_col": "as_of_date",
+      "header": "DATE_YYYYMMDD",
+      "start": 158, "length": 8, "type": "date",
+      "date_format": "%Y%m%d",
+      "_comment": "Write date as YYYYMMDD without separators: '20260101'."
+    },
+    {
+      "source_col": "as_of_date",
+      "header": "DATE_DDMMYYYY",
+      "start": 166, "length": 8, "type": "date",
+      "date_format": "%d%m%Y",
+      "_comment": "Write date as DDMMYYYY: '01012026'. Useful for legacy European formats."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "6. CONDITIONAL (IF / CASE)",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "balance",
+      "header": "DR_CR_IND",
+      "start": 174, "length": 6, "type": "string",
+      "transform": "'DEBIT ' if to_float(value) >= 0 else 'CREDIT'",
+      "_comment": "DEBIT/CREDIT indicator derived from sign of balance. Positive or zero → DEBIT."
+    },
+    {
+      "source_col": "balance",
+      "header": "SIGN",
+      "start": 180, "length": 1, "type": "string",
+      "transform": "'+' if to_float(value) >= 0 else '-'",
+      "_comment": "Single-char sign symbol written before the absolute amount in some formats."
+    },
+    {
+      "source_col": "product_code",
+      "header": "PRODUCT_GROUP",
+      "start": 181, "length": 10, "type": "string",
+      "transform": "'LENDING' if upper(str(value)) in ['LOAN', 'MTG', 'OD'] else ('DEPOSIT' if upper(str(value)) in ['SAV', 'DEP', 'TD'] else 'OTHER')",
+      "_comment": "Map granular product codes to three output groups: LENDING / DEPOSIT / OTHER."
+    },
+    {
+      "source_col": "balance",
+      "header": "RISK_TIER",
+      "start": 191, "length": 6, "type": "string",
+      "transform": "'HIGH  ' if to_float(value) >= 1000000 else ('MED   ' if to_float(value) >= 100000 else 'LOW   ')",
+      "_comment": "Derive risk tier from balance amount and write fixed 6-char field."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "7. NULL / EMPTY DEFAULT (NVL)",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "base_rate",
+      "header": "BASE_RATE",
+      "start": 1, "length": 12, "type": "float",
+      "transform": "to_float(nvl(value, '0'))",
+      "decimals": 6,
+      "_comment": "base_rate may be NULL for unmatched instruments. Default to 0.0 so output field is never blank."
+    },
+    {
+      "source_col": "cost_of_fund",
+      "header": "COST_OF_FUND",
+      "start": 13, "length": 16, "type": "float",
+      "transform": "round(to_float(nvl(value, '0')) * 100, 0)",
+      "decimals": 0,
+      "_comment": "Null-safe: default NULL cost_of_fund to 0, then scale to cents."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "8. REPLACE & CLEAN",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "org_unit_id",
+      "header": "ORG_STRIPPED",
+      "start": 29, "length": 8, "type": "string",
+      "transform": "replace(str(value), 'BR', '')",
+      "_comment": "'BR0012' → '0012'  |  Strip prefix before writing to downstream system that does not expect it."
+    },
+    {
+      "source_col": "account_id",
+      "header": "ACCT_CLEAN",
+      "start": 37, "length": 15, "type": "string",
+      "transform": "replace(replace(str(value), '-', ''), ' ', '')",
+      "_comment": "Remove dashes and spaces from account ID for systems that expect numeric-only keys."
+    },
+
+    {
+      "_section": "────────────────────────────────────────",
+      "_section_name": "9. COMBINED / CHAINED TRANSFORMS",
+      "_section_end": "────────────────────────────────────────"
+    },
+    {
+      "source_col": "balance",
+      "header": "SIGNED_CENTS",
+      "start": 52, "length": 20, "type": "string",
+      "transform": "concat('+' if to_float(value) >= 0 else '-', lpad(str(round(abs(to_float(value)) * 100)), 18, '0'))",
+      "_comment": "Write signed fixed-width cents field: balance 250000.0 → '+000000000025000000'. Pattern used by many SWIFT/legacy formats."
+    },
+    {
+      "source_col": "account_id",
+      "header": "COMPOSITE_KEY",
+      "start": 72, "length": 30, "type": "string",
+      "transform": "concat(rpad(str(value), 15, ' '), '|', lpad(str(value), 15, '0'))",
+      "_comment": "Build a composite key from two representations of account_id separated by a pipe."
+    },
+    {
+      "source_col": "balance",
+      "header": "DISPLAY_AMT",
+      "start": 102, "length": 20, "type": "string",
+      "transform": "lpad(str(round(to_float(nvl(value, '0')) * 100)), 20, '0')",
+      "_comment": "Full pipeline: null-safe → scale cents → round → convert to string → zero-pad to 20 chars."
+    }
+  ]
+}
