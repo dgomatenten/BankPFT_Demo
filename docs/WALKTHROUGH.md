@@ -454,16 +454,50 @@ The **Allocation Batch History** and **FTP Run History** tables are shown separa
 
 **URL:** `/batch/<batch_id>`
 
-View details of a completed batch run.
+View the full results of a completed batch run, including a granular processing log written by the engine.
 
 ![Batch Detail](images/14_batch_detail.png)
 
-**Key elements:**
-- Batch metadata (rule used, as-of date, status, timestamps)
-- Source and output row counts (output includes both DEBIT and CREDIT entries)
-- Orphan count — records with no lookup match
-- **Variance** — difference between source total and DEBIT output total (should be 0.00 when ratios sum to 1.0)
-- Link to execution log and Management Ledger report
+**Stats card fields:**
+
+| Field | Description |
+|---|---|
+| **Batch ID** | UUID assigned to this run |
+| **Status** | `RUNNING`, `COMPLETED`, or `FAILED` |
+| **As-of Date** | The date used to filter source data |
+| **Run By** | Username who triggered the batch |
+| **Started** | Timestamp when the run began |
+| **Source Rows** | Rows loaded from the source table after all filters |
+| **Source Total** | Sum of the primary balance column from source data |
+| **Output Rows** | Total rows written (DEBIT + CREDIT entries combined) |
+| **Output Total** | Sum of allocated balances for DEBIT rows only |
+| **Orphan Rows** | Source rows with no matching lookup ratio |
+| **Variance** | `source_total − output_total` — should be 0 when ratios sum to 1.0 |
+
+### Processing Log
+
+Every engine run writes a timestamped log file to `instance/batch_logs/batch_<id>.log`. The full contents are displayed in a scrollable dark panel directly on the detail page.
+
+![Batch Detail with Processing Log](images/14b_batch_detail_log.png)
+
+**Log levels and what each line records:**
+
+| Level | What is logged |
+|---|---|
+| `START` | Batch ID (first 8 chars) and user who triggered it |
+| `RULE` | Rule name, source / lookup / output tables, entry mode, join key, dim config keys |
+| `QUERY` | Table name and filter applied before each database read |
+| `DATA` | Row count returned from each query |
+| `FILTER` | Rows before → after each filter pass (data filter and source dim filter) |
+| `JOIN` | Join key and type, plus matched vs orphan counts after the merge |
+| `PROCESS` | Matched row count, emit flags, and final DEBIT / CREDIT entry counts |
+| `ORPHAN` | Orphan row count and the default ratio applied |
+| `DB` | Number of rows written to the output table |
+| `SUMMARY` | Source rows, output rows, orphans, source total, output total, variance |
+| `COMPLETE` | Total wall-clock time for the batch in seconds |
+| `ERROR` / `FAILED` | Exception message if the run fails at any point |
+
+The log file path (`batch_<id[:8]>.log`) is shown in the card header. Log files are stored at `instance/batch_logs/` and are never deleted automatically.
 
 ---
 
