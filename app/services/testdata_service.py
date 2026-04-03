@@ -2,7 +2,7 @@
 
 import uuid
 import random
-from datetime import date
+from datetime import date, timedelta
 import pandas as pd
 import os
 from app.models import db
@@ -194,6 +194,10 @@ def generate_excel_templates(output_dir: str) -> list[str]:
         ],
     }
 
+    templates["interest_rate_template.xlsx"] = [
+        "effective_date", "interest_rate_code", "term", "term_mult", "rate"
+    ]
+
     os.makedirs(output_dir, exist_ok=True)
     files = []
     for fname, cols in templates.items():
@@ -203,3 +207,107 @@ def generate_excel_templates(output_dir: str) -> list[str]:
         files.append(path)
 
     return files
+
+
+# ── FTP rate test data ────────────────────────────────────────────────────────
+
+_RATE_CONFIGS = [
+    ("SWAP_RATE",  1,  "M", 0.0350),
+    ("SWAP_RATE",  3,  "M", 0.0365),
+    ("SWAP_RATE",  6,  "M", 0.0380),
+    ("SWAP_RATE", 12,  "M", 0.0400),
+    ("LIBOR_USD",  1,  "M", 0.0520),
+    ("LIBOR_USD",  3,  "M", 0.0535),
+    ("LIBOR_USD",  6,  "M", 0.0550),
+    ("LIBOR_USD", 12,  "M", 0.0570),
+    ("BASE_RATE",  1,  "M", 0.0490),
+    ("BASE_RATE",  3,  "M", 0.0490),
+    ("BASE_RATE",  6,  "M", 0.0500),
+    ("BASE_RATE", 12,  "M", 0.0510),
+]
+
+
+def generate_interest_rates(as_of_date=None):
+    """Seed 30 days of approved RefInterestRate rows (3 codes × 4 tenors × 30 days)."""
+    from app.models.ftp import RefInterestRate
+
+    if as_of_date is None:
+        as_of_date = date.today()
+
+    count = 0
+    for days_back in range(29, -1, -1):
+        obs_date = as_of_date - timedelta(days=days_back)
+        for code, term, mult, base in _RATE_CONFIGS:
+            exists = RefInterestRate.query.filter_by(
+                effective_date=obs_date,
+                interest_rate_code=code,
+                term=term,
+                term_mult=mult,
+            ).first()
+            if exists:
+                continue
+            noise = random.uniform(-0.001, 0.001)
+            db.session.add(RefInterestRate(
+                effective_date=obs_date,
+                interest_rate_code=code,
+                term=term,
+                term_mult=mult,
+                rate=round(base + noise, 6),
+                status="APPROVED",
+                maker_id="system",
+                checker_id="system",
+            ))
+            count += 1
+
+    db.session.commit()
+    return count
+
+
+def generate_ftp_configs():
+    """Seed FtpProductConfig for the 5 standard products if none exist."""
+    from app.models.ftp import FtpProductConfig
+
+    configs = [
+        dict(product_code="PROD-LON", method="MOVING_AVG", rate_code="SWAP_RATE",
+             term=5,  term_mult="Y", avg_period=3, avg_period_mult="M", is_active=True, created_by="system"),
+        dict(product_code="PROD-MTG", method="MOVING_AVG", rate_code="SWAP_RATE",
+             term=10, term_mult="Y", avg_period=3, avg_period_mult="M", is_active=True, created_by="system"),
+        dict(product_code="PROD-DEP", method="MOVING_AVG", rate_code="LIBOR_USD",
+             term=3,  term_mult="M", avg_period=1, avg_period_mult="M", is_active=True, created_by="system"),
+        dict(product_code="PROD-SAV", method="MOVING_AVG", rate_code="LIBOR_USD",
+             term=1,  term_mult="M", avg_period=1, avg_period_mult="M", is_active=True, created_by="system"),
+        dict(product_code="PROD-CRD", method="MOVING_AVG", rate_code="BASE_RATE",
+             term=12, term_mult="M", avg_period=1, avg_period_mult="M", is_active=True, created_by="system"),
+    ]
+
+    added = 0
+    for cfg in configs:
+        if not FtpProductConfig.query.filter_by(product_code=cfg["product_code"]).first():
+            db.session.add(FtpProductConfig(**cfg))
+            added += 1
+
+    db.session.commit()
+    return added
+
+
+def generate_interest_rate_excel(output_dir: str) -> tuple[str, int]:
+    """Generate interest_rate_testdata.xlsx (30 days × 3 codes × 4 tenors = 360 rows)."""
+    as_of_date = date.today()
+    rows = []
+    for days_back in range(29, -1, -1):
+        obs_date = as_of_date - timedelta(days=days_back)
+        for code, term, mult, base in _RATE_CONFIGS:
+            noise = random.uniform(-0.001, 0.001)
+            rows.append({
+                "effective_date": obs_date.isoformat(),
+                "interest_rate_code": code,
+                "term": term,
+                "term_mult": mult,
+                "rate": round(base + noise, 6),
+            })
+
+    df = pd.DataFrame(rows)
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, "interest_rate_testdata.xlsx")
+    df.to_excel(path, index=False, engine="openpyxl")
+    return path, len(rows)

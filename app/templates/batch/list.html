@@ -3,36 +3,56 @@
 {% block content %}
 <h2 class="mb-4">Batch Execution</h2>
 
-<div class="card mb-4">
-    <div class="card-header">Run New Batch</div>
-    <div class="card-body">
-        <form method="POST" action="/batch/run" class="row g-3 align-items-end">
-            <div class="col-md-4">
-                <label class="form-label">Allocation Rule</label>
-                <select name="rule_id" class="form-select" required>
-                    <option value="">— Select Rule —</option>
-                    {% for r in rules %}
-                    <option value="{{ r.id }}">{{ r.name }} (ID: {{ r.id }})</option>
-                    {% endfor %}
-                </select>
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Run Allocation Batch</div>
+            <div class="card-body">
+                <form method="POST" action="/batch/run" class="row g-3 align-items-end">
+                    <div class="col-12">
+                        <label class="form-label">Allocation Rule</label>
+                        <select name="rule_id" class="form-select" required>
+                            <option value="">— Select Rule —</option>
+                            {% for r in rules %}
+                            <option value="{{ r.id }}">{{ r.name }} (ID: {{ r.id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label">As-of Date</label>
+                        <input type="date" name="as_of_date" class="form-control" required>
+                    </div>
+                    <div class="col-4">
+                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-play-fill"></i> Run</button>
+                    </div>
+                </form>
+                {% if not rules %}
+                <div class="alert alert-info mt-3 mb-0">No active rules. Create a rule first.</div>
+                {% endif %}
             </div>
-            <div class="col-md-3">
-                <label class="form-label">As-of Date</label>
-                <input type="date" name="as_of_date" class="form-control" required>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Run FTP Batch</div>
+            <div class="card-body">
+                <p class="text-muted small">Calculates moving-average base rates and cost of funds for all instruments with an active FTP product config.</p>
+                <form method="POST" action="/batch/run-ftp" class="row g-3 align-items-end">
+                    <div class="col-8">
+                        <label class="form-label">As-of Date</label>
+                        <input type="date" name="as_of_date" class="form-control" required>
+                    </div>
+                    <div class="col-4">
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-currency-exchange"></i> Run FTP</button>
+                    </div>
+                </form>
             </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-success w-100"><i class="bi bi-play-fill"></i> Run</button>
-            </div>
-        </form>
+        </div>
     </div>
 </div>
 
-{% if not rules %}
-<div class="alert alert-info">No active rules available. Create a rule first.</div>
-{% endif %}
-
-<div class="card">
-    <div class="card-header">Batch History</div>
+<div class="card mb-4">
+    <div class="card-header">Allocation Batch History</div>
     <div class="card-body p-0">
         <table class="table table-hover mb-0">
             <thead><tr><th>Batch ID</th><th>Date</th><th>Status</th><th>Source Rows</th><th>Output Rows</th><th>Orphans</th><th>Source Total</th><th>Output Total</th></tr></thead>
@@ -49,6 +69,35 @@
                 <td>{{ "{:,.2f}".format(b.output_total) }}</td>
             </tr>
             {% endfor %}
+            {% if not batches %}
+            <tr><td colspan="8" class="text-center text-muted py-3">No allocation batches yet.</td></tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">FTP Run History</div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead><tr><th>Run ID</th><th>Date</th><th>Status</th><th>Processed</th><th>Matched</th><th>Skipped</th><th>Run By</th><th>Completed</th></tr></thead>
+            <tbody>
+            {% for r in ftp_runs %}
+            <tr>
+                <td><a href="{{ url_for('ftp.run_detail', run_id=r.id) }}">{{ r.id[:8] }}...</a></td>
+                <td>{{ r.as_of_date }}</td>
+                <td><span class="badge bg-{{ 'success' if r.status == 'COMPLETED' else 'danger' if r.status == 'FAILED' else 'info' }}">{{ r.status }}</span></td>
+                <td>{{ r.instruments_processed }}</td>
+                <td>{{ r.instruments_matched }}</td>
+                <td>{{ r.instruments_skipped }}</td>
+                <td>{{ r.run_by }}</td>
+                <td>{{ r.completed_at.strftime('%Y-%m-%d %H:%M') if r.completed_at else '—' }}</td>
+            </tr>
+            {% endfor %}
+            {% if not ftp_runs %}
+            <tr><td colspan="8" class="text-center text-muted py-3">No FTP runs yet.</td></tr>
+            {% endif %}
             </tbody>
         </table>
     </div>

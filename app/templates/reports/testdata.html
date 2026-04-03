@@ -55,7 +55,30 @@
                     <a href="/testdata/download-template/instrument_template.xlsx" class="btn btn-sm btn-outline-secondary">Instrument</a>
                     <a href="/testdata/download-template/gl_template.xlsx" class="btn btn-sm btn-outline-secondary">GL</a>
                     <a href="/testdata/download-template/allocation_template.xlsx" class="btn btn-sm btn-outline-secondary">Allocation</a>
+                    <a href="/testdata/download-template/interest_rate_template.xlsx" class="btn btn-sm btn-outline-secondary">Interest Rate</a>
                 </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">FTP / Interest Rates</div>
+            <div class="card-body">
+                <p>Seed 30 days of approved interest rate data (SWAP_RATE, LIBOR_USD, BASE_RATE × 4 tenors) directly into the database.</p>
+                <form method="POST" action="/testdata/generate-interest-rates" class="mb-3">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-graph-up"></i> Generate Rate Data (DB)</button>
+                </form>
+                <hr>
+                <p>Seed FTP product configuration for all 5 standard products (PROD-LON, PROD-MTG, PROD-DEP, PROD-SAV, PROD-CRD).</p>
+                <form method="POST" action="/testdata/generate-ftp-configs" class="mb-3">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-sliders"></i> Seed FTP Product Configs</button>
+                </form>
+                <hr>
+                <p>Generate an Excel file with 360 rows of interest rate test data for upload testing.</p>
+                <form method="POST" action="/testdata/generate-interest-rate-testdata" class="mb-2">
+                    <button type="submit" class="btn btn-outline-primary"><i class="bi bi-file-earmark-excel"></i> Generate Rate Test File</button>
+                </form>
+                <a href="/testdata/download-template/interest_rate_testdata.xlsx" class="btn btn-sm btn-outline-success"><i class="bi bi-download"></i> Download Test File</a>
             </div>
         </div>
     </div>

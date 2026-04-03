@@ -6,6 +6,9 @@ from app.services.testdata_service import (
     generate_allocation_ratios,
     generate_allocation_template_with_data,
     generate_excel_templates,
+    generate_interest_rates,
+    generate_ftp_configs,
+    generate_interest_rate_excel,
 )
 import os
 
@@ -71,3 +74,28 @@ def gen_alloc_testdata():
 def download_template(filename):
     template_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "templates")
     return send_from_directory(template_dir, filename, as_attachment=True)
+
+
+@bp.route("/generate-interest-rates", methods=["POST"])
+def gen_interest_rates():
+    count = generate_interest_rates()
+    flash(f"Generated {count} interest rate records (30 days × 3 codes × 4 tenors, APPROVED).", "success")
+    return redirect(url_for("testdata.index"))
+
+
+@bp.route("/generate-ftp-configs", methods=["POST"])
+def gen_ftp_configs():
+    count = generate_ftp_configs()
+    if count:
+        flash(f"Seeded {count} FTP product config(s).", "success")
+    else:
+        flash("FTP product configs already exist — nothing added.", "info")
+    return redirect(url_for("testdata.index"))
+
+
+@bp.route("/generate-interest-rate-testdata", methods=["POST"])
+def gen_interest_rate_testdata():
+    output_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "templates")
+    path, count = generate_interest_rate_excel(output_dir)
+    flash(f"Generated interest rate test data: {count} rows in interest_rate_testdata.xlsx", "success")
+    return redirect(url_for("testdata.index"))
