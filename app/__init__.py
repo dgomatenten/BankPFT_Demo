@@ -12,6 +12,7 @@ import app.models.staging  # noqa
 import app.models.allocation  # noqa
 import app.models.workflow  # noqa
 import app.models.auth  # noqa
+import app.models.ftp  # noqa
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
@@ -53,6 +54,7 @@ def create_app(config_class=Config):
     from app.routes.testdata import bp as testdata_bp
     from app.routes.auth import bp as auth_bp
     from app.routes.admin import bp as admin_bp
+    from app.routes.ftp import bp as ftp_bp
 
     flask_app.register_blueprint(dashboard_bp)
     flask_app.register_blueprint(upload_bp, url_prefix="/upload")
@@ -62,6 +64,7 @@ def create_app(config_class=Config):
     flask_app.register_blueprint(testdata_bp, url_prefix="/testdata")
     flask_app.register_blueprint(auth_bp, url_prefix="/auth")
     flask_app.register_blueprint(admin_bp, url_prefix="/admin")
+    flask_app.register_blueprint(ftp_bp, url_prefix="/ftp")
 
     with flask_app.app_context():
         db.create_all()
@@ -114,6 +117,10 @@ def _apply_schema_migrations():
 
     if inspector.has_table("fct_mgmt_ledger"):
         _add_col_if_missing("fct_mgmt_ledger", "entry_type VARCHAR(10) DEFAULT 'DEBIT'")
+
+    if inspector.has_table("proc_inst_data"):
+        _add_col_if_missing("proc_inst_data", "base_rate FLOAT")
+        _add_col_if_missing("proc_inst_data", "cost_of_fund FLOAT")
 
 
 def _seed_defaults():

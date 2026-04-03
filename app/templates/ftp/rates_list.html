@@ -1,0 +1,99 @@
+{% extends "layout/base.html" %}
+{% block title %}Interest Rates — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-graph-up"></i> Interest Rate Curves</h2>
+    <div>
+        <a href="/ftp/" class="btn btn-outline-secondary me-2"><i class="bi bi-arrow-left"></i> FTP Dashboard</a>
+        <a href="/upload/new" class="btn btn-primary"><i class="bi bi-cloud-upload"></i> Upload Rates</a>
+    </div>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Rate Code</label>
+                <select name="rate_code" class="form-select">
+                    <option value="">All</option>
+                    {% for rc in all_codes %}
+                    <option value="{{ rc }}" {{ 'selected' if rate_code == rc }}>{{ rc }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Term</label>
+                <input type="number" name="term" class="form-control" value="{{ term_filter }}" min="1" placeholder="e.g. 3">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Term Mult</label>
+                <select name="term_mult" class="form-select">
+                    <option value="">All</option>
+                    {% for k, v in mult_labels.items() %}
+                    <option value="{{ k }}" {{ 'selected' if term_mult_filter == k }}>{{ k }} — {{ v }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All</option>
+                    <option value="APPROVED" {{ 'selected' if status_filter == 'APPROVED' }}>Approved</option>
+                    <option value="PENDING"  {{ 'selected' if status_filter == 'PENDING' }}>Pending</option>
+                    <option value="DRAFT"    {{ 'selected' if status_filter == 'DRAFT' }}>Draft</option>
+                    <option value="REJECTED" {{ 'selected' if status_filter == 'REJECTED' }}>Rejected</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-outline-primary w-100"><i class="bi bi-funnel"></i> Filter</button>
+            </div>
+            <div class="col-md-1">
+                <a href="/ftp/rates" class="btn btn-outline-secondary w-100"><i class="bi bi-x"></i></a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if rates %}
+        <table class="table table-hover table-sm mb-0">
+            <thead>
+                <tr>
+                    <th>Effective Date</th>
+                    <th>Rate Code</th>
+                    <th>Tenor</th>
+                    <th class="text-end">Rate</th>
+                    <th>Status</th>
+                    <th>Maker</th>
+                    <th>Upload Batch</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in rates %}
+            <tr>
+                <td>{{ r.effective_date }}</td>
+                <td>{{ r.interest_rate_code }}</td>
+                <td>{{ r.term }}{{ r.term_mult }}</td>
+                <td class="text-end">{{ "%.4f"|format(r.rate) }}&nbsp;<small class="text-muted">({{ "%.2f"|format(r.rate * 100) }}%)</small></td>
+                <td>
+                    <span class="badge bg-{{ 'success' if r.status == 'APPROVED' else 'warning text-dark' if r.status == 'PENDING' else 'secondary' }}">
+                        {{ r.status }}
+                    </span>
+                </td>
+                <td>{{ r.maker_id }}</td>
+                <td><small class="text-muted">{{ r.upload_batch_id[:8] if r.upload_batch_id else '—' }}…</small></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+            No interest rate data found.
+            <a href="/upload/new" class="btn btn-sm btn-outline-primary ms-2">Upload Interest Rates</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

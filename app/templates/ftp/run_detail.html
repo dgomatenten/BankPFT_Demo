@@ -1,0 +1,72 @@
+{% extends "layout/base.html" %}
+{% block title %}FTP Run Detail — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-currency-exchange"></i> FTP Run: {{ run.id[:12] }}…</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <strong>Run ID:</strong><br><small class="text-muted">{{ run.id }}</small>
+            </div>
+            <div class="col-md-2">
+                <strong>Status:</strong><br>
+                <span class="badge bg-{{ 'success' if run.status == 'COMPLETED' else 'danger' if run.status == 'FAILED' else 'info' }} fs-6">
+                    {{ run.status }}
+                </span>
+            </div>
+            <div class="col-md-2">
+                <strong>As-of Date:</strong><br>{{ run.as_of_date }}
+            </div>
+            <div class="col-md-2">
+                <strong>Run By:</strong><br>{{ run.run_by or '—' }}
+            </div>
+            <div class="col-md-3">
+                <strong>Started:</strong><br>{{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                {% if run.completed_at %}
+                <br><strong>Completed:</strong><br>{{ run.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                {% endif %}
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="row text-center">
+            <div class="col-md-4">
+                <div class="card stat-card blue p-3">
+                    <div class="display-6 fw-bold">{{ run.instruments_processed }}</div>
+                    <div class="text-muted">Instruments Processed</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stat-card green p-3">
+                    <div class="display-6 fw-bold text-success">{{ run.instruments_matched }}</div>
+                    <div class="text-muted">Priced (base_rate assigned)</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stat-card orange p-3">
+                    <div class="display-6 fw-bold text-warning">{{ run.instruments_skipped }}</div>
+                    <div class="text-muted">Skipped (no config / no rate)</div>
+                </div>
+            </div>
+        </div>
+
+        {% if run.error_message %}
+        <hr>
+        <div class="alert alert-danger mb-0">
+            <strong>Error:</strong> {{ run.error_message }}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="d-flex gap-2">
+    <a href="/ftp/" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to FTP</a>
+    {% if run.status == 'COMPLETED' %}
+    <a href="/reports/tables?table=proc_inst_data" class="btn btn-outline-primary">
+        <i class="bi bi-table"></i> View Instrument Data
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

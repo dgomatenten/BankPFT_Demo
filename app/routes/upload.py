@@ -7,6 +7,7 @@ from app.models import db
 from app.models.workflow import UploadBatch
 from app.models.staging import StgInstData, StgGlData
 from app.models.allocation import RefStaticAllocation, RefOrgReclass
+from app.models.ftp import RefInterestRate
 from app.services.upload_service import allowed_file, process_upload, UPLOAD_CONFIG
 from app.services import transition, WorkflowError
 from werkzeug.utils import secure_filename
@@ -67,6 +68,7 @@ def detail(batch_id):
         "GL": (StgGlData, []),
         "ALLOCATION": (RefStaticAllocation, ["status"]),
         "ORG_RECLASS": (RefOrgReclass, ["status"]),
+        "INTEREST_RATE": (RefInterestRate, ["status"]),
     }
     type_cfg = UPLOAD_CONFIG["data_types"].get(batch.data_type, {})
     preview_info = _PREVIEW_MODELS.get(batch.data_type)
@@ -111,6 +113,10 @@ def action(batch_id):
             RefOrgReclass.query.filter_by(
                 upload_batch_id=batch.id
             ).update({"status": "APPROVED", "checker_id": current_user.username})
+        elif batch.data_type == "INTEREST_RATE":
+            RefInterestRate.query.filter_by(
+                upload_batch_id=batch.id
+            ).update({"status": "APPROVED", "checker_id": current_user.username})
 
     db.session.commit()
     flash(f"Batch {target_status.lower()} successfully.", "success")
@@ -130,6 +136,7 @@ def delete(batch_id):
     StgGlData.query.filter_by(upload_batch_id=batch_id).delete()
     RefStaticAllocation.query.filter_by(upload_batch_id=batch_id).delete()
     RefOrgReclass.query.filter_by(upload_batch_id=batch_id).delete()
+    RefInterestRate.query.filter_by(upload_batch_id=batch_id).delete()
 
     db.session.delete(batch)
     db.session.commit()

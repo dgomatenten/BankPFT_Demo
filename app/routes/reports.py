@@ -5,6 +5,7 @@ from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccoun
 from app.models.staging import StgInstData, ProcInstData, StgGlData, ProcGlData
 from app.models.allocation import RefStaticAllocation, FctMgmtLedger, FctMgmtInstrument, RefOrgReclass
 from app.models.workflow import UploadBatch, AllocationRule, BatchRun
+from app.models.ftp import RefInterestRate, FtpProductConfig, FtpRun
 from sqlalchemy import func, inspect as sa_inspect
 
 bp = Blueprint("reports", __name__)
@@ -31,6 +32,9 @@ ALL_MODELS = {
     "upload_batch": UploadBatch,
     "allocation_rule": AllocationRule,
     "batch_run": BatchRun,
+    "ref_interest_rate": RefInterestRate,
+    "ftp_product_config": FtpProductConfig,
+    "ftp_run": FtpRun,
 }
 
 VALID_GROUP_BY = {"target_org_unit_id", "source_org_unit_id", "product_code", "customer_id", "entry_type"}

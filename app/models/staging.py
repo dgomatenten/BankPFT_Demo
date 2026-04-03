@@ -27,6 +27,8 @@ class ProcInstData(db.Model):
     org_unit_id = db.Column(db.String(20), nullable=False)
     balance = db.Column(db.Float, nullable=False)
     interest_income = db.Column(db.Float, default=0.0)
+    base_rate = db.Column(db.Float, nullable=True)         # filled by FTP engine
+    cost_of_fund = db.Column(db.Float, nullable=True)      # filled by FTP engine
     validated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

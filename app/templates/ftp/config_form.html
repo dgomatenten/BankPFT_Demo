@@ -1,0 +1,101 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ 'Edit' if config else 'New' }} FTP Config — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-gear"></i> {{ 'Edit' if config else 'New' }} FTP Product Config</h2>
+    <a href="/ftp/config" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row g-3">
+
+                <!-- Product code — read-only on edit -->
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Product Code <span class="text-danger">*</span></label>
+                    {% if config %}
+                    <input type="text" class="form-control" value="{{ config.product_code }}" readonly>
+                    {% else %}
+                    <input type="text" name="product_code" class="form-control"
+                           placeholder="e.g. LOAN_FIXED" required maxlength="20">
+                    {% endif %}
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Method</label>
+                    <input type="text" class="form-control" value="Moving Average" readonly>
+                    <div class="form-text">Only Moving Average is available in this release.</div>
+                </div>
+
+                <div class="col-md-4 d-flex align-items-end">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="is_active"
+                               {% if config is none or config.is_active %}checked{% endif %}>
+                        <label class="form-check-label" for="is_active">Active</label>
+                    </div>
+                </div>
+
+                <div class="col-12"><hr class="my-1"><strong>Rate Curve</strong>
+                    <small class="text-muted ms-2">Which interest rate series and tenor to use</small>
+                </div>
+
+                <!-- Rate Code -->
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Interest Rate Code <span class="text-danger">*</span></label>
+                    <input type="text" name="rate_code" class="form-control"
+                           value="{{ config.rate_code if config else '' }}"
+                           list="rate_code_list" placeholder="e.g. LIBOR_USD" required maxlength="20">
+                    <datalist id="rate_code_list">
+                        {% for rc in rate_codes %}
+                        <option value="{{ rc }}">
+                        {% endfor %}
+                    </datalist>
+                    <div class="form-text">Must match <code>interest_rate_code</code> in the uploaded rate table.</div>
+                </div>
+
+                <!-- Tenor -->
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Tenor <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="number" name="term" class="form-control" min="1"
+                               value="{{ config.term if config else 3 }}" required>
+                        <select name="term_mult" class="form-select" style="max-width:90px;">
+                            {% for k, v in mult_labels.items() %}
+                            <option value="{{ k }}" {{ 'selected' if config and config.term_mult == k else '' }}>{{ k }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-text">e.g. 3M = 3-month rate, 1Y = 1-year rate</div>
+                </div>
+
+                <div class="col-12"><hr class="my-1"><strong>Moving Average Window</strong>
+                    <small class="text-muted ms-2">How far back to average the rate</small>
+                </div>
+
+                <!-- Avg Period -->
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Average Period <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="number" name="avg_period" class="form-control" min="1"
+                               value="{{ config.avg_period if config else 1 }}" required>
+                        <select name="avg_period_mult" class="form-select" style="max-width:90px;">
+                            {% for k, v in mult_labels.items() %}
+                            <option value="{{ k }}" {{ 'selected' if config and config.avg_period_mult == k else ('selected' if not config and k == 'M' else '') }}>{{ k }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-text">e.g. 1M = average over last 1 month of daily rates</div>
+                </div>
+
+            </div><!-- /row -->
+
+            <hr>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-circle"></i> {{ 'Update' if config else 'Create' }} Config
+            </button>
+            <a href="/ftp/config" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

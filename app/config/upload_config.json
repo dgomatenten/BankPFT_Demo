@@ -105,6 +105,26 @@
                 "ratio": {"type": "float", "default": 1.0}
             },
             "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"]
+        },
+        "INTEREST_RATE": {
+            "label": "Interest Rate Curves",
+            "description": "Daily interest rate curve data for FTP (effective_date, rate_code, tenor, rate)",
+            "required_columns": ["effective_date", "interest_rate_code", "term", "term_mult", "rate"],
+            "optional_columns": [],
+            "unique_key": null,
+            "staging_table": "ref_interest_rate",
+            "numeric_ranges": {
+                "term": {"min": 1, "max": null},
+                "rate": {"min": -1, "max": 10}
+            },
+            "column_mapping": {
+                "effective_date": {"type": "date"},
+                "interest_rate_code": {"type": "string"},
+                "term": {"type": "integer"},
+                "term_mult": {"type": "string"},
+                "rate": {"type": "float"}
+            },
+            "validation_rules": ["required_columns", "null_check", "numeric_range"]
         }
     }
 }

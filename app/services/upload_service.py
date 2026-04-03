@@ -10,6 +10,7 @@ from app.models import db
 from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccount
 from app.models.staging import StgInstData, StgGlData
 from app.models.allocation import RefStaticAllocation, RefOrgReclass
+from app.models.ftp import RefInterestRate
 from app.models.workflow import UploadBatch
 
 # ── Load configuration ──
@@ -37,6 +38,7 @@ _STAGING_MODELS = {
     "stg_gl_data": StgGlData,
     "ref_static_allocation": RefStaticAllocation,
     "ref_org_reclass": RefOrgReclass,
+    "ref_interest_rate": RefInterestRate,
 }
 
 
@@ -150,6 +152,8 @@ def _cast_value(value, col_cfg):
             return pd.to_datetime(value).date()
         except (ValueError, TypeError) as exc:
             raise ValueError(f"Cannot parse '{value}' as a date: {exc}") from exc
+    elif col_type == "integer":
+        return int(value) if pd.notna(value) else col_cfg.get("default", 0)
     elif col_type == "float":
         return float(value) if pd.notna(value) else col_cfg.get("default", 0)
     else:  # string
@@ -188,8 +192,8 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
                     value = row.get(col_name, col_cfg.get("default"))
                     record_data[col_name] = _cast_value(value, col_cfg)
 
-                # Add extra fields for allocation / reclass records
-                if data_type in ("ALLOCATION", "ORG_RECLASS"):
+                # Add extra fields for allocation / reclass / interest-rate records
+                if data_type in ("ALLOCATION", "ORG_RECLASS", "INTEREST_RATE"):
                     record_data["status"] = "PENDING"
                     record_data["maker_id"] = maker_id
 

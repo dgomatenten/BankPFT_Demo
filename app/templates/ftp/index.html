@@ -1,0 +1,76 @@
+{% extends "layout/base.html" %}
+{% block title %}Fund Transfer Pricing — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-currency-exchange"></i> Fund Transfer Pricing</h2>
+    <div>
+        <a href="/ftp/config" class="btn btn-outline-secondary me-2"><i class="bi bi-gear"></i> FTP Config</a>
+        <a href="/ftp/rates" class="btn btn-outline-info me-2"><i class="bi bi-graph-up"></i> Interest Rates</a>
+        <a href="/upload/new" class="btn btn-outline-secondary"><i class="bi bi-cloud-upload"></i> Upload Rates</a>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header fw-semibold">Run FTP Calculation</div>
+    <div class="card-body">
+        <form method="POST" action="/ftp/run" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">As-of Date</label>
+                <input type="date" name="as_of_date" class="form-control" required>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-success w-100">
+                    <i class="bi bi-play-fill"></i> Run FTP
+                </button>
+            </div>
+            <div class="col-md-6 text-muted small">
+                Updates <code>base_rate</code> and <code>cost_of_fund</code> on all processed instruments for the selected date. Uses the moving-average method configured per product.
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header fw-semibold">FTP Run History</div>
+    <div class="card-body p-0">
+        {% if runs %}
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Run ID</th>
+                    <th>As-of Date</th>
+                    <th>Status</th>
+                    <th>Processed</th>
+                    <th>Matched</th>
+                    <th>Skipped</th>
+                    <th>Run By</th>
+                    <th>Started</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in runs %}
+            <tr>
+                <td><a href="/ftp/run/{{ r.id }}">{{ r.id[:8] }}…</a></td>
+                <td>{{ r.as_of_date }}</td>
+                <td>
+                    <span class="badge bg-{{ 'success' if r.status == 'COMPLETED' else 'danger' if r.status == 'FAILED' else 'info' }}">
+                        {{ r.status }}
+                    </span>
+                </td>
+                <td>{{ r.instruments_processed }}</td>
+                <td>{{ r.instruments_matched }}</td>
+                <td>{{ r.instruments_skipped }}</td>
+                <td>{{ r.run_by or '—' }}</td>
+                <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td><a href="/ftp/run/{{ r.id }}" class="btn btn-sm btn-outline-primary">Detail</a></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-muted text-center">No FTP runs yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
