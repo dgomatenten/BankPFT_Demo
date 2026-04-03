@@ -44,12 +44,17 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Join Key</label>
-                    <select name="join_key" class="form-select">
+                    <label class="form-label">Join Keys</label>
+                    <div id="join_key_box" class="border rounded p-2">
                         {% for opt in rule_config.join_keys %}
-                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule_config.defaults.join_key }}>{{ opt.label }}</option>
+                        <div class="form-check join-key-opt" data-available='{{ opt.available_in | tojson }}'>
+                            <input class="form-check-input" type="checkbox" name="join_keys" value="{{ opt.value }}" id="jk_{{ opt.value }}"
+                                {{ 'checked' if opt.value == rule_config.defaults.join_key }}>
+                            <label class="form-check-label" for="jk_{{ opt.value }}">{{ opt.label }}</label>
+                        </div>
                         {% endfor %}
-                    </select>
+                    </div>
+                    <small class="text-muted">Select one or more columns to join on.</small>
                 </div>
             </div>
 
@@ -237,6 +242,16 @@
         crdCard.style.display    = (mode === 'BOTH' || mode === 'CREDIT_ONLY') ? '' : 'none';
     }
 
+    function syncJoinKeys() {
+        const src = srcSelect.value;
+        document.querySelectorAll('.join-key-opt').forEach(div => {
+            const avail = JSON.parse(div.dataset.available || '[]');
+            const show  = avail.length === 0 || avail.includes(src);
+            div.style.display = show ? '' : 'none';
+            if (!show) div.querySelector('input[type=checkbox]').checked = false;
+        });
+    }
+
     function rebuild() {
         const src = srcSelect.value;
         const lkp = lkpSelect.value;
@@ -244,6 +259,7 @@
         buildDimMapRows(outBody, src, lkp);
         buildDimMapRows(crdBody, src, lkp);
         syncEntryCards();
+        syncJoinKeys();
     }
 
     srcSelect.addEventListener('change', rebuild);

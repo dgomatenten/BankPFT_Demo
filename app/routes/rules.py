@@ -34,13 +34,15 @@ def new_rule():
         entry_mode      = request.form.get("entry_mode", "BOTH").strip().upper()
         if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
             entry_mode = "BOTH"
+        join_keys = request.form.getlist("join_keys")
+        join_key  = ",".join(k.strip() for k in join_keys if k.strip()) or "customer_id"
         rule = AllocationRule(
             name=request.form["name"],
             description=request.form.get("description", ""),
             source_table=request.form.get("source_table", "proc_inst_data"),
             lookup_table=request.form.get("lookup_table", "ref_static_allocation"),
             output_table=request.form.get("output_table", "fct_mgmt_instrument"),
-            join_key=request.form.get("join_key", "customer_id"),
+            join_key=join_key,
             filter_json=filter_raw if filter_raw else None,
             source_dim_json=src_dim_raw if src_dim_raw else None,
             output_dim_json=out_dim_raw if out_dim_raw else None,
@@ -90,13 +92,20 @@ def import_rule():
                 return None
             return json.dumps(v) if isinstance(v, dict) else str(v)
 
+        # join_key: accept string "customer_id", comma-separated "a,b", or list ["a","b"]
+        raw_jk = data.get("join_key", data.get("join_keys", "customer_id"))
+        if isinstance(raw_jk, list):
+            join_key_val = ",".join(str(k).strip() for k in raw_jk if str(k).strip())
+        else:
+            join_key_val = str(raw_jk).strip() or "customer_id"
+
         rule = AllocationRule(
             name=data["name"],
             description=data.get("description", ""),
             source_table=data.get("source_table", "proc_inst_data"),
             lookup_table=data.get("lookup_table", "ref_static_allocation"),
             output_table=data.get("output_table", "fct_mgmt_instrument"),
-            join_key=data.get("join_key", "customer_id"),
+            join_key=join_key_val,
             filter_json=_to_json(data.get("filter_json")),
             source_dim_json=_to_json(data.get("source_dim_json")),
             output_dim_json=_to_json(data.get("output_dim_json")),
@@ -137,13 +146,15 @@ def edit_rule(rule_id):
         entry_mode  = request.form.get("entry_mode", "BOTH").strip().upper()
         if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
             entry_mode = "BOTH"
+        join_keys = request.form.getlist("join_keys")
+        join_key  = ",".join(k.strip() for k in join_keys if k.strip()) or rule.join_key
 
         rule.name           = request.form["name"]
         rule.description    = request.form.get("description", "")
         rule.source_table   = request.form.get("source_table", rule.source_table)
         rule.lookup_table   = request.form.get("lookup_table", rule.lookup_table)
         rule.output_table   = request.form.get("output_table", rule.output_table)
-        rule.join_key       = request.form.get("join_key", rule.join_key)
+        rule.join_key       = join_key
         rule.filter_json    = filter_raw if filter_raw else None
         rule.source_dim_json = src_dim_raw if src_dim_raw else None
         rule.output_dim_json = out_dim_raw if out_dim_raw else None

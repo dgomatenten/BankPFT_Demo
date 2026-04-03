@@ -53,9 +53,11 @@
     },
 
     "join_keys": {
-        "customer_id": {"label": "Customer ID", "available_in": ["proc_inst_data"]},
-        "org_unit_id": {"label": "Org Unit ID", "available_in": ["proc_inst_data", "proc_gl_data"]},
-        "product_code": {"label": "Product Code", "available_in": ["proc_inst_data"]}
+        "customer_id":  {"label": "Customer ID",   "available_in": ["proc_inst_data"]},
+        "org_unit_id":  {"label": "Org Unit ID",   "available_in": ["proc_inst_data", "proc_gl_data"]},
+        "product_code": {"label": "Product Code",  "available_in": ["proc_inst_data"]},
+        "account_id":   {"label": "Account ID",    "available_in": ["proc_inst_data"]},
+        "gl_account":   {"label": "GL Account",    "available_in": ["proc_gl_data"]}
     },
 
     "join_type": "left",

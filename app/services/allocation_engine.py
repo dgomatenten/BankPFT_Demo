@@ -269,8 +269,12 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         )
 
         # ── 5. Join source ↔ lookup ──
+        # join_key may be a comma-separated list for multi-column joins
+        join_cols = [k.strip() for k in join_key.split(",") if k.strip()]
+        if len(join_cols) == 1:
+            join_cols = join_cols[0]  # pandas accepts str or list
         merged = source_data.merge(
-            alloc_data, on=join_key, how=ALLOC_CONFIG.get("join_type", "left")
+            alloc_data, on=join_cols, how=ALLOC_CONFIG.get("join_type", "left")
         )
 
         id_col         = lkp_cfg["id_column"]

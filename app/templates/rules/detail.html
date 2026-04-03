@@ -32,6 +32,12 @@
                     <span class="badge bg-primary">DEBIT only</span>
                 {% endif %}
             </div>
+            <div class="col-md-8">
+                <strong>Join Keys:</strong>
+                {% for k in rule.join_key.split(',') %}
+                <span class="badge bg-secondary me-1">{{ k.strip() }}</span>
+                {% endfor %}
+            </div>
         </div>
         {% if rule.description %}
         <hr>
