@@ -39,9 +39,9 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | Module | Description |
 |---|---|
 | **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
-| **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
+| **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, Org Reclassification, Static Distribution, and Static Allocation data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
-| **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
+| **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
 | **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. The batch execution screen selects a definition, previews its steps, and executes them sequentially. Individual steps can also be run directly from an Advanced panel |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
@@ -51,7 +51,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
-| **Regression Test Framework** | 117-test pytest suite (94 unit + 23 Selenium UI) covering auth, allocation engine, FTP engine, API endpoints, batch, datafile, and browser-level UI interactions. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
+| **Regression Test Framework** | 123-test pytest suite (100 unit + 23 Selenium UI) covering auth, allocation engine (all three methods), FTP engine, API endpoints, batch, datafile, and browser-level UI interactions. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
 
 ## Architecture
 
@@ -159,7 +159,7 @@ app/
 │   ├── auth.py              # User, Group, UserGroup (login & role management)
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
-│   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger, FctMgmtInstrument
+│   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, RefStaticDistribution, RefStaticAlloc, FctMgmtLedger, FctMgmtInstrument
 │   ├── ftp.py               # RefInterestRate, FtpProductConfig, FtpRun
 │   ├── datafile.py          # DataFileBatch (import/export run history)
 │   └── workflow.py          # UploadBatch, AllocationRule, BatchRun, BatchDefinition, BatchTask, BatchExecution, BatchExecutionStep
@@ -228,7 +228,7 @@ Database    =  uploaded data, workflow state, execution results           (WHAT 
 | Form dropdown options | **JSON** `rule_config.json` | Source/lookup/output tables, join keys |
 | Default form selections | **JSON** `rule_config.json` | `defaults` section |
 | Filter field/operator options | **JSON** `filter_config.json` | Available columns & operators per source table |
-| User's chosen rule config | **DB** `allocation_rule` | `source_table`, `lookup_table`, `output_table`, `join_key` saved per rule |
+| User's chosen rule config | **DB** `allocation_rule` | `source_table`, `lookup_table`, `output_table`, `join_key`, `allocation_method` saved per rule |
 | User's data filter conditions | **DB** `allocation_rule.filter_json` | JSON: `{"logic":"AND","conditions":[{"field":"..","operator":"..","value":".."}]}` || Source dimension member filters | **DB** `allocation_rule.source_dim_json` | Per-dimension: `{"org_unit_id":{"mode":"specific","members":["OU1"]}}` |
 | Debit dimension mapping | **DB** `allocation_rule.output_dim_json` | Per-dimension (incl. `account_id`/`gl_account`): `{"account_id":{"mode":"same_as_source"},"org_unit_id":{"mode":"lookup","lookup_column":"target_org_unit_id"}}` |
 | Credit dimension mapping | **DB** `allocation_rule.credit_dim_json` | Per-dimension (incl. `account_id`/`gl_account`). Omit to default all dims to `same_as_source` |
@@ -248,16 +248,25 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 
 **Engine flow:**
 ```
-1. Load AllocationRule from DB → source_table, join_key, filter_json, source_dim_json, output_dim_json, credit_dim_json, entry_mode
+1. Load AllocationRule from DB → source_table, allocation_method, join_key, filter_json,
+   source_dim_json, output_dim_json, credit_dim_json, entry_mode
 2. Look up column definitions in allocation_config.json for each table
-3. Query source data (e.g. proc_inst_data) → apply filter_json → apply source_dim_json member filters
-4. Query lookup data (e.g. ref_static_allocation)
+3. Query source data → apply filter_json → apply source_dim_json member filters
+
+── RATIO / DISTRIBUTION method ──
+4. Query lookup table (ref_static_allocation / ref_static_distribution)
 5. Pandas LEFT JOIN on rule's join_key
-6. For each matched row: compute allocated_balance = source × ratio
-7. Resolve DEBIT output dimensions per output_dim_json (same-as-source / lookup column / fixed value)
-8. If entry_mode ∈ {BOTH, DEBIT_ONLY}: write DEBIT entry to output table (fct_mgmt_instrument or fct_mgmt_ledger)
-9. If entry_mode ∈ {BOTH, CREDIT_ONLY}: resolve CREDIT dimensions per credit_dim_json (defaults to same-as-source); write CREDIT entry (negative balance)
-10. Orphan rows (no lookup match) → DEBIT only at source org (default_ratio from config)
+6. For each matched row: allocated_balance = source × ratio
+   Output dimension for DISTRIBUTION taken from lookup's target_dim column
+7. Resolve DEBIT dims per output_dim_json (same-as-source / lookup / fixed)
+8. If BOTH or DEBIT_ONLY: write DEBIT entry; if BOTH or CREDIT_ONLY: write CREDIT (negative)
+9. Orphan rows (no lookup match): DEBIT at source org, ratio = 1.0
+
+── STATIC method ──
+4. No lookup join; each source row maps 1:1, ratio_applied = 1.0
+5. Resolve DEBIT dims per output_dim_json (same-as-source / fixed)
+6. If BOTH or DEBIT_ONLY: write DEBIT; if BOTH or CREDIT_ONLY: write CREDIT (negative)
+   No orphan rows possible with STATIC method
 ```
 
 **To add a new source table:** add its column config to `allocation_config.json` and its option to `rule_config.json`.
@@ -301,10 +310,12 @@ The batch system allows grouping multiple engine calls into a single, ordered ex
 
 The system supports multiple lookup tables that the allocation engine can join against:
 
-| Lookup Table | Purpose | Join Key | Ratio |
-|---|---|---|---|
-| `ref_static_allocation` | Shred balances across orgs by customer-level ratios | `customer_id` | Variable (must sum to 1.0 per group) |
-| `ref_org_reclass` | Reclassify one org unit to another (1:1 mapping) | `org_unit_id` | Always 1.0 |
+| Lookup Table | Method | Purpose | Join Key | Ratio |
+|---|---|---|---|---|
+| `ref_static_allocation` | RATIO | Shred balances across orgs by customer-level ratios | `customer_id` | Variable (must sum to 1.0 per group) |
+| `ref_org_reclass` | RATIO | Reclassify one org unit to another (1:1 mapping) | `org_unit_id` | Always 1.0 |
+| `ref_static_distribution` | DISTRIBUTION | Flexible ratio shredding; output dimension taken from `target_dim` column | `customer_id` / `org_unit_id` / `product_code` | Variable (must sum to 1.0 per distribution_id) |
+| `ref_static_alloc` | STATIC | 1:1 source-to-target mapping for aggregation or reclassification | any | Always 1.0 (no lookup join) |
 
 ## Fund Transfer Pricing (FTP)
 
@@ -352,7 +363,7 @@ Both tables follow the Maker/Checker workflow (DRAFT → PENDING → APPROVED) a
 
 ### `app/config/upload_config.json`
 
-Defines each upload data type (INSTRUMENT, GL, ALLOCATION, ORG_RECLASS) with:
+Defines each upload data type (INSTRUMENT, GL, ALLOCATION, ORG_RECLASS, DISTRIBUTION, STATIC_ALLOC) with:
 - **label / description** — display name and tooltip shown in the upload form
 - **required_columns / optional_columns** — which columns must exist in the upload
 - **unique_key** — column checked for duplicates (e.g. `account_id`)
@@ -379,9 +390,10 @@ Built-in rules: `required_columns`, `null_check`, `unique_key`, `dimension_looku
 
 Drives the allocation rule creation form:
 - **source_tables** — selectable source tables (value/label pairs)
-- **lookup_tables** — selectable lookup tables (e.g. Static Allocation, Org Reclassification)
+- **lookup_tables** — selectable lookup tables (e.g. Static Allocation, Org Reclassification, Static Distribution, Static Alloc)
 - **output_tables** — selectable output tables
 - **join_keys** — selectable join keys (e.g. `customer_id`, `org_unit_id`, `product_code`)
+- **allocation_methods** — the three method options shown as radio buttons: `RATIO`, `DISTRIBUTION`, `STATIC`
 - **defaults** — pre-selected values for each dropdown
 
 All dropdowns in the "Create Rule" form are rendered from this file. Values must match keys in `allocation_config.json`.
@@ -494,6 +506,7 @@ Rules can be defined as JSON and imported via `/rules/import`. This allows batch
   "lookup_table": "ref_static_allocation",
   "output_table": "fct_mgmt_instrument",
   "join_key": "customer_id",
+  "allocation_method": "RATIO",
   "generate_offset": true,
   "offset_account": "GL_OFFSET_9000",
   "filter_json": {
@@ -813,6 +826,7 @@ print(result["status"], "rows:", result["row_count"], "file:", result["filename"
   "lookup_table": "ref_static_allocation",
   "output_table": "fct_mgmt_instrument",
   "join_key": "customer_id",
+  "allocation_method": "RATIO",
   "entry_mode": "BOTH",
   "filter_json": {"logic": "AND", "conditions": [{"field": "product_code", "operator": "in", "value": "LOAN,DEPOSIT"}]},
   "output_dim_json": {"org_unit_id": {"mode": "lookup", "lookup_column": "target_org_unit_id"}}

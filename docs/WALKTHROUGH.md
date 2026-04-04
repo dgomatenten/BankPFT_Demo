@@ -120,7 +120,7 @@ Upload an Excel (.xlsx) or CSV file for validation and staging.
 ![New Upload](images/03_upload_new.png)
 
 **How to use:**
-1. **Select Data Type** — choose from the dropdown (Instrument Data, General Ledger, Allocation Ratios). These options are driven by `upload_config.json`
+1. **Select Data Type** — choose from the dropdown (Instrument Data, General Ledger, Allocation Ratios, Org Reclassification, Static Distribution, Static Allocation). These options are driven by `upload_config.json`
 2. **Choose File** — select a `.xlsx` or `.csv` file from your computer
 3. **Click Upload & Validate** — the file is parsed, validated against configured rules, and staged. The logged-in user is automatically recorded as the Maker
 
@@ -162,7 +162,8 @@ Shows all allocation rules with their active/inactive status.
 **Key elements:**
 - **Rule name** — links to the rule detail page
 - **Source / Lookup / Output tables** — the tables this rule operates on
-- **Join Key** — the column used to match source data with allocation ratios
+- **Method** — Ratio-Based / Static Distribution / Static Allocation badge
+- **Join Key** — the column used to match source data with allocation ratios (blank for Static Allocation)
 - **Status** — ACTIVE or INACTIVE
 - **Edit** (pencil icon) — open the rule's edit form with all fields pre-populated
 - **Toggle / Delete** — activate/deactivate or remove a rule
@@ -181,17 +182,28 @@ Create a new allocation rule. The form is organised into five sections.
 
 **How to use:**
 1. **Rule Name / Description** — name and optional notes
-2. **Source Table** — processed data table to read from
-3. **Lookup Table** — allocation ratio table to join with
-4. **Output Table** — where to write allocated results (`fct_mgmt_instrument` recommended)
-5. **Join Key** — column linking source to lookup (e.g. `customer_id`)
-6. **Entry Mode** — choose BOTH, Debit only, or Credit only (see section 8)
-7. **Source Dimension Filters** — per-dimension member filter (see section 9)
-8. **Debit & Credit Dimension Mapping** — per-dimension output value control (see section 10)
-9. **Data Filters** — row-level filter conditions (see section 11)
-10. **Click Create Rule** — saved immediately as ACTIVE
+2. **Allocation Method** — choose the method (see below); the Lookup Table and Join Key panels appear/hide based on selection
+3. **Source Table** — processed data table to read from
+4. **Lookup Table** — allocation ratio table to join with (hidden when Static Allocation is selected)
+5. **Output Table** — where to write allocated results (`fct_mgmt_instrument` recommended)
+6. **Join Key** — column linking source to lookup (hidden when Static Allocation is selected)
+7. **Entry Mode** — choose BOTH, Debit only, or Credit only (see section 8)
+8. **Source Dimension Filters** — per-dimension member filter (see section 9)
+9. **Debit & Credit Dimension Mapping** — per-dimension output value control (see section 10)
+10. **Data Filters** — row-level filter conditions (see section 11)
+11. **Click Create Rule** — saved immediately as ACTIVE
 
 All dropdown options are driven by `rule_config.json`.
+
+### Allocation Methods
+
+| Method | Label | How it works | Lookup Table |
+|---|---|---|---|
+| `RATIO` | Ratio-Based Allocation | Joins source data with a lookup table on the configured join key; splits the balance across target dimensions by ratio. Ratios must sum to 1.0 per join-key group. Unmatched rows are posted as orphans at source org | `ref_static_allocation`, `ref_org_reclass` |
+| `DISTRIBUTION` | Static Distribution | Same join-and-ratio logic as RATIO, but uses the dedicated `ref_static_distribution` table. Output dimension value is taken from the `target_dim` column in the distribution table | `ref_static_distribution` |
+| `STATIC` | Static Allocation | No lookup join. Each source row maps 1:1 to output at ratio = 1.0. Suitable for aggregation from instrument data or org-level reclassification | `ref_static_alloc` (metadata only, no join) |
+
+> **UI behaviour:** Selecting **Static Allocation** hides the Lookup Table and Join Key controls. Selecting **Static Distribution** pre-selects `ref_static_distribution` as the lookup table.
 
 ---
 
@@ -314,7 +326,9 @@ View a rule's full configuration.
 
 **Key elements:**
 - Source / Lookup / Output table names
+- **Allocation Method** badge — "Ratio-Based" (blue), "Static Distribution" (green), or "Static Allocation" (cyan)
 - **Entry Mode** badge — "DEBIT + CREDIT", "DEBIT only", or "CREDIT only"
+- **Join Keys** — shows "N/A (Static)" when the Static Allocation method is selected
 - **Source Dimension Filters** card — shows mode and members per dimension
 - **Debit Entry — Dimension Mapping** card (green) — shows mode and detail per dimension for DEBIT
 - **Credit Entry — Dimension Mapping** card (yellow) — shows mode and detail per dimension for CREDIT; shows "same_as_source (default)" if not explicitly configured
@@ -373,6 +387,7 @@ Create an allocation rule from a JSON file or pasted JSON text. Useful for versi
   "lookup_table": "ref_static_allocation",
   "output_table": "fct_mgmt_instrument",
   "join_key": "customer_id",
+  "allocation_method": "RATIO",
   "entry_mode": "BOTH",
   "filter_json": {
     "logic": "AND",
@@ -399,7 +414,7 @@ Create an allocation rule from a JSON file or pasted JSON text. Useful for versi
 }
 ```
 
-Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**. Valid `entry_mode` values: `BOTH` (default), `DEBIT_ONLY`, `CREDIT_ONLY`.
+Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**. Valid `entry_mode` values: `BOTH` (default), `DEBIT_ONLY`, `CREDIT_ONLY`. Valid `allocation_method` values: `RATIO` (default), `DISTRIBUTION`, `STATIC`.
 
 ### How the Rule Is Stored
 
