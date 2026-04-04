@@ -727,6 +727,164 @@ Environment variable: `WORKERS=8 ./start.sh prod` overrides the default 4 Gunico
 
 
 
+## Authentication Implementation Consideration
+
+This prototype uses HTTP Basic Auth for simplicity. For a production deployment of an internal EPM/allocation engine, Microsoft **Azure AD (Entra ID)** is the recommended identity provider. Two distinct OAuth 2.0 flows cover the two principal actors in the system.
+
+---
+
+### Flow 1 — OIDC / Authorization Code Flow (Interactive Users)
+
+Used by **human users** accessing the web UI or calling the API from a personal client (e.g. Postman, a script run under a personal identity).
+
+```
+Browser / Client
+      │
+      │  1. Redirect to Entra ID login
+      │     GET https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize
+      │        ?client_id={app_client_id}
+      │        &response_type=code
+      │        &redirect_uri=https://bankpft.internal/auth/callback
+      │        &scope=openid profile email
+      │        &state={csrf_token}
+      │
+      │  2. User authenticates (MFA, SSPI, etc.)
+      │
+      │  3. Entra ID redirects back with auth code
+      │     GET https://bankpft.internal/auth/callback?code=...&state=...
+      │
+      │  4. Flask exchanges code for tokens
+POST https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token
+      body: grant_type=authorization_code
+            code={auth_code}
+            redirect_uri=https://bankpft.internal/auth/callback
+            client_id={app_client_id}
+            client_secret={app_client_secret}
+      │
+      │  5. Entra ID returns id_token + access_token + refresh_token
+      │
+      │  6. Flask validates id_token (JWT), extracts UPN/groups, creates session
+```
+
+**Flask integration — recommended libraries:**
+
+| Library | Role |
+|---|---|
+| `msal` (Microsoft MSAL for Python) | Token acquisition, cache, refresh |
+| `flask-session` | Server-side session (Redis / DB backed) |
+| `PyJWT` + `cryptography` | Local `id_token` validation (RS256) |
+
+**Key points for the allocation engine:**
+- Map Entra ID **group claims** (`groups` in the JWT) → BankPFT user groups at first login (provision on the fly).
+- Store the MSAL token cache server-side (not in a cookie) — use `msal.SerializableTokenCache` backed by Redis or SQLite.
+- Set `SESSION_COOKIE_HTTPONLY=True`, `SESSION_COOKIE_SECURE=True`, `SESSION_COOKIE_SAMESITE="Lax"` in Flask config.
+- Validate `iss`, `aud`, `exp`, and `nonce` claims on every `id_token`.
+
+---
+
+### Flow 2 — Client Credentials Flow (App-to-App / A2A)
+
+Used by **automated systems** — schedulers, ETL pipelines, upstream GL systems — that call the REST API without a human present.
+
+```
+Calling Service (e.g. GL batch job)
+      │
+      │  1. Acquire token directly from Entra ID (no user redirect)
+POST https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token
+      body: grant_type=client_credentials
+            client_id={caller_app_client_id}
+            client_secret={caller_app_client_secret}   # or certificate
+            scope=api://{bankpft_app_client_id}/.default
+      │
+      │  2. Entra ID returns access_token (JWT, no refresh token)
+      │
+      │  3. Caller attaches token to every API request
+      GET /api/v1/datafile/formats
+      Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGci...
+      │
+      │  4. Flask validates token
+      │     - Fetch JWKS from https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys
+      │     - Verify RS256 signature, iss, aud, exp
+      │     - Extract appid / azp claim to identify the calling service
+      │     - Map appid → BankPFT service account / role
+```
+
+**Flask middleware sketch:**
+
+```python
+# app/auth/entra.py
+import jwt, requests
+from functools import wraps
+from flask import request, abort, g
+
+ENTRA_JWKS_URL = "https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
+EXPECTED_AUD   = "api://{bankpft_app_client_id}"
+EXPECTED_ISS   = "https://login.microsoftonline.com/{tenant_id}/v2.0"
+
+def _get_jwks():
+    # Cache this in Redis / memory — refreshes when kid not found
+    return requests.get(ENTRA_JWKS_URL).json()
+
+def require_bearer(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            abort(401)
+        token = auth.split(" ", 1)[1]
+        try:
+            header = jwt.get_unverified_header(token)
+            key    = _find_key(_get_jwks(), header["kid"])
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=["RS256"],
+                audience=EXPECTED_AUD,
+                issuer=EXPECTED_ISS,
+            )
+        except jwt.PyJWTError:
+            abort(401)
+        g.caller_app_id = claims.get("appid") or claims.get("azp")
+        return f(*args, **kwargs)
+    return decorated
+```
+
+**Key points:**
+
+| Point | Detail |
+|---|---|
+| No user context | `sub` claim identifies the *application*, not a person — map `appid` to a named service account in BankPFT's user table |
+| Use certificates in prod | `client_secret` rotates manually; an X.509 cert uploaded to Entra ID is more secure and supports automated rotation via Key Vault |
+| Scope the permissions | Define **App Roles** on the BankPFT Entra app registration (e.g. `DataFile.Import`, `Allocation.Run`) and check `roles` claim inside `require_bearer` |
+| JWKS cache | Cache the public keys and only re-fetch when a new `kid` appears — avoids a round-trip to Entra on every API call |
+
+---
+
+### Side-by-side comparison
+
+| Dimension | Auth Code + OIDC | Client Credentials |
+|---|---|---|
+| Actor | Human user (browser / Postman) | Service / daemon / scheduler |
+| Involves a redirect? | Yes (browser login page) | No |
+| Token type returned | `id_token` + `access_token` + `refresh_token` | `access_token` only |
+| Identity in token | User UPN, groups | Application ID, app roles |
+| Session management | Flask server-side session | Stateless — validate JWT per request |
+| Secret rotation | MSAL refresh token handles re-auth | Key Vault cert or scheduled secret rotation |
+| Flask library | `msal` + `flask-session` | `PyJWT` + `cryptography` |
+
+---
+
+### Entra ID App Registration checklist
+
+- **One app registration** for BankPFT itself (the resource / API server).
+- **Separate app registrations** for each calling service (A2A clients).
+- Enable **group claims** in the token manifest (`"groupMembershipClaims": "SecurityGroup"`).
+- Define **App Roles** for coarse-grained API authorization (`DataFile.Import`, `Allocation.Run`, `Report.Read`).
+- Set the **Redirect URI** (Auth Code flow only): `https://bankpft.internal/auth/callback`.
+- Grant **admin consent** on the tenant for the `/.default` scope used by A2A callers.
+
+---
+
 ## License
 
 Prototype / Demo — not for production use.
