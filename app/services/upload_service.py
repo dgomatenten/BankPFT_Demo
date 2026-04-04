@@ -7,11 +7,8 @@ from datetime import datetime
 import pandas as pd
 from werkzeug.utils import secure_filename
 from app.models import db
-from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccount
-from app.models.staging import StgInstData, StgGlData
-from app.models.allocation import RefStaticAllocation, RefOrgReclass, RefStaticDistribution, RefStaticAlloc
-from app.models.ftp import RefInterestRate
 from app.models.workflow import UploadBatch
+from app.models.registry import MODEL_REGISTRY, DIMENSION_REGISTRY
 
 # ── Load configuration ──
 _CFG_DIR = os.path.join(os.path.dirname(__file__), "..", "config")
@@ -24,24 +21,6 @@ ALLOWED_EXTENSIONS = set(UPLOAD_CONFIG["allowed_extensions"])
 
 # Index validation rules by id for quick lookup
 _VRULES = {r["id"]: r for r in VALIDATION_RULES_CONFIG["rules"]}
-
-# Dimension model registry — maps config names to SQLAlchemy models + key columns
-_DIMENSION_MODELS = {
-    "dim_customer": (DimCustomer, "customer_id"),
-    "dim_product": (DimProduct, "product_code"),
-    "dim_org_unit": (DimOrgUnit, "org_unit_id"),
-}
-
-# Staging model registry — maps config names to SQLAlchemy models
-_STAGING_MODELS = {
-    "stg_inst_data": StgInstData,
-    "stg_gl_data": StgGlData,
-    "ref_static_allocation": RefStaticAllocation,
-    "ref_org_reclass": RefOrgReclass,
-    "ref_static_distribution": RefStaticDistribution,
-    "ref_static_alloc": RefStaticAlloc,
-    "ref_interest_rate": RefInterestRate,
-}
 
 
 def allowed_file(filename: str) -> bool:
@@ -56,7 +35,7 @@ def _read_file(filepath: str) -> pd.DataFrame:
 
 def _get_dimension_values(dim_name: str) -> set[str]:
     """Load valid values for a dimension from the database."""
-    model, key_col = _DIMENSION_MODELS[dim_name]
+    model, key_col = DIMENSION_REGISTRY[dim_name]
     return {getattr(r, key_col) for r in model.query.all()}
 
 
@@ -190,7 +169,7 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
     if not errors:
         type_cfg = UPLOAD_CONFIG["data_types"][data_type]
         col_mapping = type_cfg["column_mapping"]
-        staging_model = _STAGING_MODELS[type_cfg["staging_table"]]
+        staging_model = MODEL_REGISTRY[type_cfg["staging_table"]]
 
         try:
             for _, row in df.iterrows():

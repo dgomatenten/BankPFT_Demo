@@ -22,8 +22,7 @@ from typing import Any
 
 from app.models import db
 from app.models.datafile import DataFileBatch
-from app.models.staging import StgInstData, StgGlData, ProcInstData, ProcGlData
-from app.models.allocation import RefStaticAllocation, FctMgmtLedger, FctMgmtInstrument
+from app.models.registry import MODEL_REGISTRY
 
 # ── Config ──────────────────────────────────────────────────────────────────
 _CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "datafile_config.json")
@@ -55,17 +54,6 @@ OUTBOX_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "instance",
     DATAFILE_CONFIG.get("outbox_folder", "datafile_outbox"),
 )
-
-# ── Model registry ───────────────────────────────────────────────────────────
-_TABLE_MODELS = {
-    "stg_inst_data":     StgInstData,
-    "stg_gl_data":       StgGlData,
-    "proc_inst_data":    ProcInstData,
-    "proc_gl_data":      ProcGlData,
-    "ref_static_allocation": RefStaticAllocation,
-    "fct_mgmt_ledger":   FctMgmtLedger,
-    "fct_mgmt_instrument": FctMgmtInstrument,
-}
 
 # ── Safe expression evaluator ────────────────────────────────────────────────
 
@@ -393,7 +381,7 @@ def import_file(format_id: str, filename: str, run_by: str) -> DataFileBatch:
     if not fmt_cfg:
         raise ValueError(f"Unknown format_id: {format_id!r}")
 
-    TargetModel = _TABLE_MODELS.get(fmt_cfg["target_table"])
+    TargetModel = MODEL_REGISTRY.get(fmt_cfg["target_table"])
     if not TargetModel:
         raise ValueError(f"No model registered for table: {fmt_cfg['target_table']!r}")
 
@@ -473,7 +461,7 @@ def export_data(export_id: str, run_by: str, as_of_date_str: str | None = None) 
     if not exp_cfg:
         raise ValueError(f"Unknown export_id: {export_id!r}")
 
-    SourceModel = _TABLE_MODELS.get(exp_cfg["source_table"])
+    SourceModel = MODEL_REGISTRY.get(exp_cfg["source_table"])
     if not SourceModel:
         raise ValueError(f"No model registered for table: {exp_cfg['source_table']!r}")
 

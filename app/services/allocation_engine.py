@@ -14,35 +14,13 @@ import uuid
 from datetime import datetime
 import pandas as pd
 from app.models import db
-from app.models.staging import ProcInstData, ProcGlData
-from app.models.allocation import (
-    RefStaticAllocation, RefOrgReclass, RefStaticDistribution, RefStaticAlloc,
-    FctMgmtLedger, FctMgmtInstrument,
-)
 from app.models.workflow import AllocationRule, BatchRun
+from app.models.registry import MODEL_REGISTRY
 
 # ── Load configuration ──
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "allocation_config.json")
 with open(_CONFIG_PATH) as _f:
     ALLOC_CONFIG = json.load(_f)
-
-# ── Model registries ──
-_SOURCE_MODELS = {
-    "proc_inst_data": ProcInstData,
-    "proc_gl_data":   ProcGlData,
-}
-
-_LOOKUP_MODELS = {
-    "ref_static_allocation":  RefStaticAllocation,
-    "ref_org_reclass":        RefOrgReclass,
-    "ref_static_distribution": RefStaticDistribution,
-    "ref_static_alloc":       RefStaticAlloc,
-}
-
-_OUTPUT_MODELS = {
-    "fct_mgmt_ledger":     FctMgmtLedger,
-    "fct_mgmt_instrument": FctMgmtInstrument,
-}
 
 # ── Batch log directory ──
 BATCH_LOG_DIR = os.path.join(
@@ -221,8 +199,8 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     if not src_cfg:
         raise ValueError(f"No config for source table: {rule.source_table}")
 
-    SourceModel = _SOURCE_MODELS.get(rule.source_table)
-    OutputModel = _OUTPUT_MODELS.get(rule.output_table, FctMgmtLedger)
+    SourceModel = MODEL_REGISTRY.get(rule.source_table)
+    OutputModel = MODEL_REGISTRY.get(rule.output_table) or MODEL_REGISTRY["fct_mgmt_ledger"]
 
     if not SourceModel:
         raise ValueError(f"No model registered for source: {rule.source_table}")
@@ -230,7 +208,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     # For lookup-based methods resolve lookup config/model; STATIC needs neither
     if alloc_method in ("RATIO", "DISTRIBUTION"):
         lkp_cfg    = ALLOC_CONFIG["lookup_tables"].get(rule.lookup_table)
-        LookupModel = _LOOKUP_MODELS.get(rule.lookup_table)
+        LookupModel = MODEL_REGISTRY.get(rule.lookup_table)
         if not lkp_cfg:
             raise ValueError(f"No config for lookup table: {rule.lookup_table}")
         if not LookupModel:

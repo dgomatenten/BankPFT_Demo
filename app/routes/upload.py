@@ -5,9 +5,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import text
 from app.models import db
 from app.models.workflow import UploadBatch
-from app.models.staging import StgInstData, StgGlData
-from app.models.allocation import RefStaticAllocation, RefOrgReclass
-from app.models.ftp import RefInterestRate
+from app.models.registry import UPLOAD_PREVIEW_REGISTRY
 from app.services.upload_service import allowed_file, process_upload, UPLOAD_CONFIG
 from app.services import transition, WorkflowError
 from werkzeug.utils import secure_filename
@@ -63,15 +61,8 @@ def detail(batch_id):
     # Load staged data preview — derive columns from upload_config.json
     preview_rows = []
     preview_cols = []
-    _PREVIEW_MODELS = {
-        "INSTRUMENT": (StgInstData, []),
-        "GL": (StgGlData, []),
-        "ALLOCATION": (RefStaticAllocation, ["status"]),
-        "ORG_RECLASS": (RefOrgReclass, ["status"]),
-        "INTEREST_RATE": (RefInterestRate, ["status"]),
-    }
     type_cfg = UPLOAD_CONFIG["data_types"].get(batch.data_type, {})
-    preview_info = _PREVIEW_MODELS.get(batch.data_type)
+    preview_info = UPLOAD_PREVIEW_REGISTRY.get(batch.data_type)
     if preview_info:
         model_cls, extra_cols = preview_info
         preview_cols = list(type_cfg.get("column_mapping", {}).keys()) + extra_cols

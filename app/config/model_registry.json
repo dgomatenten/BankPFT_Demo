@@ -1,0 +1,31 @@
+{
+  "_comment": "Single source of truth for table-name → SQLAlchemy model mappings. Edit here to add or rename a model; no Python files need changing.",
+
+  "tables": {
+    "stg_inst_data":            { "module": "app.models.staging",     "class": "StgInstData" },
+    "stg_gl_data":              { "module": "app.models.staging",     "class": "StgGlData" },
+    "proc_inst_data":           { "module": "app.models.staging",     "class": "ProcInstData" },
+    "proc_gl_data":             { "module": "app.models.staging",     "class": "ProcGlData" },
+    "ref_static_allocation":    { "module": "app.models.allocation",  "class": "RefStaticAllocation" },
+    "ref_org_reclass":          { "module": "app.models.allocation",  "class": "RefOrgReclass" },
+    "ref_static_distribution":  { "module": "app.models.allocation",  "class": "RefStaticDistribution" },
+    "ref_static_alloc":         { "module": "app.models.allocation",  "class": "RefStaticAlloc" },
+    "fct_mgmt_ledger":          { "module": "app.models.allocation",  "class": "FctMgmtLedger" },
+    "fct_mgmt_instrument":      { "module": "app.models.allocation",  "class": "FctMgmtInstrument" },
+    "ref_interest_rate":        { "module": "app.models.ftp",         "class": "RefInterestRate" },
+    "dim_customer":             { "module": "app.models.dimensions",  "class": "DimCustomer",  "key_column": "customer_id" },
+    "dim_product":              { "module": "app.models.dimensions",  "class": "DimProduct",   "key_column": "product_code" },
+    "dim_org_unit":             { "module": "app.models.dimensions",  "class": "DimOrgUnit",   "key_column": "org_unit_id" },
+    "dim_account":              { "module": "app.models.dimensions",  "class": "DimAccount",   "key_column": "account_id" }
+  },
+
+  "upload_preview": {
+    "INSTRUMENT":  { "table": "stg_inst_data",           "extra_cols": [] },
+    "GL":          { "table": "stg_gl_data",             "extra_cols": [] },
+    "ALLOCATION":  { "table": "ref_static_allocation",   "extra_cols": ["status"] },
+    "ORG_RECLASS": { "table": "ref_org_reclass",         "extra_cols": ["status"] },
+    "INTEREST_RATE": { "table": "ref_interest_rate",     "extra_cols": ["status"] },
+    "DISTRIBUTION":  { "table": "ref_static_distribution", "extra_cols": ["status"] },
+    "STATIC_ALLOC":  { "table": "ref_static_alloc",       "extra_cols": ["status"] }
+  }
+}
