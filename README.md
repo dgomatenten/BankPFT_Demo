@@ -1910,6 +1910,493 @@ Once registered, the job appears in the batch list UI alongside Allocation and F
 
 ---
 
+## Logging Framework — Implementation Consideration
+
+The prototype writes ad-hoc log files per allocation batch run (`instance/batch_logs/batch_<id>.log`). A production deployment needs a **unified, structured logging framework** that separates three distinct log streams and routes each to the right destination.
+
+---
+
+### Three Log Streams
+
+| Stream | What it records | Audience | Retention |
+|---|---|---|---|
+| **Processing Log** | Engine execution steps — row counts, join results, variance checks, timing | Ops / Support | 90 days per run; purge after |
+| **Application Log** | Flask request/response, startup events, background job lifecycle, unhandled exceptions | DevOps | 30 days; ship to SIEM |
+| **User Activity Log** | Who did what and when — logins, uploads submitted, rules created/edited, batches triggered, admin actions | Audit / Compliance | 7 years (regulatory) |
+
+---
+
+### Recommended Stack
+
+| Layer | Technology | Notes |
+|---|---|---|
+| Structured formatting | Python `structlog` or `logging` + `python-json-logger` | Emit JSON per record — machine-readable by Splunk / ELK / Azure Monitor |
+| Log transport | `logging.handlers.RotatingFileHandler` (local) → Fluentd / Filebeat sidecar → central store | Keep local buffer for resilience |
+| Central store | Azure Monitor Log Analytics, Splunk, or ELK | Single query plane across all streams |
+| Correlation ID | Inject `X-Request-Id` header on every request; attach to all log records in that request | Enables end-to-end trace across streams |
+
+---
+
+### Processing Log Design
+
+Each batch execution creates a structured log file. In production replace the current flat text file with a DB table or append-only object-store blob:
+
+```python
+# app/services/batch_logger.py
+
+import logging, json
+from pathlib import Path
+
+class BatchLogger:
+    """Structured per-batch logger that writes JSON lines."""
+
+    def __init__(self, batch_id: str, log_dir: str = "instance/batch_logs"):
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+        self.path = Path(log_dir) / f"batch_{batch_id[:8]}.jsonl"
+        self._logger = logging.getLogger(f"batch.{batch_id[:8]}")
+        handler = logging.FileHandler(self.path)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        self._logger.addHandler(handler)
+        self._logger.setLevel(logging.DEBUG)
+        self.batch_id = batch_id
+
+    def log(self, level: str, event: str, **kwargs):
+        record = {"batch_id": self.batch_id, "level": level, "event": event, **kwargs}
+        self._logger.info(json.dumps(record))
+
+    def start(self, rule_name: str, user: str):
+        self.log("START", "batch_started", rule=rule_name, user=user)
+
+    def data(self, table: str, rows: int):
+        self.log("DATA", "rows_loaded", table=table, rows=rows)
+
+    def summary(self, src: int, out: int, orphans: int, variance: float):
+        self.log("SUMMARY", "batch_complete",
+                 src_rows=src, out_rows=out, orphans=orphans, variance=variance)
+
+    def error(self, msg: str):
+        self.log("ERROR", "batch_failed", error=msg)
+```
+
+**Sample JSON-line output:**
+```json
+{"batch_id": "a3f9b1c2", "level": "START",   "event": "batch_started", "rule": "Customer Shred", "user": "admin"}
+{"batch_id": "a3f9b1c2", "level": "DATA",    "event": "rows_loaded",   "table": "proc_inst_data", "rows": 1200}
+{"batch_id": "a3f9b1c2", "level": "SUMMARY", "event": "batch_complete","src_rows": 1200, "out_rows": 2400, "orphans": 0, "variance": 0.0}
+```
+
+---
+
+### User Activity Log Design
+
+Every user-driven mutation should emit a structured audit record **before** the DB write commits, so the audit trail is never lost even if the application crashes after writing:
+
+```python
+# app/services/audit_log.py
+
+import json, logging
+from datetime import datetime
+
+_audit = logging.getLogger("audit")
+
+def log_action(
+    user: str,
+    action: str,           # e.g. "UPLOAD_SUBMIT", "RULE_CREATE", "BATCH_TRIGGER"
+    resource_type: str,    # e.g. "upload_batch", "allocation_rule"
+    resource_id: str,
+    detail: dict | None = None,
+    ip_address: str | None = None,
+):
+    record = {
+        "timestamp":     datetime.utcnow().isoformat() + "Z",
+        "user":          user,
+        "action":        action,
+        "resource_type": resource_type,
+        "resource_id":   str(resource_id),
+        "detail":        detail or {},
+        "ip":            ip_address,
+    }
+    _audit.info(json.dumps(record))
+```
+
+**Audit-worthy actions in this system:**
+
+| Action constant | Trigger |
+|---|---|
+| `LOGIN_SUCCESS` / `LOGIN_FAIL` | `/auth/login` |
+| `LOGOUT` | `/auth/logout` |
+| `PASSWORD_CHANGE` | `/auth/change-password` |
+| `UPLOAD_SUBMIT` | Maker submits an upload for approval |
+| `UPLOAD_APPROVE` / `UPLOAD_REJECT` | Checker approves or rejects |
+| `RULE_CREATE` / `RULE_UPDATE` / `RULE_DELETE` | Allocation rule mutations |
+| `BATCH_TRIGGER` | Any batch execution started |
+| `ADMIN_USER_CREATE` / `ADMIN_USER_UPDATE` | Admin manages users |
+| `ADMIN_GROUP_CHANGE` | Admin changes group membership |
+| `API_CALL` | Each authenticated API request (action + endpoint) |
+
+**Flask integration — attach to every request in `app/__init__.py`:**
+```python
+@flask_app.before_request
+def _attach_request_id():
+    from uuid import uuid4
+    g.request_id = request.headers.get("X-Request-Id", str(uuid4()))
+
+@flask_app.after_request
+def _log_request(response):
+    from app.services.audit_log import log_action
+    if current_user.is_authenticated:
+        log_action(
+            user=current_user.username,
+            action="HTTP_REQUEST",
+            resource_type="route",
+            resource_id=request.endpoint or "",
+            detail={"method": request.method, "status": response.status_code,
+                    "path": request.path},
+            ip_address=request.remote_addr,
+        )
+    return response
+```
+
+---
+
+### Log Configuration (production `logging.ini`)
+
+```ini
+[loggers]
+keys=root,audit,batch,app
+
+[handlers]
+keys=console,audit_file,batch_rotating,app_rotating
+
+[formatters]
+keys=json
+
+[formatter_json]
+class=pythonjsonlogger.jsonlogger.JsonFormatter
+format=%(asctime)s %(name)s %(levelname)s %(message)s
+
+[handler_console]
+class=StreamHandler
+formatter=json
+args=(sys.stderr,)
+
+[handler_audit_file]
+class=logging.handlers.TimedRotatingFileHandler
+formatter=json
+args=('logs/audit.jsonl', 'midnight', 1, 2555)  # 7-year retention
+
+[handler_batch_rotating]
+class=logging.handlers.RotatingFileHandler
+formatter=json
+args=('logs/batch.jsonl', 'a', 52428800, 5)      # 50 MB × 5 files
+
+[handler_app_rotating]
+class=logging.handlers.RotatingFileHandler
+formatter=json
+args=('logs/app.jsonl', 'a', 52428800, 10)
+
+[logger_audit]
+level=INFO
+handlers=audit_file
+qualname=audit
+propagate=0
+
+[logger_batch]
+level=DEBUG
+handlers=batch_rotating
+qualname=batch
+propagate=0
+
+[logger_app]
+level=WARNING
+handlers=app_rotating,console
+qualname=app
+propagate=0
+```
+
+---
+
+### Log Shipping to Azure Monitor (optional)
+
+```python
+# requirements additions
+opencensus-ext-azure==1.1.*
+azure-monitor-opentelemetry==1.3.*
+
+# in create_app():
+from azure.monitor.opentelemetry import configure_azure_monitor
+configure_azure_monitor(
+    connection_string=os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+)
+```
+
+Azure Monitor then provides KQL queries across all three log streams:
+```kql
+// Failed batches in last 24 hours
+customEvents
+| where timestamp > ago(24h)
+| where name == "batch_failed"
+| project timestamp, user=customDimensions["user"], error=customDimensions["error"]
+| order by timestamp desc
+```
+
+---
+
+## Exception & Error Handling Framework — Implementation Consideration
+
+The prototype relies on Flask's default exception handling (debug stack traces in dev, generic 500 in prod). A production allocation engine needs a **layered error handling strategy** that distinguishes business errors from system errors, centralises handling, and guarantees nothing is silently swallowed.
+
+---
+
+### Error Classification
+
+| Category | Examples | Behaviour |
+|---|---|---|
+| **Validation Error** | Missing required field, bad date format, unknown format_id | HTTP 400; return `{"error": "..."}` immediately; no logging to error stream |
+| **Business Rule Error** | Allocation ratios don't sum to 1.0, lookup table empty, orphan threshold exceeded | HTTP 422; log to processing log with context; surface to user |
+| **Not Found** | Rule ID does not exist, file not in inbox | HTTP 404; minimal log |
+| **Authorization Error** | Checker trying to approve own upload, non-admin accessing admin route | HTTP 403; log to audit stream |
+| **Engine / Unexpected Error** | Pandas exception, DB integrity error, OS error | HTTP 500; log full traceback with `correlation_id`; alert ops |
+| **External System Error** | Stored procedure timeout, FTP server unreachable, S3 upload failed | HTTP 502/503; retry with back-off; log to app stream |
+
+---
+
+### Central Error Handler in Flask
+
+```python
+# app/errors.py
+
+from flask import jsonify, current_app, g
+import traceback, logging
+
+log = logging.getLogger("app")
+
+
+class BankPFTError(Exception):
+    """Base class for all application-defined errors."""
+    status_code = 500
+    log_level   = logging.ERROR
+
+    def __init__(self, message: str, detail: dict | None = None):
+        super().__init__(message)
+        self.message = message
+        self.detail  = detail or {}
+
+
+class ValidationError(BankPFTError):
+    status_code = 400
+    log_level   = logging.DEBUG   # not worth an error-level log
+
+
+class BusinessRuleError(BankPFTError):
+    status_code = 422
+    log_level   = logging.WARNING
+
+
+class NotFoundError(BankPFTError):
+    status_code = 404
+    log_level   = logging.DEBUG
+
+
+class AuthorizationError(BankPFTError):
+    status_code = 403
+    log_level   = logging.WARNING
+
+
+class EngineError(BankPFTError):
+    """Unexpected engine failure — triggers alert."""
+    status_code = 500
+    log_level   = logging.ERROR
+
+
+class ExternalSystemError(BankPFTError):
+    """Downstream dependency unavailable."""
+    status_code = 503
+    log_level   = logging.ERROR
+
+
+def register_error_handlers(app):
+    """Attach all error handlers to the Flask app."""
+
+    @app.errorhandler(BankPFTError)
+    def handle_app_error(exc: BankPFTError):
+        log.log(exc.log_level, exc.message,
+                extra={"detail": exc.detail,
+                       "request_id": getattr(g, "request_id", None)})
+        return jsonify({"error": exc.message, "detail": exc.detail}), exc.status_code
+
+    @app.errorhandler(404)
+    def handle_404(exc):
+        return jsonify({"error": "Not found"}), 404
+
+    @app.errorhandler(405)
+    def handle_405(exc):
+        return jsonify({"error": "Method not allowed"}), 405
+
+    @app.errorhandler(Exception)
+    def handle_unexpected(exc):
+        tb = traceback.format_exc()
+        request_id = getattr(g, "request_id", "?")
+        log.error("Unhandled exception", exc_info=True,
+                  extra={"request_id": request_id, "traceback": tb})
+        # Never expose internal detail to caller
+        return jsonify({"error": "An internal error occurred",
+                        "request_id": request_id}), 500
+```
+
+**Register in `create_app()`:**
+```python
+from app.errors import register_error_handlers
+register_error_handlers(flask_app)
+```
+
+---
+
+### Engine-Level Error Handling Pattern
+
+Each engine (`allocation_engine.py`, `ftp_engine.py`, `batch_executor.py`) should follow the same pattern — catch narrowly, re-raise as a typed error, and always finalise the DB record:
+
+```python
+# app/services/allocation_engine.py  (pattern sketch)
+
+from app.errors import EngineError, BusinessRuleError
+
+def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
+    batch = BatchRun(rule_id=rule_id, as_of_date=as_of_date,
+                     run_by=run_by, status="RUNNING")
+    db.session.add(batch)
+    db.session.commit()
+
+    try:
+        _execute(batch, rule_id, as_of_date)
+        batch.status = "COMPLETED"
+
+    except BusinessRuleError:
+        batch.status = "FAILED"
+        batch.error_message = str(sys.exc_info()[1])
+        raise                              # let caller surface to API/UI
+
+    except Exception as exc:
+        batch.status = "FAILED"
+        batch.error_message = str(exc)
+        raise EngineError(
+            f"Allocation engine failed for rule {rule_id}: {exc}",
+            detail={"rule_id": rule_id, "batch_id": batch.id}
+        ) from exc
+
+    finally:
+        batch.completed_at = datetime.utcnow()
+        db.session.commit()               # always save final status
+
+    return batch
+```
+
+Key rules:
+1. **Always commit the final `status` and `completed_at`** in `finally` — a crashed engine must never leave a `RUNNING` record.
+2. **Never swallow exceptions silently** — `except Exception: pass` is forbidden.
+3. **Wrap third-party exceptions** (`pandas`, `sqlalchemy`, `paramiko`) in typed `BankPFTError` subclasses so the central handler can classify them.
+
+---
+
+### API Error Response Contract
+
+All API error responses follow a single envelope:
+
+```json
+{
+  "error": "Human-readable summary",
+  "detail": { "field": "as_of_date", "reason": "must be YYYY-MM-DD" },
+  "request_id": "a3f9b1c2-..."
+}
+```
+
+| HTTP Code | Error class | When |
+|---|---|---|
+| `400` | `ValidationError` | Missing / malformed request body field |
+| `403` | `AuthorizationError` | Caller lacks permission for this action |
+| `404` | `NotFoundError` | Referenced resource does not exist |
+| `422` | `BusinessRuleError` | Request valid but engine rejected the data |
+| `500` | `EngineError` or unhandled | Unexpected engine or server failure |
+| `503` | `ExternalSystemError` | Stored procedure / external file system unavailable |
+
+---
+
+### Retry & Circuit Breaker (External Systems)
+
+External calls (stored procedures, SFTP, object store) should use a retry decorator with exponential back-off, and a circuit breaker to avoid cascading failures:
+
+```python
+# app/utils/retry.py
+
+import time, functools, logging
+
+log = logging.getLogger("app")
+
+def with_retry(max_attempts: int = 3, backoff_base: float = 2.0,
+               retriable_exceptions: tuple = (OSError, TimeoutError)):
+    """Decorator: retry on retriable exceptions with exponential back-off."""
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return fn(*args, **kwargs)
+                except retriable_exceptions as exc:
+                    if attempt == max_attempts:
+                        log.error("Max retries reached", extra={
+                            "function": fn.__name__, "attempts": attempt, "error": str(exc)
+                        })
+                        raise
+                    wait = backoff_base ** attempt
+                    log.warning("Retrying after error", extra={
+                        "function": fn.__name__, "attempt": attempt, "wait_s": wait
+                    })
+                    time.sleep(wait)
+        return wrapper
+    return decorator
+
+# Usage:
+# @with_retry(max_attempts=3, retriable_exceptions=(sqlalchemy.exc.OperationalError,))
+# def call_stored_procedure(...): ...
+```
+
+---
+
+### Dead-Letter Queue for Batch Steps
+
+When a multi-task batch step fails, the step record in `batch_execution_step` acts as a **dead-letter entry**. A recovery job can query for stuck or failed steps and re-drive them:
+
+```sql
+-- Find steps that failed or are stuck RUNNING for > 10 minutes
+SELECT e.id, e.definition_id, s.step_order, s.task_type, s.status, s.error_message
+FROM   batch_execution e
+JOIN   batch_execution_step s ON s.execution_id = e.id
+WHERE  s.status IN ('FAILED', 'RUNNING')
+  AND  (s.status = 'FAILED'
+        OR s.started_at < NOW() - INTERVAL '10 minutes');
+```
+
+A recovery Flask CLI command can then re-run just the failed step:
+```python
+# flask recover-step <execution_id> <step_order>
+```
+
+---
+
+### Summary — What to Build
+
+| Component | Priority | Location |
+|---|---|---|
+| `app/errors.py` — typed exception hierarchy + central handlers | High | New file |
+| `app/services/audit_log.py` — structured user activity logger | High | New file |
+| `app/services/batch_logger.py` — JSON-line per-batch logger | Medium | Refactor existing log file writer |
+| `app/utils/retry.py` — retry decorator for external calls | Medium | New file |
+| `logging.ini` — three-stream handler configuration | High | Project root |
+| `before_request` / `after_request` hooks — correlation ID + audit | Medium | `app/__init__.py` |
+| CLI `recover-step` command — re-drive failed batch steps | Low | `app/commands.py` |
+
+---
+
 ## License
 
 Prototype / Demo — not for production use.
