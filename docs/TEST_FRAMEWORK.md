@@ -15,6 +15,7 @@ This document covers everything needed to understand, run, extend, and maintain 
    - [test_rules.py](#52-test_rulespy--allocation-rules--engine)
    - [test_ftp_batch.py](#53-test_ftp_batchpy--ftp--batch--datafile)
    - [test_api.py](#54-test_apipy--rest-api-integration)
+   - [test_ui.py](#55-test_uipy--browser-ui-tests)
 6. [In-App Test Runner](#6-in-app-test-runner)
 7. [Running Tests from the Command Line](#7-running-tests-from-the-command-line)
 8. [Test Isolation & Database Strategy](#8-test-isolation--database-strategy)
@@ -31,12 +32,13 @@ The test framework was built to meet the following requirements for an enterpris
 
 | Goal | How it is achieved |
 |---|---|
-| **Regression protection** | 94 tests covering every engine, every API endpoint, and the auth/permission system |
-| **Test isolation** | Each test runs in an in-memory SQLite DB; rolled-back transactions mean tests never bleed state |
+| **Regression protection** | 117 tests covering every engine, every API endpoint, the auth/permission system, and browser-level UI flows |
+| **Test isolation** | Each unit test runs in an in-memory SQLite DB; rolled-back transactions mean tests never bleed state |
 | **AI-generated code safety** | Tests run as part of every development cycle so new generated code is validated immediately |
 | **In-app visibility** | Admins can trigger the suite and view per-test results from the browser at `/tests/` |
+| **Browser UI coverage** | 23 Selenium headless-Chrome tests verify login, navigation, the filter editor, file-upload forms, and admin pages |
 | **Pluggable** | Adding a `tests/test_<feature>.py` is all that is required — pytest auto-discovers it |
-| **Speed** | Full suite runs in ≈ 4 seconds using SQLite in-memory and no external dependencies |
+| **Speed** | Unit tests run in ≈ 4 seconds; full suite (including UI) runs in ≈ 17 seconds |
 | **No production impact** | Tests never touch `instance/bankpft.db`; the app's live data is never read or written |
 
 ---
@@ -50,9 +52,11 @@ The test framework was built to meet the following requirements for an enterpris
 source venv/bin/activate
 
 # Confirm test packages are installed
-pip install pytest pytest-json-report
+pip install pytest pytest-json-report selenium webdriver-manager
 # (or: pip install -r requirements.txt)
 ```
+
+For UI tests, Chrome must also be installed. `webdriver-manager` downloads the matching chromedriver automatically on first run. If no chromedriver is found, UI tests are **automatically skipped** — unit tests still run normally.
 
 ### Run the full suite
 
@@ -63,8 +67,27 @@ python -m pytest tests/ -q
 Expected output (clean run):
 
 ```
+...............................................................................................
+117 passed, 154 warnings in 17.42s
+```
+
+To run only unit tests (no browser required):
+
+```bash
+python -m pytest tests/ --ignore=tests/test_ui.py -q
+```
+
+Expected output (unit tests only):
+
+```
 ..............................................................................................
 94 passed, 154 warnings in 4.13s
+```
+
+To run only UI tests:
+
+```bash
+python -m pytest tests/test_ui.py -v
 ```
 
 ### Run with verbose output
@@ -104,11 +127,14 @@ python -m pytest tests/ -x -v
 ```
 tests/
 ├── __init__.py              ← makes tests/ a Python package
-├── conftest.py              ← all shared pytest fixtures
+├── conftest.py              ← all shared pytest fixtures (unit + UI)
 ├── test_auth.py             ← login, logout, access control, User/Group model
 ├── test_rules.py            ← AllocationRule CRUD, filter engine, allocation E2E
 ├── test_ftp_batch.py        ← FTP config, lookback math, FTP engine, batch, datafile
-└── test_api.py              ← all /api/v1/ endpoints
+├── test_api.py              ← all /api/v1/ endpoints
+└── test_ui.py               ← 23 Selenium headless-Chrome browser tests
+
+pytest.ini                   ← registers the `ui` custom mark
 
 app/
 ├── models/
@@ -131,6 +157,7 @@ app/
 | JSON reports | pytest-json-report | Structured per-test output parsed by the in-app runner |
 | Test database | `sqlite:///:memory:` | Zero I/O, always clean, supported by SQLAlchemy |
 | HTTP testing | Flask test client | Built into Flask; no running server required |
+| Browser testing | Selenium + headless Chrome | Industry standard; `webdriver-manager` auto-downloads chromedriver |
 | Auth in tests | Form POST login / Basic Auth header | Tests the real auth path, not a mock |
 
 ---
@@ -232,6 +259,59 @@ class TestConfig(Config):
     WTF_CSRF_ENABLED = False
     SECRET_KEY = "test-secret-key"
 ```
+
+---
+
+### UI Fixtures (Selenium)
+
+The following fixtures support the 23 browser tests in `test_ui.py`. They require `selenium>=4.0`, `webdriver-manager>=4.0`, and a locally installed Chrome browser.
+
+#### `UITestConfig` class
+
+A Flask configuration class with a **temp-file** SQLite database (not in-memory). This is required because the live Werkzeug server runs in a separate daemon thread and SQLite's in-memory database cannot be shared across threads. `check_same_thread=False` allows it to serve requests while tests drive the browser.
+
+```python
+class UITestConfig(Config):
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmpfile}?check_same_thread=False"
+    WTF_CSRF_ENABLED = False
+    SECRET_KEY = "ui-test-secret"
+```
+
+The temp file is automatically deleted on session teardown.
+
+#### `live_server` (session-scoped)
+
+Starts a real Werkzeug HTTP server on `127.0.0.1:5099` in a daemon thread. Yields the base URL (`http://127.0.0.1:5099`). Creates all SQLAlchemy tables and seeds the `admin` user before yielding.
+
+```python
+def test_something(live_server):
+    print(live_server)   # "http://127.0.0.1:5099"
+```
+
+Automatically **skips all UI tests** if chromedriver is not found on PATH or in `~/.wdm/` (the webdriver-manager cache).
+
+#### `browser` (session-scoped)
+
+Provides a headless Chrome `WebDriver` instance with a 1280×800 window. Depends on `live_server`. Created once per session and closed on teardown.
+
+```python
+def test_page(browser, live_server):
+    browser.get(live_server + "/auth/login")
+    assert "Login" in browser.title
+```
+
+#### `logged_in_browser` (session-scoped)
+
+Depends on `browser` and `live_server`. Navigates to `/auth/login`, fills in `username=admin` / `password=admin`, submits the form, and yields the browser with an active session cookie. All subsequent `browser.get()` calls in the same session see the admin session.
+
+```python
+def test_admin_page(logged_in_browser, live_server):
+    logged_in_browser.get(live_server + "/admin/users")
+    assert logged_in_browser.find_element(By.TAG_NAME, "table")
+```
+
+**Note:** Because the browser and server are session-scoped, all UI tests share the same browser instance and login session. Tests must not log out or perform actions that invalidate the session.
 
 ---
 
@@ -363,9 +443,69 @@ Direct tests for `app.services.ftp_engine._lookback_start()`:
 
 ---
 
-### 5.4 `test_api.py` — REST API Integration
+### 5.5 `test_ui.py` — Browser UI Tests
 
-**Purpose:** Integration-style tests for every `/api/v1/` endpoint. All tests use the Flask test client with `Authorization: Basic` headers — no running server required.
+**Purpose:** Verify the application's HTML/JavaScript layer with a real headless Chrome browser. These tests cover page rendering, client-side interactivity (filter editor), form inputs, and navigation — functionality that Flask's test client cannot reach.
+
+**Prerequisites:** Chrome + `pip install selenium webdriver-manager` (included in `requirements.txt`). Tests auto-skip if chromedriver is not available.
+
+**Run:**
+```bash
+python -m pytest tests/test_ui.py -v
+# or just the UI mark:
+python -m pytest -m ui -v
+```
+
+| Class | Tests | Description |
+|---|---|---|
+| `TestUILogin` | 4 | Login page renders correctly; wrong password stays on login page; successful login redirects to dashboard; unauthenticated access to a protected route redirects to login |
+| `TestUINavigation` | 7 | Sidebar contains expected nav links; Dashboard, Rules, FTP, Reports, Batch, and Test Suite pages all return `200` and load without error |
+| `TestUITestSuiteIndex` | 2 | "Run Full Suite" button is present and enabled; informational text ("pytest", "Admin") is visible on the page |
+| `TestUIFilterEditor` | 6 | Filter editor card renders; empty state shows "No filters" placeholder; "Add Condition" button inserts a new condition row; "Remove" (×) button removes a row; empty-state message hides after adding a row; AND/OR radio buttons are present and one is pre-selected |
+| `TestUIFileUploadPages` | 2 | Rule Import page has a file `<input>` and a JSON textarea; FTP Config Import page has a file `<input>` and a JSON textarea |
+| `TestUIAdminPages` | 2 | `/admin/users` renders a users table; `/admin/groups` renders a groups table |
+
+**Total: 23 tests**
+
+#### Key implementation notes
+
+- All click interactions use `execute_script("arguments[0].click()")` instead of `.click()` to avoid `ElementClickInterceptedException` when elements are below the viewport fold.
+- The filter editor tests navigate to `/rules/new` and interact with the JavaScript-rendered condition builder.
+- Session-scoped fixtures mean all 23 tests share one browser + one login session for speed. Tests are ordered so no test invalidates the session.
+
+---
+
+## 5.6 UI Test Screenshots
+
+### Filter Editor — Empty State
+
+![Filter editor with no conditions added](images/35_ui_filter_editor_empty.png)
+
+The **Data Filters** card on the New Rule form. When no conditions have been added, the card shows a "No filters" placeholder message. The AND/OR radio buttons and the **Add Condition** button are always visible.
+
+---
+
+### Filter Editor — With Condition Rows
+
+![Filter editor with two condition rows inserted](images/36_ui_filter_editor_with_rows.png)
+
+After clicking **Add Condition** twice, two rows appear. Each row has a **Field** dropdown, an **Operator** dropdown, a **Value** input, and an **×** remove button. The empty-state placeholder is hidden.
+
+---
+
+### Rule Import Page
+
+![Rule JSON import page](images/37_ui_rule_import.png)
+
+The `/rules/import` page allows an allocation rule to be loaded from a JSON file (file picker) or by pasting JSON directly into the textarea. Both inputs are tested by `TestUIFileUploadPages`.
+
+---
+
+### FTP Config Import Page
+
+![FTP config import page](images/38_ui_ftp_import.png)
+
+The `/ftp/config/import` page mirrors the rule import layout — a file picker for bulk upload and a JSON textarea for single-config paste. Both inputs are verified by `TestUIFileUploadPages`. All tests use the Flask test client with `Authorization: Basic` headers — no running server required.
 
 #### `TestApiAuth` (11 tests)
 
@@ -585,6 +725,21 @@ python -m pytest tests/test_rules.py::TestApplyFilters
 python -m pytest tests/ --json-report --json-report-file=report.json -q
 ```
 
+### Browser (UI) tests
+
+```bash
+# Run only browser tests (requires Chrome + webdriver-manager)
+python -m pytest tests/test_ui.py -v
+python -m pytest -m ui -v
+
+# Run only unit tests (no browser required)
+python -m pytest tests/ --ignore=tests/test_ui.py -q
+python -m pytest -m "not ui" -q
+
+# Skip UI tests in CI environments without Chrome
+python -m pytest tests/ --ignore=tests/test_ui.py --tb=short -q
+```
+
 ### Useful flags
 
 | Flag | Effect |
@@ -716,6 +871,41 @@ python -m pytest tests/ -q
 - [ ] Service happy-path → use `seeded_db` if data is needed
 - [ ] Service error path → assert raises or returns error status
 - [ ] Input validation → test missing required fields, invalid values
+
+### Adding UI / browser tests
+
+UI tests belong in `tests/test_ui.py` and use the `logged_in_browser` / `browser` / `live_server` session-scoped fixtures.
+
+```python
+import pytest
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+@pytest.mark.ui
+class TestMyPageUI:
+    def test_page_renders(self, logged_in_browser, live_server):
+        logged_in_browser.get(live_server + "/myfeature/")
+        assert "My Feature" in logged_in_browser.title
+
+    def test_button_click(self, logged_in_browser, live_server):
+        logged_in_browser.get(live_server + "/myfeature/")
+        btn = logged_in_browser.find_element(By.ID, "my-button")
+        # Use execute_script to avoid ElementClickInterceptedException
+        logged_in_browser.execute_script("arguments[0].click()", btn)
+        result = WebDriverWait(logged_in_browser, 5).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".result"))
+        )
+        assert result.is_displayed()
+```
+
+**UI test checklist:**
+- [ ] Page loads without JS errors (check `browser.execute_script("return window.onerror")`)
+- [ ] Key elements are present (`find_element` returns without `NoSuchElementException`)
+- [ ] Interactive elements respond correctly (click, fill, submit)
+- [ ] Error messages appear when expected
+- [ ] Use `execute_script` for clicks on elements that may be off-screen
+- [ ] Keep tests session-safe — do not log out or navigate away from the app domain
 
 ---
 

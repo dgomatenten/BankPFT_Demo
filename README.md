@@ -51,7 +51,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
-| **Regression Test Framework** | 94-test pytest suite covering auth, allocation engine, FTP engine, API endpoints, batch, and datafile. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
+| **Regression Test Framework** | 117-test pytest suite (94 unit + 23 Selenium UI) covering auth, allocation engine, FTP engine, API endpoints, batch, datafile, and browser-level UI interactions. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
 
 ## Architecture
 
@@ -1036,7 +1036,17 @@ python -m pytest tests/test_api.py -v
 python -m pytest tests/test_rules.py::TestAllocationEngine::test_run_allocation_creates_batch -v
 ```
 
-**Current result: 94 passed, 0 failed** (in-memory SQLite, ~4 seconds).
+**Current result: 117 passed, 0 failed** — 94 unit tests (in-memory SQLite) + 23 UI tests (headless Chrome), ~17 seconds.
+
+To run only unit tests (no browser required):
+```bash
+python -m pytest tests/ --ignore=tests/test_ui.py -q
+```
+
+To run only UI tests:
+```bash
+python -m pytest tests/test_ui.py -v
+```
 
 ### In-App Test Runner
 
@@ -1059,7 +1069,8 @@ The "Test Suite" link appears in the sidebar under the Admin section for Admin u
 | `tests/test_rules.py` | 20 | AllocationRule model defaults, UI routes, JSON import (valid/missing name), `_apply_filters()` for eq / gt / in / OR / between / invalid JSON, allocation engine end-to-end, DEBIT+CREDIT balance equality |
 | `tests/test_ftp_batch.py` | 24 | FtpProductConfig model, unique constraint, FTP UI routes, import single/array JSON, `_lookback_start()` for D/M/Y across year boundaries, FTP engine E2E match & rate write-back, zero-instrument clean run, BatchDefinition model, datafile config loading and format validation |
 | `tests/test_api.py` | 36 | 401 guard on every endpoint, wrong credentials, GET listing shapes, `POST /api/v1/rules/import` (valid, missing name, empty body), `POST /api/v1/ftp/config/import` (single, array, update, missing product_code), datafile path-traversal rejection, allocation missing rule_id, FTP run with and without date |
-| **Total** | **94** | |
+| `tests/test_ui.py` | 23 | Selenium headless-Chrome browser tests — login flow, sidebar navigation, filter editor (empty state, add/remove condition rows, AND/OR radios), file upload input fields on rule import and FTP import pages, admin user/group pages |
+| **Total** | **117** | |
 
 ### Test Isolation
 
@@ -1080,9 +1091,21 @@ The "Test Suite" link appears in the sidebar under the Admin section for Admin u
 ```
 pytest>=8.0
 pytest-json-report>=1.5.0
+selenium>=4.0
+webdriver-manager>=4.0
 ```
 
-Both are listed in `requirements.txt` and installed by `./start.sh` or `pip install -r requirements.txt`.
+All are listed in `requirements.txt` and installed by `./start.sh` or `pip install -r requirements.txt`.
+
+The `pytest.ini` at the project root registers the `ui` custom mark so pytest does not emit warnings when running the Selenium tests. The `ui` mark also allows selectively running or skipping the browser tests:
+
+```bash
+# Run only tests NOT requiring a browser
+python -m pytest tests/ -m "not ui" -q
+
+# Run only browser tests
+python -m pytest tests/ -m ui -v
+```
 
 For a detailed reference — fixture descriptions, test case catalogue, how to extend the suite, and in-app runner internals — see [docs/TEST_FRAMEWORK.md](docs/TEST_FRAMEWORK.md).
 
