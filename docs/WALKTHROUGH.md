@@ -1661,6 +1661,145 @@ Returns the status of a previously triggered FTP run. Same response shape as `PO
 
 ---
 
+### GET `/api/v1/batch/definitions`
+
+Returns all active multi-task batch definitions with step counts.
+
+**Response:**
+```json
+{
+  "definitions": [
+    {
+      "definition_id": 1,
+      "name": "Month-End Close",
+      "description": "Full month-end allocation and FTP run",
+      "continue_on_error": false,
+      "is_active": true,
+      "step_count": 4,
+      "created_by": "admin",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### GET `/api/v1/batch/definitions/<def_id>`
+
+Returns a single batch definition including its full ordered step list.
+
+**Response:**
+```json
+{
+  "definition_id": 1,
+  "name": "Month-End Close",
+  "continue_on_error": false,
+  "step_count": 4,
+  "steps": [
+    { "step_order": 1, "task_type": "DATAFILE_IMPORT", "ref_id": "LOAN_FIXED",          "label": "Import loan file" },
+    { "step_order": 2, "task_type": "ALLOCATION",      "ref_id": "1",                   "label": "Shred inst balances" },
+    { "step_order": 3, "task_type": "FTP",             "ref_id": null,                  "label": "FTP calculation" },
+    { "step_order": 4, "task_type": "DATAFILE_EXPORT", "ref_id": "ALLOC_RESULT_EXPORT", "label": "Export results" }
+  ]
+}
+```
+
+---
+
+### POST `/api/v1/batch/definitions/<def_id>/run`
+
+Executes a batch definition synchronously. All steps run in order; on failure the behaviour depends on `continue_on_error`.
+
+**Request body:**
+```json
+{ "as_of_date": "2026-01-31" }
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `as_of_date` | No | `YYYY-MM-DD` — defaults to today |
+
+**Success response (`200` when all steps complete, `422` when one or more steps fail):**
+```json
+{
+  "execution_id": "a3f9b1c2-...",
+  "definition_id": 1,
+  "definition_name": "Month-End Close",
+  "as_of_date": "2026-01-31",
+  "status": "COMPLETED",
+  "run_by": "admin",
+  "error_message": null,
+  "started_at": "2026-01-31T00:00:00Z",
+  "completed_at": "2026-01-31T00:01:12Z",
+  "steps": [
+    {
+      "step_order": 1,
+      "task_type": "DATAFILE_IMPORT",
+      "label": "Import loan file",
+      "status": "COMPLETED",
+      "ref_run_id": "b4c2...",
+      "summary": "1200 rows imported",
+      "error_message": null,
+      "started_at": "2026-01-31T00:00:00Z",
+      "completed_at": "2026-01-31T00:00:05Z"
+    },
+    {
+      "step_order": 2,
+      "task_type": "ALLOCATION",
+      "label": "Shred inst balances",
+      "status": "COMPLETED",
+      "ref_run_id": "c5d3...",
+      "summary": "src=1200 out=2400 variance=0.0",
+      "error_message": null,
+      "started_at": "2026-01-31T00:00:05Z",
+      "completed_at": "2026-01-31T00:00:22Z"
+    },
+    {
+      "step_order": 3,
+      "task_type": "FTP",
+      "label": "FTP calculation",
+      "status": "COMPLETED",
+      "ref_run_id": "d6e4...",
+      "summary": "processed=1200 matched=1150",
+      "error_message": null,
+      "started_at": "2026-01-31T00:00:22Z",
+      "completed_at": "2026-01-31T00:01:04Z"
+    },
+    {
+      "step_order": 4,
+      "task_type": "DATAFILE_EXPORT",
+      "label": "Export results",
+      "status": "COMPLETED",
+      "ref_run_id": "e7f5...",
+      "summary": "2400 rows exported",
+      "error_message": null,
+      "started_at": "2026-01-31T00:01:04Z",
+      "completed_at": "2026-01-31T00:01:12Z"
+    }
+  ]
+}
+```
+
+**Overall `status` values:**
+
+| Value | Meaning |
+|---|---|
+| `RUNNING` | Currently in progress |
+| `COMPLETED` | All steps finished successfully |
+| `FAILED` | First step failed and `continue_on_error=false` |
+| `PARTIAL` | One or more steps failed; `continue_on_error=true` allowed remaining steps to run |
+
+**Step `status` values:** `PENDING` → `RUNNING` → `COMPLETED` / `FAILED` / `SKIPPED`
+
+---
+
+### GET `/api/v1/batch/executions/<exec_id>`
+
+Polls the status of a multi-task batch execution. Returns the same response shape as `POST /batch/definitions/<id>/run`.
+
+---
+
 ### curl Quick Reference
 
 ```bash
@@ -1693,10 +1832,22 @@ curl $AUTH -X POST -H 'Content-Type: application/json' \
   -d '{"as_of_date":"2026-01-01"}' \
   $BASE/api/v1/batch/ftp
 
+# List active multi-task batch definitions
+curl $AUTH $BASE/api/v1/batch/definitions
+
+# Get definition 1 with its step list
+curl $AUTH $BASE/api/v1/batch/definitions/1
+
+# Execute definition 1 for 2026-01-31
+curl $AUTH -X POST -H 'Content-Type: application/json' \
+  -d '{"as_of_date":"2026-01-31"}' \
+  $BASE/api/v1/batch/definitions/1/run
+
 # Poll status
 curl $AUTH $BASE/api/v1/datafile/batch/<batch_id>
 curl $AUTH $BASE/api/v1/batch/allocation/<batch_id>
 curl $AUTH $BASE/api/v1/batch/ftp/<run_id>
+curl $AUTH $BASE/api/v1/batch/executions/<execution_id>
 ```
 
 ---

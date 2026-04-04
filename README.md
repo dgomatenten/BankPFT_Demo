@@ -14,7 +14,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
 | **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default) |
-| **REST API** | HTTP Basic Auth API at `/api/v1/` — trigger data file imports/exports, run allocation batches, run FTP batches, and poll status. All responses JSON |
+| **REST API** | HTTP Basic Auth API at `/api/v1/` — trigger data file imports/exports, run allocation batches, run FTP batches, run multi-task batch definitions, and poll status. All responses JSON |
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
@@ -736,6 +736,146 @@ print(result["status"], "rows:", result["row_count"], "file:", result["filename"
   "started_at": "2026-01-01T00:00:00Z",
   "completed_at": "2026-01-01T00:00:02Z"
 }
+```
+
+### Multi-Task Batch Definition & Execution Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/batch/definitions` | List active batch definitions |
+| `GET` | `/api/v1/batch/definitions/<id>` | Get definition with ordered step list |
+| `POST` | `/api/v1/batch/definitions/<id>/run` | Execute a batch definition |
+| `GET` | `/api/v1/batch/executions/<exec_id>` | Poll execution status and per-step results |
+
+**GET `/api/v1/batch/definitions`**
+```json
+{
+  "definitions": [
+    {
+      "definition_id": 1,
+      "name": "Month-End Close",
+      "description": "Full month-end allocation and FTP run",
+      "continue_on_error": false,
+      "is_active": true,
+      "step_count": 4,
+      "created_by": "admin",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+**GET `/api/v1/batch/definitions/1`** — includes `steps` array:
+```json
+{
+  "definition_id": 1,
+  "name": "Month-End Close",
+  "continue_on_error": false,
+  "step_count": 4,
+  "steps": [
+    { "step_order": 1, "task_type": "DATAFILE_IMPORT", "ref_id": "LOAN_FIXED",         "label": "Import loan file" },
+    { "step_order": 2, "task_type": "ALLOCATION",      "ref_id": "1",                  "label": "Shred inst balances" },
+    { "step_order": 3, "task_type": "FTP",             "ref_id": null,                 "label": "FTP calculation" },
+    { "step_order": 4, "task_type": "DATAFILE_EXPORT", "ref_id": "ALLOC_RESULT_EXPORT", "label": "Export results" }
+  ]
+}
+```
+
+**POST `/api/v1/batch/definitions/1/run`**
+```json
+{ "as_of_date": "2026-01-31" }
+```
+
+**Response (execution with per-step results):**
+```json
+{
+  "execution_id": "a3f9b1c2-...",
+  "definition_id": 1,
+  "definition_name": "Month-End Close",
+  "as_of_date": "2026-01-31",
+  "status": "COMPLETED",
+  "run_by": "admin",
+  "error_message": null,
+  "started_at": "2026-01-31T00:00:00Z",
+  "completed_at": "2026-01-31T00:01:12Z",
+  "steps": [
+    {
+      "step_order": 1,
+      "task_type": "DATAFILE_IMPORT",
+      "label": "Import loan file",
+      "status": "COMPLETED",
+      "ref_run_id": "b4c2...",
+      "summary": "1200 rows imported",
+      "error_message": null,
+      "started_at": "2026-01-31T00:00:00Z",
+      "completed_at": "2026-01-31T00:00:05Z"
+    },
+    {
+      "step_order": 2,
+      "task_type": "ALLOCATION",
+      "label": "Shred inst balances",
+      "status": "COMPLETED",
+      "ref_run_id": "c5d3...",
+      "summary": "src=1200 out=2400 variance=0.0",
+      "error_message": null,
+      "started_at": "2026-01-31T00:00:05Z",
+      "completed_at": "2026-01-31T00:00:22Z"
+    },
+    {
+      "step_order": 3,
+      "task_type": "FTP",
+      "label": "FTP calculation",
+      "status": "COMPLETED",
+      "ref_run_id": "d6e4...",
+      "summary": "processed=1200 matched=1150",
+      "error_message": null,
+      "started_at": "2026-01-31T00:00:22Z",
+      "completed_at": "2026-01-31T00:01:04Z"
+    },
+    {
+      "step_order": 4,
+      "task_type": "DATAFILE_EXPORT",
+      "label": "Export results",
+      "status": "COMPLETED",
+      "ref_run_id": "e7f5...",
+      "summary": "2400 rows exported",
+      "error_message": null,
+      "started_at": "2026-01-31T00:01:04Z",
+      "completed_at": "2026-01-31T00:01:12Z"
+    }
+  ]
+}
+```
+
+**Execution status values:**
+
+| Status | Meaning |
+|---|---|
+| `RUNNING` | Execution is in progress |
+| `COMPLETED` | All steps completed successfully |
+| `FAILED` | First step failed and `continue_on_error=false` |
+| `PARTIAL` | One or more steps failed but `continue_on_error=true` allowed remaining steps to run |
+
+**Step status values:** `PENDING` → `RUNNING` → `COMPLETED` / `FAILED` / `SKIPPED`
+
+**curl examples:**
+```bash
+BASE=http://localhost:5000
+AUTH="-u admin:admin"
+
+# List active batch definitions
+curl $AUTH $BASE/api/v1/batch/definitions
+
+# Get definition 1 with step list
+curl $AUTH $BASE/api/v1/batch/definitions/1
+
+# Execute definition 1 for 2026-01-31
+curl $AUTH -X POST -H 'Content-Type: application/json' \\
+  -d '{"as_of_date":"2026-01-31"}' \\
+  $BASE/api/v1/batch/definitions/1/run
+
+# Poll execution status
+curl $AUTH $BASE/api/v1/batch/executions/<execution_id>
 ```
 
 ### HTTP Status Codes

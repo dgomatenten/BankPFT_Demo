@@ -38,6 +38,19 @@ GET  /api/v1/datafile/exports
 
 GET  /api/v1/batch/rules
     → list of active allocation rules
+
+GET  /api/v1/batch/definitions
+    → list of active multi-task batch definitions (with step counts)
+
+GET  /api/v1/batch/definitions/<def_id>
+    → single definition with ordered step list
+
+POST /api/v1/batch/definitions/<def_id>/run
+    body: { "as_of_date": "2026-01-01" }   (date is optional, defaults to today)
+    → { "execution_id", "definition_id", "definition_name", "status", "steps": [...], ... }
+
+GET  /api/v1/batch/executions/<exec_id>
+    → full execution record with per-step results
 """
 
 import json
@@ -48,13 +61,14 @@ from flask import Blueprint, jsonify, request
 
 from app.models.auth import User
 from app.models.datafile import DataFileBatch
-from app.models.workflow import AllocationRule, BatchRun
+from app.models.workflow import AllocationRule, BatchRun, BatchDefinition, BatchExecution, BatchExecutionStep
 from app.models.ftp import FtpRun
 from app.services.datafile_service import (
     DATAFILE_CONFIG, import_file, export_data,
 )
 from app.services.allocation_engine import run_allocation
 from app.services.ftp_engine import run_ftp
+from app.services.batch_executor import run_batch
 
 bp = Blueprint("api", __name__)
 
@@ -341,3 +355,123 @@ def api_ftp_status(api_user, run_id):
     if ftp_run is None:
         return jsonify({"error": "run not found"}), 404
     return jsonify(_ftp_run_dict(ftp_run))
+
+
+# ── Multi-task batch definition & execution routes ────────────────────────────
+
+def _task_dict(t: "BatchTask") -> dict:  # type: ignore[name-defined]
+    return {
+        "step_order": t.step_order,
+        "task_type":  t.task_type,
+        "ref_id":     t.ref_id,
+        "label":      t.label,
+    }
+
+
+def _definition_dict(d: BatchDefinition, include_steps: bool = False) -> dict:
+    result = {
+        "definition_id":    d.id,
+        "name":             d.name,
+        "description":      d.description,
+        "continue_on_error": d.continue_on_error,
+        "is_active":        d.is_active,
+        "step_count":       len(d.tasks),
+        "created_by":       d.created_by,
+        "created_at":       _fmt_dt(d.created_at),
+    }
+    if include_steps:
+        result["steps"] = [_task_dict(t) for t in d.tasks]
+    return result
+
+
+def _exec_step_dict(s: BatchExecutionStep) -> dict:
+    return {
+        "step_order":    s.step_order,
+        "task_type":     s.task_type,
+        "ref_id":        s.ref_id,
+        "label":         s.label,
+        "status":        s.status,
+        "ref_run_id":    s.ref_run_id,
+        "summary":       s.summary,
+        "error_message": s.error_message,
+        "started_at":    _fmt_dt(s.started_at),
+        "completed_at":  _fmt_dt(s.completed_at),
+    }
+
+
+def _execution_dict(e: BatchExecution, include_steps: bool = True) -> dict:
+    result = {
+        "execution_id":   e.id,
+        "definition_id":  e.definition_id,
+        "definition_name": e.definition.name if e.definition else None,
+        "as_of_date":     e.as_of_date.isoformat() if e.as_of_date else None,
+        "status":         e.status,
+        "run_by":         e.run_by,
+        "error_message":  e.error_message,
+        "started_at":     _fmt_dt(e.started_at),
+        "completed_at":   _fmt_dt(e.completed_at),
+    }
+    if include_steps:
+        result["steps"] = [_exec_step_dict(s) for s in e.steps]
+    return result
+
+
+@bp.get("/batch/definitions")
+@api_login_required
+def api_list_definitions(api_user):
+    """List all active multi-task batch definitions."""
+    defs = BatchDefinition.query.filter_by(is_active=True).order_by(BatchDefinition.name).all()
+    return jsonify({"definitions": [_definition_dict(d) for d in defs]})
+
+
+@bp.get("/batch/definitions/<int:def_id>")
+@api_login_required
+def api_get_definition(api_user, def_id):
+    """Get a single batch definition including its ordered steps."""
+    d = BatchDefinition.query.get(def_id)
+    if d is None:
+        return jsonify({"error": "definition not found"}), 404
+    return jsonify(_definition_dict(d, include_steps=True))
+
+
+@bp.post("/batch/definitions/<int:def_id>/run")
+@api_login_required
+def api_run_definition(api_user, def_id):
+    """Execute a multi-task batch definition.
+
+    Request body (JSON):
+        as_of_date — optional YYYY-MM-DD, defaults to today
+
+    All steps run sequentially. If continue_on_error=false (default), execution
+    stops on the first failure and remaining steps are marked SKIPPED.
+
+    Returns the full execution record with per-step results.
+    """
+    d = BatchDefinition.query.get(def_id)
+    if d is None:
+        return jsonify({"error": "definition not found"}), 404
+    if not d.is_active:
+        return jsonify({"error": "definition is inactive"}), 400
+
+    body = request.get_json(silent=True) or {}
+    as_of_str = str(body.get("as_of_date", "")).strip() or None
+    try:
+        as_of = _parse_date(as_of_str)
+    except ValueError:
+        return jsonify({"error": "as_of_date must be YYYY-MM-DD"}), 400
+
+    execution = run_batch(def_id, as_of, api_user.username)
+
+    failed = sum(1 for s in execution.steps if s.status == "FAILED")
+    code = 200 if execution.status == "COMPLETED" else 422
+    return jsonify(_execution_dict(execution)), code
+
+
+@bp.get("/batch/executions/<exec_id>")
+@api_login_required
+def api_execution_status(api_user, exec_id):
+    """Get full status and per-step results of a multi-task batch execution."""
+    execution = BatchExecution.query.get(exec_id)
+    if execution is None:
+        return jsonify({"error": "execution not found"}), 404
+    return jsonify(_execution_dict(execution))
