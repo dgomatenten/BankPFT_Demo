@@ -434,6 +434,46 @@ Input validation — these don't require real files:
 
 The test runner allows admins to execute the full test suite and review results without using the terminal.
 
+### Screen: Test Suite — Run History (`/tests/`)
+
+**URL:** `http://localhost:5000/tests/`
+
+![Test Suite run history](images/32_test_suite_index.png)
+
+**Key elements:**
+- **Run Full Suite** button (top right, admin only) — triggers the full suite and redirects to the detail page when complete
+- **Past Runs table** — each row shows start timestamp, who triggered the run, green `PASS` / red `FAIL` / yellow `ERROR` status badge, total/pass/fail/error/skip counts, and elapsed duration
+- **Details** button — navigates to the per-test breakdown for that run
+
+---
+
+### Screen: Test Run Detail — Summary (`/tests/run/<id>`)
+
+**URL:** `http://localhost:5000/tests/run/<run_id>`
+
+![Test run detail — summary cards and progress bar](images/33_test_run_detail.png)
+
+**Key elements:**
+- **Run ID** (first 8 characters shown), start time, duration, triggered-by in the header
+- **Summary cards** — Total / Passed (green border) / Failed (red border on failure) / Errors / Skipped / Status (PASS icon)
+- **100% green progress bar** — each segment colour maps to passed (green) / failed (red) / error (yellow) / skipped (grey)
+- **Raw Log** button — opens pytest stdout in a new browser tab
+- **All Runs** button — returns to the run history list
+- **Module accordion** begins immediately below the progress bar, grouped by test file
+
+---
+
+### Screen: Test Run Detail — Per-Test Results (scrolled)
+
+![Test run detail — per-module test list](images/34_test_run_detail_modules.png)
+
+**Key elements:**
+- Each module section shows a file name header (e.g. `test_api`) with a pass-count badge (`33 pass`)
+- Every test row shows: green ✓ badge (or red ✗ on failure), full test ID (`Class::method[param]`), and duration in seconds
+- Failed tests display the assertion error message inline, making it easy to diagnose without a terminal
+
+---
+
 ### Architecture
 
 ```
