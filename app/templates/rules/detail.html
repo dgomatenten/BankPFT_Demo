@@ -22,6 +22,17 @@
         </div>
         <div class="row mt-2">
             <div class="col-md-4">
+                <strong>Allocation Method:</strong>
+                {% set am = rule.allocation_method or 'RATIO' %}
+                {% if am == 'DISTRIBUTION' %}
+                    <span class="badge bg-success">Static Distribution</span>
+                {% elif am == 'STATIC' %}
+                    <span class="badge bg-info text-dark">Static Allocation</span>
+                {% else %}
+                    <span class="badge bg-primary">Ratio-Based</span>
+                {% endif %}
+            </div>
+            <div class="col-md-4">
                 <strong>Entry Mode:</strong>
                 {% set em = rule.entry_mode or ('BOTH' if rule.generate_offset else 'DEBIT_ONLY') %}
                 {% if em == 'BOTH' %}
@@ -32,11 +43,15 @@
                     <span class="badge bg-primary">DEBIT only</span>
                 {% endif %}
             </div>
-            <div class="col-md-8">
+            <div class="col-md-4">
                 <strong>Join Keys:</strong>
+                {% if (rule.allocation_method or 'RATIO') == 'STATIC' %}
+                    <span class="text-muted">N/A (Static)</span>
+                {% else %}
                 {% for k in rule.join_key.split(',') %}
                 <span class="badge bg-secondary me-1">{{ k.strip() }}</span>
                 {% endfor %}
+                {% endif %}
             </div>
         </div>
         {% if rule.description %}

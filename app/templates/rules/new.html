@@ -17,8 +17,28 @@
                 <textarea name="description" class="form-control" rows="2"></textarea>
             </div>
 
+            {# ── Allocation Method ── #}
+            <div class="card mb-3 border-success">
+                <div class="card-header bg-success text-white"><i class="bi bi-diagram-3"></i> Allocation Method</div>
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-4" id="alloc-method-radios">
+                        {% for m in rule_config.allocation_methods %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="allocation_method_radio"
+                                   id="am_{{ m.value }}" value="{{ m.value }}" {{ 'checked' if loop.first }}>
+                            <label class="form-check-label" for="am_{{ m.value }}">
+                                <strong>{{ m.label }}</strong>
+                                {% if m.description %}<br><small class="text-muted">{{ m.description }}</small>{% endif %}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <input type="hidden" name="allocation_method" id="alloc_method_hidden" value="RATIO">
+                </div>
+            </div>
+
             {# ── Table / key selection ── #}
-            <div class="row mb-3">
+            <div class="row mb-3" id="lookup-join-section">
                 <div class="col-md-3">
                     <label class="form-label">Source Table</label>
                     <select name="source_table" id="source_table" class="form-select">
@@ -56,7 +76,7 @@
                     </div>
                     <small class="text-muted">Select one or more columns to join on.</small>
                 </div>
-            </div>
+            </div>{# end #lookup-join-section #}
 
             {# ── Entry Mode ── #}
             <div class="card mb-3 border-primary">
@@ -270,10 +290,35 @@
     document.querySelectorAll('input[name="entry_mode"]').forEach(r =>
         r.addEventListener('change', syncEntryCards));
 
+    // ── Allocation Method ──
+    const allocMethodHidden = document.getElementById('alloc_method_hidden');
+    const lookupJoinSection = document.getElementById('lookup-join-section');
+    const DISTRIBUTION_TABLE = 'ref_static_distribution';
+
+    function syncAllocMethod() {
+        const sel = document.querySelector('input[name="allocation_method_radio"]:checked');
+        const method = sel ? sel.value : 'RATIO';
+        allocMethodHidden.value = method;
+        if (method === 'STATIC') {
+            lookupJoinSection.style.display = 'none';
+        } else {
+            lookupJoinSection.style.display = '';
+            if (method === 'DISTRIBUTION') {
+                lkpSelect.value = DISTRIBUTION_TABLE;
+                buildDimMapRows(outBody, srcSelect.value, lkpSelect.value);
+                buildDimMapRows(crdBody, srcSelect.value, lkpSelect.value);
+            }
+        }
+    }
+
+    document.querySelectorAll('input[name="allocation_method_radio"]').forEach(r =>
+        r.addEventListener('change', syncAllocMethod));
+
     document.getElementById('rule-form').addEventListener('submit', serializeDims);
 
     // Initial build
     rebuild();
+    syncAllocMethod();
 })();
 </script>
 {% endblock %}

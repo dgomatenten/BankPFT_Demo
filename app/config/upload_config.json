@@ -125,6 +125,53 @@
                 "rate": {"type": "float"}
             },
             "validation_rules": ["required_columns", "null_check", "numeric_range"]
+        },
+        "DISTRIBUTION": {
+            "label": "Static Distribution",
+            "description": "Distribution table mapping source dimension values to target dimensions with ratios. Used by the Static Distribution allocation method. Required columns: distribution_id, target_dim, ratio. Include one of customer_id / org_unit_id / product_code as the join key column.",
+            "required_columns": ["distribution_id", "target_dim", "ratio"],
+            "optional_columns": ["customer_id", "org_unit_id", "product_code"],
+            "unique_key": null,
+            "staging_table": "ref_static_distribution",
+            "ratio_validation": {
+                "enabled": true,
+                "group_by": ["distribution_id"],
+                "sum_column": "ratio",
+                "expected_sum": 1.0,
+                "tolerance": 0.001
+            },
+            "numeric_ranges": {
+                "ratio": {"min": 0, "max": 1}
+            },
+            "column_mapping": {
+                "distribution_id": {"type": "string"},
+                "customer_id":     {"type": "string", "default": null},
+                "org_unit_id":     {"type": "string", "default": null},
+                "product_code":    {"type": "string", "default": null},
+                "target_dim":      {"type": "string"},
+                "ratio":           {"type": "float"}
+            },
+            "validation_rules": ["required_columns", "null_check", "ratio_sum", "numeric_range"]
+        },
+        "STATIC_ALLOC": {
+            "label": "Static Allocation Mapping",
+            "description": "Simple source-to-target dimension mapping for Static Allocation (aggregation / reclass). Required columns: alloc_id, target_dim. Include one of customer_id / org_unit_id / product_code as the join key. Ratio defaults to 1.0.",
+            "required_columns": ["alloc_id", "target_dim"],
+            "optional_columns": ["customer_id", "org_unit_id", "product_code", "ratio"],
+            "unique_key": null,
+            "staging_table": "ref_static_alloc",
+            "numeric_ranges": {
+                "ratio": {"min": 0, "max": 1}
+            },
+            "column_mapping": {
+                "alloc_id":     {"type": "string"},
+                "customer_id":  {"type": "string", "default": null},
+                "org_unit_id":  {"type": "string", "default": null},
+                "product_code": {"type": "string", "default": null},
+                "target_dim":   {"type": "string"},
+                "ratio":        {"type": "float", "default": 1.0}
+            },
+            "validation_rules": ["required_columns", "null_check", "numeric_range"]
         }
     }
 }

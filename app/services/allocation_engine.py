@@ -15,7 +15,10 @@ from datetime import datetime
 import pandas as pd
 from app.models import db
 from app.models.staging import ProcInstData, ProcGlData
-from app.models.allocation import RefStaticAllocation, RefOrgReclass, FctMgmtLedger, FctMgmtInstrument
+from app.models.allocation import (
+    RefStaticAllocation, RefOrgReclass, RefStaticDistribution, RefStaticAlloc,
+    FctMgmtLedger, FctMgmtInstrument,
+)
 from app.models.workflow import AllocationRule, BatchRun
 
 # ── Load configuration ──
@@ -30,8 +33,10 @@ _SOURCE_MODELS = {
 }
 
 _LOOKUP_MODELS = {
-    "ref_static_allocation": RefStaticAllocation,
-    "ref_org_reclass":       RefOrgReclass,
+    "ref_static_allocation":  RefStaticAllocation,
+    "ref_org_reclass":        RefOrgReclass,
+    "ref_static_distribution": RefStaticDistribution,
+    "ref_static_alloc":       RefStaticAlloc,
 }
 
 _OUTPUT_MODELS = {
@@ -188,31 +193,51 @@ def _resolve_dim_value(
 # Main: run one allocation batch
 # ──────────────────────────────────────────────────────────────────────────────
 def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
-    """Execute allocation shredding; produces DEBIT + CREDIT entries in the output table."""
+    """Execute allocation shredding; produces DEBIT + CREDIT entries in the output table.
+
+    Allocation methods
+    ------------------
+    RATIO         — join source to a lookup table, apply ratio-based shredding (default).
+    DISTRIBUTION  — same engine path as RATIO but lookup table is ref_static_distribution;
+                    the target_dim column drives flexible output dimension mapping.
+    STATIC        — no lookup join; each source row maps 1:1 to the output at ratio=1.0.
+                    Output dimensions come from output_dim_json (fixed / same_as_source).
+                    Suitable for instrument aggregation and simple reclassification.
+    """
 
     # ── 1. Load rule ──
     rule = AllocationRule.query.get(rule_id)
     if not rule:
         raise ValueError(f"Rule {rule_id} not found")
 
+    alloc_method = (getattr(rule, "allocation_method", None) or "RATIO").strip().upper()
+    if alloc_method not in ("RATIO", "DISTRIBUTION", "STATIC"):
+        alloc_method = "RATIO"
+
     # ── 2. Resolve config ──
     src_cfg    = ALLOC_CONFIG["source_tables"].get(rule.source_table)
-    lkp_cfg    = ALLOC_CONFIG["lookup_tables"].get(rule.lookup_table)
     orphan_cfg = ALLOC_CONFIG["orphan_handling"]
 
     if not src_cfg:
         raise ValueError(f"No config for source table: {rule.source_table}")
-    if not lkp_cfg:
-        raise ValueError(f"No config for lookup table: {rule.lookup_table}")
 
     SourceModel = _SOURCE_MODELS.get(rule.source_table)
-    LookupModel = _LOOKUP_MODELS.get(rule.lookup_table)
     OutputModel = _OUTPUT_MODELS.get(rule.output_table, FctMgmtLedger)
 
     if not SourceModel:
         raise ValueError(f"No model registered for source: {rule.source_table}")
-    if not LookupModel:
-        raise ValueError(f"No model registered for lookup: {rule.lookup_table}")
+
+    # For lookup-based methods resolve lookup config/model; STATIC needs neither
+    if alloc_method in ("RATIO", "DISTRIBUTION"):
+        lkp_cfg    = ALLOC_CONFIG["lookup_tables"].get(rule.lookup_table)
+        LookupModel = _LOOKUP_MODELS.get(rule.lookup_table)
+        if not lkp_cfg:
+            raise ValueError(f"No config for lookup table: {rule.lookup_table}")
+        if not LookupModel:
+            raise ValueError(f"No model registered for lookup: {rule.lookup_table}")
+    else:
+        lkp_cfg     = None
+        LookupModel = None
 
     # ── Parse new dimension configs ──
     source_dim_cfg = json.loads(rule.source_dim_json) if rule.source_dim_json else {}
@@ -234,7 +259,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
     logger.log("START",  f"Batch '{batch_id[:8]}...' initiated by {run_by}")
     logger.log("RULE",   f"Rule #{rule_id}: '{rule.name}'")
-    logger.log("RULE",   f"  source={rule.source_table} | lookup={rule.lookup_table} | output={rule.output_table}")
+    logger.log("RULE",   f"  method={alloc_method} | source={rule.source_table} | lookup={rule.lookup_table} | output={rule.output_table}")
     logger.log("RULE",   f"  entry_mode={raw_mode} | join_key={join_key}")
     if source_dim_cfg:
         logger.log("RULE", f"  source_dim_filters: {list(source_dim_cfg.keys())}")
@@ -305,141 +330,203 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             db.session.commit()
             return batch
 
-        # ── 4. Load lookup ratios ──
-        logger.log("QUERY",  f"Loading lookup ratios from '{rule.lookup_table}' (status={lkp_cfg['status_filter']})")
-        alloc_rows = LookupModel.query.filter_by(status=lkp_cfg["status_filter"]).all()
-        alloc_data = (
-            pd.DataFrame([
-                {col: getattr(r, col) for col in lkp_cfg["columns"]}
-                for r in alloc_rows
-            ])
-            if alloc_rows
-            else pd.DataFrame(columns=lkp_cfg["columns"])
-        )
-        logger.log("DATA",   f"Lookup ratios loaded: {len(alloc_data):,} rows")
-
-        # ── 5. Join source ↔ lookup ──
-        # join_key may be a comma-separated list for multi-column joins
-        join_col_list = [k.strip() for k in join_key.split(",") if k.strip()]
-        if not join_col_list:
-            raise ValueError(f"Rule '{rule.name}' has no join key configured.")
-        primary_join_col = join_col_list[0]
-        pandas_join = join_col_list[0] if len(join_col_list) == 1 else join_col_list
-        logger.log("JOIN",   f"Merging source ↔ lookup on {pandas_join!r} ({ALLOC_CONFIG.get('join_type', 'left')} join)")
-        merged = source_data.merge(
-            alloc_data, on=pandas_join, how=ALLOC_CONFIG.get("join_type", "left")
-        )
-
-        id_col         = lkp_cfg["id_column"]
-        ratio_col      = lkp_cfg["ratio_column"]
-        target_org_col = lkp_cfg["target_org_column"]
-        balance_cols   = src_cfg["balance_columns"]
-        acct_col       = src_cfg["account_id_column"]
-
-        matched = merged[merged[id_col].notna()].copy()
-        orphan  = merged[merged[id_col].isna()].copy()
-        logger.log("JOIN",    f"Post-merge: {len(matched):,} matched rows, {len(orphan):,} orphan rows")
-
+        # ── 4. Load lookup ratios (RATIO / DISTRIBUTION) or skip (STATIC) ──
+        balance_cols = src_cfg["balance_columns"]
+        acct_col     = src_cfg["account_id_column"]
         results       = []
         _debit_count  = 0
         _credit_count = 0
+        orphan_dedup  = pd.DataFrame()
 
-        # ── 6. Matched rows: DEBIT entry + optional CREDIT offset ──
-        logger.log("PROCESS", f"Generating entries for {len(matched):,} matched rows"
-                              f" (emit_debit={emit_debit}, emit_credit={emit_credit})")
-        for _, row in matched.iterrows():
-            src_acct = str(row.get(acct_col, ""))
-            src_org  = str(row.get("org_unit_id", ""))
-            src_cust = str(row.get("customer_id", row.get(primary_join_col, "")))
-            src_prod = str(row.get("product_code", ""))
-            src_bal  = float(row[balance_cols[0]])
-            ratio    = float(row[ratio_col])
+        if alloc_method in ("RATIO", "DISTRIBUTION"):
+            # ── 4a. Load lookup table ──
+            logger.log("QUERY",  f"Loading lookup ratios from '{rule.lookup_table}' (status={lkp_cfg['status_filter']})")
+            alloc_rows = LookupModel.query.filter_by(status=lkp_cfg["status_filter"]).all()
+            alloc_data = (
+                pd.DataFrame([
+                    {col: getattr(r, col) for col in lkp_cfg["columns"]}
+                    for r in alloc_rows
+                ])
+                if alloc_rows
+                else pd.DataFrame(columns=lkp_cfg["columns"])
+            )
+            logger.log("DATA",   f"Lookup ratios loaded: {len(alloc_data):,} rows")
 
-            alloc_bal = src_bal * ratio
-            alloc_inc = float(row[balance_cols[1]]) * ratio if len(balance_cols) > 1 else 0.0
+            # ── 5. Join source ↔ lookup ──
+            join_col_list = [k.strip() for k in join_key.split(",") if k.strip()]
+            if not join_col_list:
+                raise ValueError(f"Rule '{rule.name}' has no join key configured.")
+            primary_join_col = join_col_list[0]
+            pandas_join = join_col_list[0] if len(join_col_list) == 1 else join_col_list
+            logger.log("JOIN",   f"Merging source ↔ lookup on {pandas_join!r} ({ALLOC_CONFIG.get('join_type', 'left')} join)")
+            merged = source_data.merge(
+                alloc_data, on=pandas_join, how=ALLOC_CONFIG.get("join_type", "left")
+            )
 
-            # Resolve output dimensions for DEBIT entry
-            tgt_org  = _resolve_dim_value(row, "org_unit_id",  output_dim_cfg, src_org,  target_org_col)
-            out_cust = _resolve_dim_value(row, "customer_id",  output_dim_cfg, src_cust, target_org_col)
-            out_prod = _resolve_dim_value(row, "product_code", output_dim_cfg, src_prod, target_org_col)
-            out_acct = _resolve_dim_value(row, acct_col,       output_dim_cfg, src_acct, target_org_col)
+            id_col         = lkp_cfg["id_column"]
+            ratio_col      = lkp_cfg["ratio_column"]
+            target_org_col = lkp_cfg["target_org_column"]
 
-            # DEBIT — allocated to target
-            if emit_debit:
-                _debit_count += 1
-                results.append(OutputModel(
-                    batch_run_id=batch_id,
-                    as_of_date=as_of_date,
-                    entry_type="DEBIT",
-                    allocation_id=str(row[id_col]),
-                    source_account_id=out_acct,
-                    customer_id=out_cust,
-                    product_code=out_prod,
-                    source_org_unit_id=src_org,
-                    target_org_unit_id=tgt_org,
-                    source_balance=src_bal,
-                    allocated_balance=alloc_bal,
-                    allocated_income=alloc_inc,
-                    ratio_applied=ratio,
-                    is_orphan=False,
-                ))
+            matched = merged[merged[id_col].notna()].copy()
+            orphan  = merged[merged[id_col].isna()].copy()
+            logger.log("JOIN",    f"Post-merge: {len(matched):,} matched rows, {len(orphan):,} orphan rows")
 
-            # CREDIT — offset reversal; dimensions resolved via credit_dim_cfg
-            if emit_credit:
-                _credit_count += 1
-                crd_org  = _resolve_dim_value(row, "org_unit_id",  credit_dim_cfg, src_org,  target_org_col)
-                crd_cust = _resolve_dim_value(row, "customer_id",  credit_dim_cfg, src_cust, target_org_col)
-                crd_prod = _resolve_dim_value(row, "product_code", credit_dim_cfg, src_prod, target_org_col)
-                crd_acct = _resolve_dim_value(row, acct_col,       credit_dim_cfg, src_acct, target_org_col)
-                results.append(OutputModel(
-                    batch_run_id=batch_id,
-                    as_of_date=as_of_date,
-                    entry_type="CREDIT",
-                    allocation_id=str(row[id_col]),
-                    source_account_id=crd_acct,
-                    customer_id=crd_cust,
-                    product_code=crd_prod,
-                    source_org_unit_id=src_org,
-                    target_org_unit_id=crd_org,
-                    source_balance=src_bal,
-                    allocated_balance=-alloc_bal,
-                    allocated_income=-alloc_inc,
-                    ratio_applied=ratio,
-                    is_orphan=False,
-                ))
-
-        logger.log("PROCESS", f"  → DEBIT entries: {_debit_count:,} | CREDIT entries: {_credit_count:,}")
-
-        # ── 7. Orphan rows: DEBIT only (no allocation match; stays at source) ──
-        orphan_dedup = pd.DataFrame()
-        if orphan_cfg["enabled"] and not orphan.empty:
-            orphan_dedup   = orphan.drop_duplicates(subset=[acct_col])
-            default_ratio  = orphan_cfg["default_ratio"]
-            logger.log("ORPHAN",  f"Processing {len(orphan_dedup):,} orphan rows (default_ratio={default_ratio})")
-            for _, row in orphan_dedup.iterrows():
+            # ── 6. Matched rows: DEBIT + optional CREDIT ──
+            logger.log("PROCESS", f"Generating entries for {len(matched):,} matched rows"
+                                  f" (emit_debit={emit_debit}, emit_credit={emit_credit})")
+            for _, row in matched.iterrows():
+                src_acct = str(row.get(acct_col, ""))
                 src_org  = str(row.get("org_unit_id", ""))
+                src_cust = str(row.get("customer_id", row.get(primary_join_col, "")))
+                src_prod = str(row.get("product_code", ""))
                 src_bal  = float(row[balance_cols[0]])
-                alloc_inc = float(row[balance_cols[1]]) * default_ratio if len(balance_cols) > 1 else 0.0
-                results.append(OutputModel(
-                    batch_run_id=batch_id,
-                    as_of_date=as_of_date,
-                    entry_type="DEBIT",
-                    allocation_id=None,
-                    source_account_id=str(row.get(acct_col, "")),
-                    customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
-                    product_code=str(row.get("product_code", "")),
-                    source_org_unit_id=src_org,
-                    target_org_unit_id=src_org,
-                    allocated_balance=src_bal * default_ratio,
-                    allocated_income=alloc_inc,
-                    ratio_applied=default_ratio,
-                    is_orphan=True,
-                ))
+                ratio    = float(row[ratio_col])
 
+                alloc_bal = src_bal * ratio
+                alloc_inc = float(row[balance_cols[1]]) * ratio if len(balance_cols) > 1 else 0.0
+
+                tgt_org  = _resolve_dim_value(row, "org_unit_id",  output_dim_cfg, src_org,  target_org_col)
+                out_cust = _resolve_dim_value(row, "customer_id",  output_dim_cfg, src_cust, target_org_col)
+                out_prod = _resolve_dim_value(row, "product_code", output_dim_cfg, src_prod, target_org_col)
+                out_acct = _resolve_dim_value(row, acct_col,       output_dim_cfg, src_acct, target_org_col)
+
+                if emit_debit:
+                    _debit_count += 1
+                    results.append(OutputModel(
+                        batch_run_id=batch_id,
+                        as_of_date=as_of_date,
+                        entry_type="DEBIT",
+                        allocation_id=str(row[id_col]),
+                        source_account_id=out_acct,
+                        customer_id=out_cust,
+                        product_code=out_prod,
+                        source_org_unit_id=src_org,
+                        target_org_unit_id=tgt_org,
+                        source_balance=src_bal,
+                        allocated_balance=alloc_bal,
+                        allocated_income=alloc_inc,
+                        ratio_applied=ratio,
+                        is_orphan=False,
+                    ))
+
+                if emit_credit:
+                    _credit_count += 1
+                    crd_org  = _resolve_dim_value(row, "org_unit_id",  credit_dim_cfg, src_org,  target_org_col)
+                    crd_cust = _resolve_dim_value(row, "customer_id",  credit_dim_cfg, src_cust, target_org_col)
+                    crd_prod = _resolve_dim_value(row, "product_code", credit_dim_cfg, src_prod, target_org_col)
+                    crd_acct = _resolve_dim_value(row, acct_col,       credit_dim_cfg, src_acct, target_org_col)
+                    results.append(OutputModel(
+                        batch_run_id=batch_id,
+                        as_of_date=as_of_date,
+                        entry_type="CREDIT",
+                        allocation_id=str(row[id_col]),
+                        source_account_id=crd_acct,
+                        customer_id=crd_cust,
+                        product_code=crd_prod,
+                        source_org_unit_id=src_org,
+                        target_org_unit_id=crd_org,
+                        source_balance=src_bal,
+                        allocated_balance=-alloc_bal,
+                        allocated_income=-alloc_inc,
+                        ratio_applied=ratio,
+                        is_orphan=False,
+                    ))
+
+            logger.log("PROCESS", f"  → DEBIT entries: {_debit_count:,} | CREDIT entries: {_credit_count:,}")
+
+            # ── 7. Orphan rows (no lookup match) ──
+            if orphan_cfg["enabled"] and not orphan.empty:
+                orphan_dedup  = orphan.drop_duplicates(subset=[acct_col])
+                default_ratio = orphan_cfg["default_ratio"]
+                logger.log("ORPHAN",  f"Processing {len(orphan_dedup):,} orphan rows (default_ratio={default_ratio})")
+                for _, row in orphan_dedup.iterrows():
+                    src_org   = str(row.get("org_unit_id", ""))
+                    src_bal   = float(row[balance_cols[0]])
+                    alloc_inc = float(row[balance_cols[1]]) * default_ratio if len(balance_cols) > 1 else 0.0
+                    results.append(OutputModel(
+                        batch_run_id=batch_id,
+                        as_of_date=as_of_date,
+                        entry_type="DEBIT",
+                        allocation_id=None,
+                        source_account_id=str(row.get(acct_col, "")),
+                        customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
+                        product_code=str(row.get("product_code", "")),
+                        source_org_unit_id=src_org,
+                        target_org_unit_id=src_org,
+                        source_balance=src_bal,
+                        allocated_balance=src_bal * default_ratio,
+                        allocated_income=alloc_inc,
+                        ratio_applied=default_ratio,
+                        is_orphan=True,
+                    ))
+
+        else:
+            # ── STATIC method: direct 1:1 pass-through, ratio = 1.0 ──
+            logger.log("PROCESS", f"Static allocation: {len(source_data):,} source rows → direct pass-through"
+                                  f" (emit_debit={emit_debit}, emit_credit={emit_credit})")
+            for _, row in source_data.iterrows():
+                src_acct = str(row.get(acct_col, ""))
+                src_org  = str(row.get("org_unit_id", ""))
+                src_cust = str(row.get("customer_id", ""))
+                src_prod = str(row.get("product_code", ""))
+                src_bal  = float(row[balance_cols[0]])
+                alloc_inc = float(row[balance_cols[1]]) if len(balance_cols) > 1 else 0.0
+
+                # Output dimensions: same_as_source or fixed (lookup mode not applicable)
+                tgt_org  = _resolve_dim_value(row, "org_unit_id",  output_dim_cfg, src_org,  src_org)
+                out_cust = _resolve_dim_value(row, "customer_id",  output_dim_cfg, src_cust, src_org)
+                out_prod = _resolve_dim_value(row, "product_code", output_dim_cfg, src_prod, src_org)
+                out_acct = _resolve_dim_value(row, acct_col,       output_dim_cfg, src_acct, src_org)
+
+                if emit_debit:
+                    _debit_count += 1
+                    results.append(OutputModel(
+                        batch_run_id=batch_id,
+                        as_of_date=as_of_date,
+                        entry_type="DEBIT",
+                        allocation_id=None,
+                        source_account_id=out_acct,
+                        customer_id=out_cust,
+                        product_code=out_prod,
+                        source_org_unit_id=src_org,
+                        target_org_unit_id=tgt_org,
+                        source_balance=src_bal,
+                        allocated_balance=src_bal,
+                        allocated_income=alloc_inc,
+                        ratio_applied=1.0,
+                        is_orphan=False,
+                    ))
+
+                if emit_credit:
+                    _credit_count += 1
+                    crd_org  = _resolve_dim_value(row, "org_unit_id",  credit_dim_cfg, src_org,  src_org)
+                    crd_cust = _resolve_dim_value(row, "customer_id",  credit_dim_cfg, src_cust, src_org)
+                    crd_prod = _resolve_dim_value(row, "product_code", credit_dim_cfg, src_prod, src_org)
+                    crd_acct = _resolve_dim_value(row, acct_col,       credit_dim_cfg, src_acct, src_org)
+                    results.append(OutputModel(
+                        batch_run_id=batch_id,
+                        as_of_date=as_of_date,
+                        entry_type="CREDIT",
+                        allocation_id=None,
+                        source_account_id=crd_acct,
+                        customer_id=crd_cust,
+                        product_code=crd_prod,
+                        source_org_unit_id=src_org,
+                        target_org_unit_id=crd_org,
+                        source_balance=src_bal,
+                        allocated_balance=-src_bal,
+                        allocated_income=-alloc_inc,
+                        ratio_applied=1.0,
+                        is_orphan=False,
+                    ))
+
+            logger.log("PROCESS", f"  → DEBIT entries: {_debit_count:,} | CREDIT entries: {_credit_count:,}")
+
+        # ── 8. Write results ──
         db.session.add_all(results)
         logger.log("DB",      f"Writing {len(results):,} output rows to '{rule.output_table}'")
 
-        # ── 8. Update batch stats (DEBIT rows drive totals) ──
+        # ── 9. Update batch stats (DEBIT rows drive totals) ──
         debit_rows = [r for r in results if r.entry_type == "DEBIT"]
         batch.source_row_count = len(source_data)
         batch.output_row_count = len(results)

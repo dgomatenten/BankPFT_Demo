@@ -7,8 +7,10 @@
     ],
 
     "lookup_tables": [
-        {"value": "ref_static_allocation", "label": "Static Allocation (ref_static_allocation)"},
-        {"value": "ref_org_reclass", "label": "Org Reclassification (ref_org_reclass)"}
+        {"value": "ref_static_allocation",  "label": "Static Allocation (ref_static_allocation)"},
+        {"value": "ref_org_reclass",         "label": "Org Reclassification (ref_org_reclass)"},
+        {"value": "ref_static_distribution", "label": "Static Distribution (ref_static_distribution)"},
+        {"value": "ref_static_alloc",        "label": "Static Alloc Mapping (ref_static_alloc)"}
     ],
 
     "output_tables": [
@@ -51,8 +53,32 @@
         ],
         "ref_org_reclass": [
             {"column": "target_org_unit_id", "label": "Target Org Unit"}
+        ],
+        "ref_static_distribution": [
+            {"column": "target_dim", "label": "Target Dimension (target_dim)"}
+        ],
+        "ref_static_alloc": [
+            {"column": "target_dim", "label": "Target Dimension (target_dim)"}
         ]
     },
+
+    "allocation_methods": [
+        {
+            "value": "RATIO",
+            "label": "Ratio-Based Allocation",
+            "description": "Join source to a lookup table and allocate balance using ratios. Supports ref_static_allocation, ref_org_reclass."
+        },
+        {
+            "value": "DISTRIBUTION",
+            "label": "Static Distribution",
+            "description": "Distribute source balance to flexible target dimensions using ref_static_distribution. Target dimension value is taken from the target_dim column."
+        },
+        {
+            "value": "STATIC",
+            "label": "Static Allocation",
+            "description": "Direct pass-through allocation with ratio=1.0. No lookup table required. Ideal for instrument aggregation and simple reclassification."
+        }
+    ],
 
     "dim_modes": {
         "source": [

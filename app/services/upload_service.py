@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 from app.models import db
 from app.models.dimensions import DimOrgUnit, DimProduct, DimCustomer, DimAccount
 from app.models.staging import StgInstData, StgGlData
-from app.models.allocation import RefStaticAllocation, RefOrgReclass
+from app.models.allocation import RefStaticAllocation, RefOrgReclass, RefStaticDistribution, RefStaticAlloc
 from app.models.ftp import RefInterestRate
 from app.models.workflow import UploadBatch
 
@@ -38,6 +38,8 @@ _STAGING_MODELS = {
     "stg_gl_data": StgGlData,
     "ref_static_allocation": RefStaticAllocation,
     "ref_org_reclass": RefOrgReclass,
+    "ref_static_distribution": RefStaticDistribution,
+    "ref_static_alloc": RefStaticAlloc,
     "ref_interest_rate": RefInterestRate,
 }
 
@@ -157,7 +159,12 @@ def _cast_value(value, col_cfg):
     elif col_type == "float":
         return float(value) if pd.notna(value) else col_cfg.get("default", 0)
     else:  # string
-        return str(value)
+        default = col_cfg.get("default")
+        try:
+            is_na = pd.isna(value)
+        except (TypeError, ValueError):
+            is_na = value is None
+        return default if is_na else str(value)
 
 
 def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
@@ -192,8 +199,8 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
                     value = row.get(col_name, col_cfg.get("default"))
                     record_data[col_name] = _cast_value(value, col_cfg)
 
-                # Add extra fields for allocation / reclass / interest-rate records
-                if data_type in ("ALLOCATION", "ORG_RECLASS", "INTEREST_RATE"):
+                # Add extra fields for allocation / reclass / interest-rate / distribution records
+                if data_type in ("ALLOCATION", "ORG_RECLASS", "INTEREST_RATE", "DISTRIBUTION", "STATIC_ALLOC"):
                     record_data["status"] = "PENDING"
                     record_data["maker_id"] = maker_id
 

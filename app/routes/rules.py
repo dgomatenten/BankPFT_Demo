@@ -21,6 +21,9 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
     entry_mode = request.form.get("entry_mode", "BOTH").strip().upper()
     if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
         entry_mode = "BOTH"
+    alloc_method = request.form.get("allocation_method", "RATIO").strip().upper()
+    if alloc_method not in ("RATIO", "DISTRIBUTION", "STATIC"):
+        alloc_method = "RATIO"
     join_keys = request.form.getlist("join_keys")
     join_key = ",".join(k.strip() for k in join_keys if k.strip()) or fallback_join_key
     filter_raw = request.form.get("filter_json", "").strip()
@@ -28,6 +31,7 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
     out_dim_raw = request.form.get("output_dim_json", "").strip()
     crd_dim_raw = request.form.get("credit_dim_json", "").strip()
     return {
+        "allocation_method": alloc_method,
         "entry_mode": entry_mode,
         "join_key": join_key,
         "generate_offset": (entry_mode != "CREDIT_ONLY"),
@@ -50,17 +54,22 @@ def list_rules():
 def new_rule():
     if request.method == "POST":
         form = _parse_rule_form(fallback_join_key="customer_id")
+        # For STATIC method, no lookup table / join key needed; keep whatever was submitted
+        lookup_table = request.form.get("lookup_table", "ref_static_allocation")
+        if form["allocation_method"] == "DISTRIBUTION":
+            lookup_table = "ref_static_distribution"
         rule = AllocationRule(
             name=request.form["name"],
             description=request.form.get("description", ""),
             source_table=request.form.get("source_table", "proc_inst_data"),
-            lookup_table=request.form.get("lookup_table", "ref_static_allocation"),
+            lookup_table=lookup_table,
             output_table=request.form.get("output_table", "fct_mgmt_instrument"),
             join_key=form["join_key"],
             filter_json=form["filter_json"],
             source_dim_json=form["source_dim_json"],
             output_dim_json=form["output_dim_json"],
             credit_dim_json=form["credit_dim_json"],
+            allocation_method=form["allocation_method"],
             entry_mode=form["entry_mode"],
             generate_offset=form["generate_offset"],
             created_by=current_user.username,
@@ -113,17 +122,25 @@ def import_rule():
         else:
             join_key_val = str(raw_jk).strip() or "customer_id"
 
+        raw_method = (data.get("allocation_method") or "RATIO").strip().upper()
+        if raw_method not in ("RATIO", "DISTRIBUTION", "STATIC"):
+            raw_method = "RATIO"
+        import_lookup = data.get("lookup_table", "ref_static_allocation")
+        if raw_method == "DISTRIBUTION":
+            import_lookup = "ref_static_distribution"
+
         rule = AllocationRule(
             name=data["name"],
             description=data.get("description", ""),
             source_table=data.get("source_table", "proc_inst_data"),
-            lookup_table=data.get("lookup_table", "ref_static_allocation"),
+            lookup_table=import_lookup,
             output_table=data.get("output_table", "fct_mgmt_instrument"),
             join_key=join_key_val,
             filter_json=_to_json(data.get("filter_json")),
             source_dim_json=_to_json(data.get("source_dim_json")),
             output_dim_json=_to_json(data.get("output_dim_json")),
             credit_dim_json=_to_json(data.get("credit_dim_json")),
+            allocation_method=raw_method,
             entry_mode=(
                 data.get("entry_mode") or
                 ("BOTH" if data.get("generate_offset", True) else "DEBIT_ONLY")
@@ -158,16 +175,20 @@ def edit_rule(rule_id):
     rule = AllocationRule.query.get_or_404(rule_id)
     if request.method == "POST":
         form = _parse_rule_form(fallback_join_key=rule.join_key)
+        lookup_table = request.form.get("lookup_table", rule.lookup_table)
+        if form["allocation_method"] == "DISTRIBUTION":
+            lookup_table = "ref_static_distribution"
         rule.name           = request.form["name"]
         rule.description    = request.form.get("description", "")
         rule.source_table   = request.form.get("source_table", rule.source_table)
-        rule.lookup_table   = request.form.get("lookup_table", rule.lookup_table)
+        rule.lookup_table   = lookup_table
         rule.output_table   = request.form.get("output_table", rule.output_table)
         rule.join_key       = form["join_key"]
         rule.filter_json    = form["filter_json"]
         rule.source_dim_json = form["source_dim_json"]
         rule.output_dim_json = form["output_dim_json"]
         rule.credit_dim_json = form["credit_dim_json"]
+        rule.allocation_method = form["allocation_method"]
         rule.entry_mode     = form["entry_mode"]
         rule.generate_offset = form["generate_offset"]
         db.session.commit()

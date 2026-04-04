@@ -35,7 +35,60 @@ class RefOrgReclass(db.Model):
     comments = db.Column(db.Text, nullable=True)
 
 
+class RefStaticDistribution(db.Model):
+    """Distribution table for Static Distribution allocation method.
+
+    Each row maps a source dimension value to a target dimension (target_dim)
+    with a ratio.  Use distribution_id to group rows that belong to the same
+    distribution set (ratios per distribution_id should sum to 1.0).
+    """
+    __tablename__ = "ref_static_distribution"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    distribution_id = db.Column(db.String(50), nullable=False, index=True)
+    # Source join columns — populate the one that matches the rule's join_key
+    customer_id = db.Column(db.String(20), nullable=True, index=True)
+    org_unit_id = db.Column(db.String(20), nullable=True, index=True)
+    product_code = db.Column(db.String(20), nullable=True, index=True)
+    # Target
+    target_dim = db.Column(db.String(50), nullable=False)
+    ratio = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
+    maker_id = db.Column(db.String(50), nullable=False)
+    checker_id = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    comments = db.Column(db.Text, nullable=True)
+
+
+class RefStaticAlloc(db.Model):
+    """Simple source-to-target mapping for Static Allocation method.
+
+    Used for 1:1 reclassification or aggregation.  The ratio defaults to 1.0;
+    no splitting occurs.  The join_key column and target_dim are matched by
+    the allocation engine at run time.
+    """
+    __tablename__ = "ref_static_alloc"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    alloc_id = db.Column(db.String(50), nullable=False, index=True)
+    # Source join columns — populate the one that matches the rule's join_key
+    customer_id = db.Column(db.String(20), nullable=True, index=True)
+    org_unit_id = db.Column(db.String(20), nullable=True, index=True)
+    product_code = db.Column(db.String(20), nullable=True, index=True)
+    # Target
+    target_dim = db.Column(db.String(50), nullable=False)
+    ratio = db.Column(db.Float, nullable=False, default=1.0)
+    status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
+    maker_id = db.Column(db.String(50), nullable=False)
+    checker_id = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    comments = db.Column(db.Text, nullable=True)
+
+
 class FctMgmtLedger(db.Model):
+    """GL-level allocation output — one row per account per debit/credit entry."""
     __tablename__ = "fct_mgmt_ledger"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     batch_run_id = db.Column(db.String(36), nullable=False, index=True)

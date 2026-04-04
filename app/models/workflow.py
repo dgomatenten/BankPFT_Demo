@@ -35,6 +35,7 @@ class AllocationRule(db.Model):
     source_dim_json = db.Column(db.Text, nullable=True)  # per-dimension source member filter
     output_dim_json = db.Column(db.Text, nullable=True)  # per-dimension output mapping for DEBIT
     credit_dim_json = db.Column(db.Text, nullable=True)  # per-dimension output mapping for CREDIT
+    allocation_method = db.Column(db.String(20), default="RATIO")  # RATIO | DISTRIBUTION | STATIC
     entry_mode = db.Column(db.String(20), default="BOTH")   # BOTH | DEBIT_ONLY | CREDIT_ONLY
     generate_offset = db.Column(db.Boolean, default=True)   # legacy
     offset_account = db.Column(db.String(50), nullable=True)  # legacy
