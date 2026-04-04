@@ -2,6 +2,36 @@
 
 A prototype **Management Allocation System** that redistributes financial balances and income from a Legal/Booking level to a Management level using static allocation ratios. Built with Flask, SQLAlchemy, and SQLite.
 
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Quick Start](#quick-start)
+- [Project Structure](#project-structure)
+- [JSON vs Database — What Lives Where](#json-vs-database--what-lives-where)
+- [Lookup Tables](#lookup-tables)
+- [Fund Transfer Pricing (FTP)](#fund-transfer-pricing-ftp)
+- [JSON Configuration Files](#json-configuration-files)
+- [User & Group Management](#user--group-management)
+- [Usage Workflow](#usage-workflow)
+- [Data Validation](#data-validation)
+- [Output Tables](#output-tables)
+- [Allocation Rule JSON Import](#allocation-rule-json-import)
+- [Data File Management](#data-file-management)
+- [REST API](#rest-api)
+- [start.sh Reference](#startsh-reference)
+- **Implementation Considerations**
+  - [Authentication (Azure AD / Entra ID)](#authentication-implementation-consideration)
+  - [Batch Parallel Run & Async UI](#batch-parallel-run--async-ui-implementation-consideration)
+  - [Stored Procedure Framework](#stored-procedure-implementation-consideration)
+  - [Custom Stored Procedure Batch Runner](#custom-stored-procedure-batch-runner--implementation-consideration)
+  - [Logging Framework](#logging-framework--implementation-consideration)
+  - [Exception & Error Handling Framework](#exception--error-handling-framework--implementation-consideration)
+- [License](#license)
+
+---
+
 ## Features
 
 | Module | Description |
