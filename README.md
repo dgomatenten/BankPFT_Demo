@@ -1425,6 +1425,315 @@ SELECT /*+ PARALLEL(src, 4) PARALLEL(r, 4) */ ...
 
 ---
 
+## Custom Stored Procedure Batch Runner — Implementation Consideration
+
+Beyond the allocation and FTP engines, a **generic SP runner** allows any database stored procedure to be registered, scheduled, and executed through the same batch framework — without writing new Python engine code. This is useful for custom aggregations, regulatory extracts, inter-system feeds, or any process that a DBA already owns in SQL.
+
+The SP runner is a **first-class batch step type** alongside `ALLOCATION` and `FTP`, tracked in the same `batch_run` family of tables, visible in the same batch history UI, and callable through the same REST API.
+
+---
+
+### Data model — `custom_sp_job`
+
+```sql
+-- migrations/V011__custom_sp_job.sql
+CREATE TABLE custom_sp_job (
+    id          SERIAL          PRIMARY KEY,
+    name        VARCHAR(100)    NOT NULL UNIQUE,
+    description TEXT,
+    sp_name     VARCHAR(200)    NOT NULL,   -- fully-qualified: schema.sp_name
+    params_json TEXT,                       -- JSON array of {name, type, value_expr}
+    is_active   BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_by  VARCHAR(50),
+    created_at  TIMESTAMP       DEFAULT NOW(),
+    updated_at  TIMESTAMP       DEFAULT NOW()
+);
+
+CREATE TABLE custom_sp_run (
+    id           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id       INTEGER       NOT NULL REFERENCES custom_sp_job(id),
+    as_of_date   DATE          NOT NULL,
+    status       VARCHAR(20)   NOT NULL DEFAULT 'RUNNING',  -- RUNNING | COMPLETED | FAILED
+    started_at   TIMESTAMP     DEFAULT NOW(),
+    completed_at TIMESTAMP,
+    run_by       VARCHAR(50)   NOT NULL,
+    return_json  TEXT,         -- OUT params / result summary stored as JSON
+    error_message TEXT
+);
+```
+
+**SQLAlchemy models (`app/models/workflow.py` addition):**
+
+```python
+class CustomSpJob(db.Model):
+    """Registry of custom stored procedures available as batch steps."""
+    __tablename__ = "custom_sp_job"
+    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name        = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
+    sp_name     = db.Column(db.String(200), nullable=False)   # e.g. "dbo.sp_regulatory_extract"
+    params_json = db.Column(db.Text, nullable=True)           # JSON param spec (see below)
+    is_active   = db.Column(db.Boolean, default=True)
+    created_by  = db.Column(db.String(50), nullable=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    runs        = db.relationship("CustomSpRun", backref="job", lazy="dynamic")
+
+
+class CustomSpRun(db.Model):
+    """Execution record for a single custom SP job invocation."""
+    __tablename__ = "custom_sp_run"
+    id           = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    job_id       = db.Column(db.Integer, db.ForeignKey("custom_sp_job.id"), nullable=False)
+    as_of_date   = db.Column(db.Date, nullable=False)
+    status       = db.Column(db.String(20), default="RUNNING")
+    started_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    run_by       = db.Column(db.String(50), nullable=False)
+    return_json  = db.Column(db.Text, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+```
+
+---
+
+### Parameter specification (`params_json`)
+
+Each job stores its parameter list as a JSON array. `value_expr` can be a literal or one of the built-in tokens (`{as_of_date}`, `{run_by}`, `{run_id}`) that the runner substitutes at call time.
+
+```json
+[
+  { "name": "p_as_of_date", "type": "date",    "value_expr": "{as_of_date}" },
+  { "name": "p_entity_id",  "type": "integer", "value_expr": "10" },
+  { "name": "p_run_by",     "type": "string",  "value_expr": "{run_by}" }
+]
+```
+
+Supported `type` values: `"date"`, `"integer"`, `"float"`, `"string"`, `"boolean"`.
+
+---
+
+### Service layer (`app/services/sp_runner.py`)
+
+```python
+# app/services/sp_runner.py
+"""Generic stored-procedure batch runner — independent of allocation and FTP engines."""
+from __future__ import annotations
+import json
+import uuid
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import Any
+
+from app.models import db
+from app.models.workflow import CustomSpJob, CustomSpRun
+
+# ── Token substitution ────────────────────────────────────────────────────────
+def _resolve_value(expr: str, context: dict) -> Any:
+    """Replace {token} placeholders; cast to declared type."""
+    return expr.format(**context)
+
+_TYPE_CASTS = {
+    "date":    lambda v: date.fromisoformat(v) if isinstance(v, str) else v,
+    "integer": int,
+    "float":   float,
+    "string":  str,
+    "boolean": lambda v: str(v).lower() in ("1", "true", "yes"),
+}
+
+def _build_params(params_spec: list[dict], context: dict) -> dict:
+    params = {}
+    for p in params_spec:
+        raw   = _resolve_value(str(p.get("value_expr", "")), context)
+        cast  = _TYPE_CASTS.get(p["type"], str)
+        params[p["name"]] = cast(raw)
+    return params
+
+# ── Dialect-aware CALL builder ────────────────────────────────────────────────
+def _build_call_sql(sp_name: str, params: dict, dialect: str) -> tuple[str, dict]:
+    """Return (sql_string, bind_dict) for the target dialect."""
+    named = {k: v for k, v in params.items()}
+    if dialect == "postgresql":
+        placeholders = ", ".join(f":{k}" for k in named)
+        sql = f"CALL {sp_name}({placeholders})"
+    elif dialect == "oracle":
+        placeholders = ", ".join(f":{k}" for k in named)
+        sql = f"BEGIN {sp_name}({placeholders}); END;"
+    else:                 # sqlite / dev — raise clearly
+        raise NotImplementedError(f"Custom SP runner not supported on dialect: {dialect}")
+    return sql, named
+
+# ── Main entry point ──────────────────────────────────────────────────────────
+@dataclass
+class SpRunResult:
+    run_id:   str
+    status:   str
+    returned: dict = field(default_factory=dict)
+    error:    str  = ""
+
+def run_custom_sp(job_id: int, as_of_date: date, run_by: str) -> SpRunResult:
+    """Execute a registered custom SP job and persist the run record."""
+    job = db.session.get(CustomSpJob, job_id)
+    if not job or not job.is_active:
+        raise ValueError(f"CustomSpJob {job_id} not found or inactive")
+
+    run_id  = str(uuid.uuid4())
+    context = {
+        "as_of_date": as_of_date.isoformat(),
+        "run_by":     run_by,
+        "run_id":     run_id,
+    }
+
+    # Persist RUNNING record
+    sp_run = CustomSpRun(
+        id=run_id, job_id=job_id, as_of_date=as_of_date,
+        status="RUNNING", run_by=run_by,
+    )
+    db.session.add(sp_run)
+    db.session.commit()
+
+    params_spec = json.loads(job.params_json or "[]")
+    params      = _build_params(params_spec, context)
+    dialect     = db.engine.dialect.name
+
+    try:
+        sql, binds = _build_call_sql(job.sp_name, params, dialect)
+        with db.engine.begin() as conn:
+            result   = conn.execute(db.text(sql), binds)
+            returned = dict(result.fetchone()._mapping) if result.returns_rows else {}
+
+        sp_run.status       = "COMPLETED"
+        sp_run.return_json  = json.dumps(returned)
+        sp_run.completed_at = datetime.utcnow()
+        db.session.commit()
+        return SpRunResult(run_id=run_id, status="COMPLETED", returned=returned)
+
+    except Exception as exc:
+        sp_run.status        = "FAILED"
+        sp_run.error_message = str(exc)
+        sp_run.completed_at  = datetime.utcnow()
+        db.session.commit()
+        return SpRunResult(run_id=run_id, status="FAILED", error=str(exc))
+```
+
+---
+
+### Route additions (`app/routes/batch.py`)
+
+```python
+from app.services.sp_runner import run_custom_sp
+from app.models.workflow import CustomSpJob, CustomSpRun
+
+@bp.route("/run-custom-sp", methods=["POST"])
+@login_required
+def run_custom_sp_batch():
+    job_id    = request.form.get("job_id", type=int)
+    as_of_str = request.form.get("as_of_date", "")
+    if not job_id:
+        flash("Please select a custom SP job.", "danger")
+        return redirect(url_for("batch.list_batches"))
+    try:
+        as_of = datetime.strptime(as_of_str, "%Y-%m-%d").date() if as_of_str else date.today()
+    except ValueError:
+        flash("Invalid date. Use YYYY-MM-DD.", "danger")
+        return redirect(url_for("batch.list_batches"))
+
+    result = run_custom_sp(job_id, as_of, current_user.username)
+    if result.status == "COMPLETED":
+        flash(f"Custom SP completed. Returned: {result.returned}", "success")
+    else:
+        flash(f"Custom SP failed: {result.error}", "danger")
+    return redirect(url_for("batch.custom_sp_run_detail", run_id=result.run_id))
+
+
+@bp.route("/custom-sp/<run_id>")
+@login_required
+def custom_sp_run_detail(run_id):
+    run = CustomSpRun.query.get_or_404(run_id)
+    return render_template("batch/custom_sp_detail.html", run=run)
+```
+
+---
+
+### REST API additions (`app/routes/api.py`)
+
+```python
+# GET  /api/v1/batch/custom-sp-jobs   — list registered jobs
+# POST /api/v1/batch/custom-sp/run    — trigger a job
+# GET  /api/v1/batch/custom-sp/<id>   — poll run status
+
+@bp.get("/batch/custom-sp-jobs")
+@api_login_required
+def list_custom_sp_jobs():
+    jobs = CustomSpJob.query.filter_by(is_active=True).all()
+    return jsonify([{"id": j.id, "name": j.name, "sp_name": j.sp_name} for j in jobs])
+
+@bp.post("/batch/custom-sp/run")
+@api_login_required
+def run_custom_sp_api():
+    body     = request.get_json()
+    job_id   = body.get("job_id")
+    as_of    = date.fromisoformat(body.get("as_of_date", date.today().isoformat()))
+    result   = run_custom_sp(job_id, as_of, g.current_user.username)
+    code     = 200 if result.status == "COMPLETED" else 500
+    return jsonify({"run_id": result.run_id, "status": result.status,
+                    "returned": result.returned, "error": result.error}), code
+
+@bp.get("/batch/custom-sp/<run_id>")
+@api_login_required
+def custom_sp_run_status(run_id):
+    run = CustomSpRun.query.get_or_404(run_id)
+    return jsonify({"run_id": run.id, "job_id": run.job_id,
+                    "status": run.status, "as_of_date": str(run.as_of_date),
+                    "return_json": json.loads(run.return_json or "{}"),
+                    "error_message": run.error_message})
+```
+
+**Example curl calls:**
+
+```bash
+# List available custom SP jobs
+curl -u admin:admin http://localhost:5000/api/v1/batch/custom-sp-jobs
+
+# Trigger a custom SP job
+curl -u admin:admin -X POST http://localhost:5000/api/v1/batch/custom-sp/run \
+  -H "Content-Type: application/json" \
+  -d '{"job_id": 1, "as_of_date": "2026-03-31"}'
+
+# Poll run status
+curl -u admin:admin http://localhost:5000/api/v1/batch/custom-sp/a3f9b1c2-...
+```
+
+---
+
+### Admin UI — registering a new custom SP job
+
+The existing admin pattern (user/group forms) is extended with a simple job registry form:
+
+| Field | Input | Example |
+|---|---|---|
+| Name | Text | `REGULATORY_EXTRACT_MAS610` |
+| Description | Textarea | `Monthly MAS 610 extract to reporting schema` |
+| SP Name | Text | `reporting.sp_mas610_extract` |
+| Parameters | JSON textarea | `[{"name":"p_as_of_date","type":"date","value_expr":"{as_of_date}"}]` |
+| Active | Checkbox | ✓ |
+
+Once registered, the job appears in the batch list UI alongside Allocation and FTP run options — same page, same "Run" button pattern.
+
+---
+
+### Key design principles
+
+| Principle | Detail |
+|---|---|
+| Zero new engine code per SP | Register in the DB admin; the generic runner handles the call |
+| Complete audit trail | Every invocation writes a `custom_sp_run` row with status, timestamps, `return_json`, and errors |
+| Parameter injection safety | Parameters are bound via `db.text()` named binds — never string-interpolated into SQL |
+| Dialect-aware | Works on PostgreSQL and Oracle; raises `NotImplementedError` clearly on SQLite/dev |
+| Same batch UI/API surface | `CustomSpRun` appears in batch history alongside `BatchRun` and `FtpRun` |
+| Separation of concerns | SP Runner knows nothing about allocation or FTP logic — it only calls, logs, and returns |
+
+---
+
 ## License
 
 Prototype / Demo — not for production use.
