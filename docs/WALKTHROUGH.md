@@ -42,6 +42,11 @@ This guide walks through every screen in the Management Allocation System, expla
 34. [REST API — Overview](#34-rest-api--overview)
 35. [REST API — Data File Endpoints](#35-rest-api--data-file-endpoints)
 36. [REST API — Batch Endpoints](#36-rest-api--batch-endpoints)
+37. [Batch Definitions — List](#37-batch-definitions--list)
+38. [Batch Definitions — New Definition](#38-batch-definitions--new-definition)
+39. [Batch Definitions — Detail & Step Configuration](#39-batch-definitions--detail--step-configuration)
+40. [Batch Execution (Redesigned Screen)](#40-batch-execution-redesigned-screen)
+41. [Batch Execution — Step-by-Step Detail](#41-batch-execution--step-by-step-detail)
 
 ---
 
@@ -418,41 +423,38 @@ After a successful import, the system redirects to the **Rule Detail** page. Eve
 
 **URL:** `/batch`
 
-Run allocation rules or FTP calculations against processed data and view past run history.
+The primary interface for running multi-task batch definitions against processed data. Batch definitions group allocation, FTP, data file import/export, and custom stored procedure steps into a single orchestrated run.
 
-![Batch Execution](images/06_batch_execution.png)
+![Batch Execution](images/26_batch_execution.png)
 
-The page is divided into two run panels side-by-side and two separate history tables below.
+The page has three sections:
 
-### Run Allocation Batch
+### Run a Batch (primary action)
 
-1. **Select a Rule** — choose from active allocation rules
-2. **As-of Date** — the date to filter source data
-3. **Click Run** — executes the Pandas-based allocation engine
+1. **Select a Batch Definition** — choose from active multi-task batch definitions
+2. **As-of Date** — the calculation date passed to all steps in the batch
+3. **Step Preview panel** — dynamically shows the steps in the selected definition as colored badges (Allocation/FTP/Import/Export/Custom SP), the continue-on-error setting, and the description
+4. **Execute** — submits the run; the engine executes each step sequentially and redirects to the Execution Detail page
 
-**What happens during execution:**
-1. Source data is loaded from the configured table (filtered by date)
-2. **Data filters** (`filter_json`) are applied — rows not matching are dropped
-3. **Source dimension filters** (`source_dim_json`) are applied per dimension
-4. Allocation ratios are loaded from the lookup table (APPROVED status only)
-5. A LEFT JOIN matches source rows to ratios by the rule's join key
-6. For each matched row: `allocated_balance = source_balance × ratio`
-7. If **entry_mode** = **BOTH** or **DEBIT_ONLY**: **DEBIT entry** — output dimensions resolved per `output_dim_json`
-8. If **entry_mode** = **BOTH** or **CREDIT_ONLY**: **CREDIT entry** — dimensions resolved per `credit_dim_json` (defaults to same-as-source), balance = negative
-9. **Orphan rows** (no matching ratio) — DEBIT only at source org (`default_ratio` from config)
+### Batch Definitions table
 
-### Run FTP Batch
+Lists all active batch definitions with their step types shown as inline colored badges. Use the **Edit** link to open the definition for reconfiguring steps.
 
-1. **As-of Date** — the calculation date
-2. **Click Run FTP** — triggers the FTP moving-average engine
+### Execution History table
 
-**What the FTP engine does:**
-1. Loads all active `ftp_product_config` records
-2. For each distinct product, queries `proc_inst_data` for instruments on the as-of date
-3. Computes the moving-average `base_rate` from approved interest rate history over the lookback window
-4. Writes `base_rate` and `cost_of_fund = balance × base_rate × (days_in_month / days_in_year)` back to each instrument row
+Shows the last 30 batch executions with:
+- **Run ID** link → Execution Detail page
+- **Batch name** and **as-of date**
+- **Status** badge (RUNNING / COMPLETED / FAILED / PARTIAL)
+- **Steps** — completed/total count and failed count
+- **Run by** and **started** timestamp
+- **Duration** in seconds or minutes
 
-The **Allocation Batch History** and **FTP Run History** tables are shown separately below the run forms.
+### Advanced (collapsible)
+
+A collapsible accordion at the bottom preserves the original individual run panels if you need to trigger a single allocation rule or FTP run directly without a batch definition.
+
+**Create a new batch definition** via the **New Batch Definition** button in the page header (see [Section 38](#38-batch-definitions--new-definition)).
 
 ---
 
@@ -1696,3 +1698,140 @@ curl $AUTH $BASE/api/v1/datafile/batch/<batch_id>
 curl $AUTH $BASE/api/v1/batch/allocation/<batch_id>
 curl $AUTH $BASE/api/v1/batch/ftp/<run_id>
 ```
+
+---
+
+## 37. Batch Definitions — List
+
+**URL:** `/batch/definitions`
+
+Manage all multi-task batch definitions. A batch definition is a named, ordered sequence of steps (allocation rules, FTP runs, data file imports/exports, and custom stored procedures) that are executed together in a single orchestrated run.
+
+![Batch Definitions List](images/27_batch_definitions.png)
+
+**Table columns:**
+
+| Column | Description |
+|---|---|
+| **Name** | Clickable link to the definition detail/configuration page |
+| **Description** | Optional free-text description |
+| **Steps** | Number of task steps configured |
+| **On Error** | `Stop` (default) or `Continue` — controls whether remaining steps run after a failure |
+| **Active** | Green check = active, visible on the Batch Execution screen |
+| **Actions** | Edit / Delete |
+
+**Buttons:**
+- **New Batch Definition** — opens the creation form (see [Section 38](#38-batch-definitions--new-definition))
+- Each definition name links to its **Detail** page where steps are managed (see [Section 39](#39-batch-definitions--detail--step-configuration))
+
+---
+
+## 38. Batch Definitions — New Definition
+
+**URL:** `/batch/definitions/new`
+
+Create a new multi-task batch definition.
+
+![New Batch Definition](images/28_batch_def_new.png)
+
+**Fields:**
+
+| Field | Description |
+|---|---|
+| **Name** | Unique display name for this batch |
+| **Description** | Optional description shown in the step preview and history |
+| **Continue on Error** | If checked, subsequent steps run even when an earlier step fails; default is to stop on first failure |
+
+After saving, you are taken to the **Definition Detail** page to add and order steps.
+
+---
+
+## 39. Batch Definitions — Detail & Step Configuration
+
+**URL:** `/batch/definitions/<id>`
+
+Configure the ordered steps of a batch definition and run it.
+
+![Batch Definition Detail](images/29_batch_def_detail.png)
+
+### Left panel — Step list
+
+Shows all configured steps in execution order. Each row shows:
+- **Step #** — execution sequence number
+- **Type badge** — color-coded: primary=ALLOCATION, info=FTP, success=DATAFILE\_IMPORT, warning=DATAFILE\_EXPORT, secondary=CUSTOM\_SP
+- **Ref ID** — the allocation rule ID, data file format name, or SP name for this step
+- **Label** — human-readable step name
+- **Remove** — removes this step from the definition
+
+### Add Step form
+
+| Field | Description |
+|---|---|
+| **Task Type** | ALLOCATION / FTP / DATAFILE\_IMPORT / DATAFILE\_EXPORT / CUSTOM\_SP |
+| **Ref** | Dynamic field — shows a rule dropdown for ALLOCATION, a format select for import/export, or a text field for CUSTOM\_SP. Hidden for FTP (no ref needed) |
+| **Label** | Auto-filled from the type+ref when left blank; override as needed |
+
+New steps are appended at the end and assigned the next step order number.
+
+### Right panel — Run This Batch
+
+- **As-of Date** — the calculation date for all steps
+- **Execute** — triggers the batch run and redirects to the **Execution Detail** page
+- **Recent executions** — a compact table of the last 5 runs for this definition with status and duration
+
+---
+
+## 40. Batch Execution (Redesigned Screen)
+
+**URL:** `/batch`
+
+Once one or more batch definitions exist, the Batch Execution screen shows definitions and their execution history prominently.
+
+![Batch Execution with History](images/30_batch_def_run.png)
+
+The **Step Preview** panel on the right side of the Run card dynamically populates when you select a definition:
+- Colored step badges (one per task step)
+- **On Error** badge — Stop or Continue
+- Description text
+
+This lets you confirm the right definition is selected before executing.
+
+---
+
+## 41. Batch Execution — Step-by-Step Detail
+
+**URL:** `/batch/executions/<execution_id>`
+
+View the granular results of a multi-task batch execution, including per-step status and links to each step's underlying run record.
+
+![Batch Execution Step Detail](images/31_batch_execution_detail.png)
+
+### Summary cards
+
+| Card | Description |
+|---|---|
+| **Started** | Timestamp when the batch began |
+| **Completed** | Timestamp when all steps finished (or the run failed) |
+| **Total Steps** | Number of steps in the definition at execution time |
+| **Failed / Skipped** | Count of steps that failed or were skipped due to a prior failure |
+
+### Step results table
+
+| Column | Description |
+|---|---|
+| **Step #** | Execution order |
+| **Type** | Color-coded task type badge |
+| **Label** | The step's display label |
+| **Status** | PENDING / RUNNING / COMPLETED / FAILED / SKIPPED |
+| **Summary / Error** | Engine summary (row counts, variance) or error message |
+| **Started / Ended** | Per-step timestamps |
+| **Run ID** | Deep link to the underlying engine run — allocation BatchRun detail, FTP run detail, or DataFile batch detail |
+
+**Status badge colors:**
+- `COMPLETED` → green
+- `FAILED` → red
+- `SKIPPED` → secondary (grey)
+- `RUNNING` → blue
+- `PENDING` → light
+
+**Navigation**: use the breadcrumb or **Back to Batch Execution** link to return to the main `/batch` screen.

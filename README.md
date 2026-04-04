@@ -10,7 +10,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
-| **Batch Execution** | Run allocation rules against processed instrument data using Pandas-based "shredding" logic. FTP runs can also be triggered from the same batch page |
+| **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. The batch execution screen selects a definition, previews its steps, and executes them sequentially. Individual steps can also be run directly from an Advanced panel |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
 | **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default) |
@@ -128,14 +128,14 @@ app/
 │   ├── allocation.py        # RefStaticAllocation, RefOrgReclass, FctMgmtLedger, FctMgmtInstrument
 │   ├── ftp.py               # RefInterestRate, FtpProductConfig, FtpRun
 │   ├── datafile.py          # DataFileBatch (import/export run history)
-│   └── workflow.py          # UploadBatch, AllocationRule, BatchRun
+│   └── workflow.py          # UploadBatch, AllocationRule, BatchRun, BatchDefinition, BatchTask, BatchExecution, BatchExecutionStep
 ├── routes/
 │   ├── auth.py              # Login, logout, change password
 │   ├── admin.py             # User & group management (admin only)
 │   ├── dashboard.py         # Home dashboard
 │   ├── upload.py            # Data upload with Maker/Checker
 │   ├── rules.py             # Allocation rule CRUD + JSON import
-│   ├── batch.py             # Batch execution (Allocation + FTP)
+│   ├── batch.py             # Batch definitions, execution, and individual Allocation + FTP runs
 │   ├── ftp.py               # FTP dashboard, config CRUD, rate browser, run detail
 │   ├── reports.py           # Reports & table browser
 │   ├── datafile.py          # Data File Management UI (inbox/outbox, batch history)
@@ -147,6 +147,7 @@ app/
 │   ├── allocation_engine.py # Config-driven Pandas shredding engine
 │   ├── ftp_engine.py        # FTP moving-average engine (run_ftp)
 │   ├── datafile_service.py  # Fixed-length & delimited import/export engine
+│   ├── batch_executor.py    # Multi-task batch orchestrator (sequential step dispatch)
 │   └── testdata_service.py  # Test data generators (incl. FTP rate seeding)
 └── templates/               # Jinja2 / Bootstrap 5 templates
 ```
@@ -217,6 +218,41 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 ```
 
 **To add a new source table:** add its column config to `allocation_config.json` and its option to `rule_config.json`.
+
+### Multi-Task Batch Definitions
+
+The batch system allows grouping multiple engine calls into a single, ordered execution sequence.
+
+| Aspect | Source | Details |
+|---|---|---|
+| Batch definition name, description, continue-on-error | **DB** `batch_definition` | Created by admin in the Batch Definitions UI |
+| Step order, task type, ref ID, label | **DB** `batch_task` | Each step references a rule ID, format name, or SP name |
+| Execution record (start/end, status, as-of date) | **DB** `batch_execution` | UUID primary key; created by `batch_executor.run_batch()` |
+| Per-step result (status, summary, error, ref_run_id) | **DB** `batch_execution_step` | One row per step; `ref_run_id` links to underlying engine run |
+
+**Supported task types:**
+
+| Type | Engine called | `ref_id` meaning |
+|---|---|---|
+| `ALLOCATION` | `allocation_engine.run_allocation(ref_id, as_of, user)` | `allocation_rule.id` |
+| `FTP` | `ftp_engine.run_ftp(as_of, user)` | *(none — runs all active FTP configs)* |
+| `DATAFILE_IMPORT` | `datafile_service.import_file(path, format_name)` | Format name from `upload_config.json` |
+| `DATAFILE_EXPORT` | `datafile_service.export_data(format_name, user, date)` | Format name |
+| `CUSTOM_SP` | *(placeholder — SP name stored, execution TBD)* | Stored procedure name |
+
+**Orchestrator flow** (`app/services/batch_executor.py`):
+```
+1. Load BatchDefinition + ordered BatchTask list
+2. Create BatchExecution record (RUNNING)
+3. Pre-create all BatchExecutionStep records (PENDING)
+4. For each step in order:
+   a. Mark step RUNNING
+   b. Dispatch to correct engine based on task_type
+   c. On success: mark COMPLETED, store ref_run_id + summary
+   d. On failure: mark FAILED, store error_message
+      - if continue_on_error=False → mark remaining steps SKIPPED, stop
+5. Mark BatchExecution COMPLETED / FAILED / PARTIAL
+```
 
 ## Lookup Tables
 
