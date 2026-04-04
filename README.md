@@ -1107,6 +1107,324 @@ services:
 
 ---
 
+## Stored Procedure Implementation Consideration
+
+The current allocation engine runs in Python/pandas (in-process). For production on a scalable RDBMS such as **PostgreSQL** or **Oracle**, pushing the shredding logic into the database as a stored procedure eliminates row-by-row Python overhead, network round-trips for large datasets, and ORM overhead — all data movement stays inside the DB engine.
+
+---
+
+### Why stored procedures for an allocation engine
+
+| Concern | Python/pandas (current) | Stored procedure (target) |
+|---|---|---|
+| 10 M instrument rows | Pulls all rows into memory | Set-based `INSERT … SELECT` — never leaves DB |
+| Network cost | Rows travel app → DB twice (read + write) | Zero network transfer |
+| Parallelism | Python GIL limits threads | DB executor can parallel-scan and parallel-insert |
+| Atomicity | Explicit `db.session.commit()` | Wrapped in a single DB transaction block |
+| Auditing | Python logs | `BEGIN`/`COMMIT` visible in DB audit trail |
+| Hot deployment | Code redeploy required | `REPLACE PROCEDURE` with no app restart |
+
+---
+
+### PostgreSQL — `PL/pgSQL` stored procedure
+
+```sql
+-- migrations/V010__sp_run_allocation.sql
+CREATE OR REPLACE PROCEDURE sp_run_allocation(
+    p_rule_id    INTEGER,
+    p_as_of_date DATE,
+    p_run_by     VARCHAR(50),
+    OUT p_batch_run_id UUID,
+    OUT p_output_rows  INTEGER,
+    OUT p_orphan_rows  INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_rule          allocation_rule%ROWTYPE;
+    v_batch_run_id  UUID := gen_random_uuid();
+    v_started_at    TIMESTAMP := NOW();
+BEGIN
+    -- 1. Load rule definition
+    SELECT * INTO v_rule FROM allocation_rule WHERE id = p_rule_id AND is_active = TRUE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Rule % not found or inactive', p_rule_id;
+    END IF;
+
+    -- 2. Register batch run
+    INSERT INTO batch_run (id, rule_id, as_of_date, status, started_at, run_by)
+    VALUES (v_batch_run_id, p_rule_id, p_as_of_date, 'RUNNING', v_started_at, p_run_by);
+
+    -- 3. DEBIT entries: source JOIN lookup → output
+    INSERT INTO fct_mgmt_ledger
+        (id, as_of_date, account_id, cost_centre, product, amount, entry_type, batch_run_id)
+    SELECT
+        gen_random_uuid(),
+        p_as_of_date,
+        r.output_account_id,
+        r.output_cost_centre,
+        src.product,
+        src.balance,
+        'DEBIT',
+        v_batch_run_id
+    FROM proc_inst_data  src
+    JOIN ref_static_allocation r
+      ON src.customer_id = r.customer_id
+    WHERE src.as_of_date = p_as_of_date;
+
+    GET DIAGNOSTICS p_output_rows = ROW_COUNT;
+
+    -- 4. CREDIT offset entries
+    INSERT INTO fct_mgmt_ledger
+        (id, as_of_date, account_id, cost_centre, product, amount, entry_type, batch_run_id)
+    SELECT
+        gen_random_uuid(),
+        p_as_of_date,
+        r.offset_account_id,
+        r.output_cost_centre,
+        src.product,
+        -src.balance,
+        'CREDIT',
+        v_batch_run_id
+    FROM proc_inst_data  src
+    JOIN ref_static_allocation r
+      ON src.customer_id = r.customer_id
+    WHERE src.as_of_date = p_as_of_date;
+
+    -- 5. Orphan count (rows with no lookup match)
+    SELECT COUNT(*) INTO p_orphan_rows
+    FROM proc_inst_data src
+    LEFT JOIN ref_static_allocation r ON src.customer_id = r.customer_id
+    WHERE src.as_of_date = p_as_of_date AND r.customer_id IS NULL;
+
+    -- 6. Close batch run
+    UPDATE batch_run
+    SET status       = 'COMPLETED',
+        output_row_count = p_output_rows,
+        orphan_count     = p_orphan_rows,
+        completed_at     = NOW()
+    WHERE id = v_batch_run_id;
+
+    p_batch_run_id := v_batch_run_id;
+
+EXCEPTION WHEN OTHERS THEN
+    UPDATE batch_run
+    SET status = 'FAILED', error_message = SQLERRM, completed_at = NOW()
+    WHERE id = v_batch_run_id;
+    RAISE;
+END;
+$$;
+```
+
+---
+
+### Oracle — `PL/SQL` equivalent
+
+```sql
+-- Oracle: same logic, Oracle syntax
+CREATE OR REPLACE PROCEDURE sp_run_allocation(
+    p_rule_id       IN  NUMBER,
+    p_as_of_date    IN  DATE,
+    p_run_by        IN  VARCHAR2,
+    p_batch_run_id  OUT VARCHAR2,
+    p_output_rows   OUT NUMBER,
+    p_orphan_rows   OUT NUMBER
+)
+AS
+    v_batch_run_id VARCHAR2(36) := LOWER(RAWTOHEX(SYS_GUID()));
+    v_err_msg      VARCHAR2(4000);
+BEGIN
+    INSERT INTO batch_run (id, rule_id, as_of_date, status, started_at, run_by)
+    VALUES (v_batch_run_id, p_rule_id, p_as_of_date, 'RUNNING', SYSDATE, p_run_by);
+
+    INSERT INTO fct_mgmt_ledger (id, as_of_date, account_id, cost_centre, product, amount, entry_type, batch_run_id)
+    SELECT SYS_GUID(), p_as_of_date, r.output_account_id, r.output_cost_centre,
+           src.product, src.balance, 'DEBIT', v_batch_run_id
+    FROM proc_inst_data src
+    JOIN ref_static_allocation r ON src.customer_id = r.customer_id
+    WHERE src.as_of_date = p_as_of_date;
+
+    p_output_rows := SQL%ROWCOUNT;
+
+    -- credit entries ...
+
+    SELECT COUNT(*) INTO p_orphan_rows
+    FROM proc_inst_data src
+    LEFT JOIN ref_static_allocation r ON src.customer_id = r.customer_id
+    WHERE src.as_of_date = p_as_of_date AND r.customer_id IS NULL;
+
+    UPDATE batch_run
+    SET status = 'COMPLETED', output_row_count = p_output_rows,
+        orphan_count = p_orphan_rows, completed_at = SYSDATE
+    WHERE id = v_batch_run_id;
+
+    COMMIT;
+    p_batch_run_id := v_batch_run_id;
+
+EXCEPTION WHEN OTHERS THEN
+    v_err_msg := SUBSTR(SQLERRM, 1, 4000);
+    UPDATE batch_run SET status = 'FAILED', error_message = v_err_msg, completed_at = SYSDATE
+    WHERE id = v_batch_run_id;
+    COMMIT;
+    RAISE;
+END sp_run_allocation;
+/
+```
+
+---
+
+### Python framework for calling stored procedures
+
+Replace the pandas logic in `allocation_engine.py` with a thin SP dispatcher. The Python layer becomes orchestration only — auth, parameter validation, result surfacing.
+
+```python
+# app/services/sp_engine.py
+"""
+Stored-procedure dispatch layer.
+Replaces the pandas shredding loop when running on PostgreSQL or Oracle.
+"""
+from __future__ import annotations
+import uuid
+from datetime import date
+from dataclasses import dataclass
+from app.models import db
+from app.models.workflow import BatchRun
+
+# ── Dialect registry ──────────────────────────────────────────────────────────
+_SP_CALL: dict[str, str] = {
+    # dialect  : CALL syntax
+    "postgresql": "CALL sp_run_allocation(:rule_id, :as_of_date, :run_by, NULL, NULL, NULL)",
+    "oracle":     "BEGIN sp_run_allocation(:rule_id, :as_of_date, :run_by, :batch_run_id, :output_rows, :orphan_rows); END;",
+}
+
+@dataclass
+class SpResult:
+    batch_run_id: str
+    output_rows:  int
+    orphan_rows:  int
+    status:       str
+
+
+def run_rule_via_sp(rule_id: int, as_of_date: date, run_by: str) -> SpResult:
+    """
+    Call the database stored procedure for a single allocation rule.
+    Works on PostgreSQL (psycopg2 / asyncpg) and Oracle (cx_Oracle / oracledb).
+    """
+    dialect = db.engine.dialect.name          # "postgresql" | "oracle" | "sqlite"
+    if dialect not in _SP_CALL:
+        raise NotImplementedError(f"SP dispatch not supported for dialect: {dialect}")
+
+    sql = _SP_CALL[dialect]
+
+    with db.engine.begin() as conn:           # auto-commit on exit
+        if dialect == "postgresql":
+            # psycopg2 returns OUT params as a result row for CALL
+            result = conn.execute(
+                db.text(sql),
+                {"rule_id": rule_id, "as_of_date": as_of_date, "run_by": run_by},
+            )
+            row = result.fetchone()
+            batch_run_id = str(row[0]) if row else str(uuid.uuid4())
+            output_rows  = int(row[1]) if row else 0
+            orphan_rows  = int(row[2]) if row else 0
+
+        elif dialect == "oracle":
+            # cx_Oracle / python-oracledb: use out-bind variables
+            import oracledb
+            raw_conn = conn.connection.dbapi_connection
+            cursor   = raw_conn.cursor()
+            b_id     = cursor.var(oracledb.STRING)
+            b_out    = cursor.var(oracledb.NUMBER)
+            b_orp    = cursor.var(oracledb.NUMBER)
+            cursor.execute(
+                "BEGIN sp_run_allocation(:1,:2,:3,:4,:5,:6); END;",
+                [rule_id, as_of_date, run_by, b_id, b_out, b_orp],
+            )
+            batch_run_id = b_id.getvalue()
+            output_rows  = int(b_out.getvalue() or 0)
+            orphan_rows  = int(b_orp.getvalue() or 0)
+
+    # Refresh Python-side BatchRun from what the SP wrote
+    run = db.session.get(BatchRun, batch_run_id)
+    return SpResult(
+        batch_run_id=batch_run_id,
+        output_rows=output_rows,
+        orphan_rows=orphan_rows,
+        status=run.status if run else "UNKNOWN",
+    )
+```
+
+**Plugging it into the batch route / Celery task:**
+
+```python
+# In app/routes/api.py (or batch_tasks.py)
+from app.config import settings
+from app.services import allocation_engine, sp_engine
+
+def run_rule(rule_id: int, as_of_date: date, run_by: str):
+    """Dispatch to SP engine on enterprise DB, Python engine on SQLite/dev."""
+    if settings.USE_SP_ENGINE:                # env var: USE_SP_ENGINE=1
+        return sp_engine.run_rule_via_sp(rule_id, as_of_date, run_by)
+    return allocation_engine.run_rule(rule_id, as_of_date, run_by)
+```
+
+Set `USE_SP_ENGINE=1` in production Docker / Kubernetes env and `USE_SP_ENGINE=0` (default) in dev/test — no code path changes required.
+
+---
+
+### Parallel SP execution (combines with Batch Parallel consideration above)
+
+```python
+# Fan out one SP call per rule_id, same ThreadPoolExecutor pattern
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def run_batch_via_sp(rule_ids: list[int], as_of_date: date, run_by: str, max_workers: int = 8):
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(sp_engine.run_rule_via_sp, rid, as_of_date, run_by): rid
+                   for rid in rule_ids}
+        for future in as_completed(futures):
+            rid = futures[future]
+            try:
+                results[rid] = future.result()
+            except Exception as exc:
+                results[rid] = SpResult(batch_run_id="", output_rows=0,
+                                        orphan_rows=0, status=f"FAILED: {exc}")
+    return results
+```
+
+The DB itself can also parallelize — on **PostgreSQL** enable `max_parallel_workers_per_gather` so each SP's `INSERT … SELECT` uses multiple workers. On **Oracle** use `PARALLEL` hint:
+```sql
+INSERT /*+ PARALLEL(fct_mgmt_ledger, 4) */ INTO fct_mgmt_ledger ...
+SELECT /*+ PARALLEL(src, 4) PARALLEL(r, 4) */ ...
+```
+
+---
+
+### Migration strategy (Python → SP)
+
+| Phase | Action |
+|---|---|
+| 1 — Baseline | Keep Python engine as-is; add `USE_SP_ENGINE` flag (default off) |
+| 2 — Write SP | Author `sp_run_allocation` in a Flyway / Alembic migration SQL file |
+| 3 — Shadow run | Run both engines on the same date; assert output tables are identical |
+| 4 — Cutover | Flip `USE_SP_ENGINE=1` in staging, then production |
+| 5 — Retire | Remove pandas shredding code after 1 release cycle |
+
+---
+
+### SP management best practices
+
+| Practice | Detail |
+|---|---|
+| Version every SP | Store in `migrations/` as `V0NN__sp_name.sql`; deploy via Flyway or Alembic `op.execute()` |
+| Keep business logic out of SQL | Allocate in SP; orchestrate, auth, and surface in Python |
+| Unit-test the SP | `pytest` fixture spins up a test DB; call SP; assert row counts and amounts |
+| Grant minimum privilege | `GRANT EXECUTE ON sp_run_allocation TO bankpft_app_role` — no DML grants on base tables |
+| Parameter validation | Validate `p_rule_id` and `p_as_of_date` in Python before the DB call — fail fast before the SP is invoked |
+
+---
+
 ## License
 
 Prototype / Demo — not for production use.
