@@ -1,8 +1,20 @@
 # BankPFT — Refactoring Design Document
 
-**Date:** 2025-07  
-**Status:** Draft / Proposed  
+**Date:** 2026-04-04  
+**Status:** In Progress — Phase 1 Complete  
 **Scope:** `app/services/`, `app/models/`, `app/routes/`, `app/config/`
+
+### Implementation Progress
+
+| Phase | Title | Status | Commit |
+|---|---|---|---|
+| 1 | JSON-Driven Model Registry | ✅ Complete | `babbc69` |
+| 2 | Config Loader | ⬜ Pending | — |
+| 3 | Shared Filter Engine | ⬜ Pending | — |
+| 4 | DateTime Modernisation | ⬜ Pending | — |
+| 5 | Model Mixins | ⬜ Pending | — |
+| 6 | Shared BatchLogger | ⬜ Pending | — |
+| 7 | Value-Cast Documentation | ⬜ Pending | — |
 
 ---
 
@@ -39,7 +51,7 @@ The codebase has grown organically through several feature additions (upload, al
 
 | Problem class | Files affected | Risk level |
 |---|---|---|
-| Three separate table→model registry dicts | `allocation_engine`, `upload_service`, `datafile_service`, `routes/upload` | Medium — any new table added to one must be manually copied to all others |
+| ~~Three separate table→model registry dicts~~ ✅ **Fixed** | `app/config/model_registry.json`, `app/models/registry.py` | Resolved — single JSON file is now the only place to add a model |
 | Config-loading boilerplate repeated 6 times | 5 service and route files | Low — functional, but increasing maintenance cost |
 | Two independent filter-engine implementations | `allocation_engine`, `datafile_service` | Medium — bug fixes must be applied twice |
 | `datetime.utcnow()` deprecated in Python 3.12+ | All service files + all model defaults | Low now, breaking in future Python releases |
@@ -298,15 +310,16 @@ The following new files resolve the issues above. All existing files remain in p
 ```
 app/
 ├── config/
-│   ├── loader.py              # NEW — load_config(name) replaces scattered os.path.join boilerplate
+│   ├── loader.py              # NEW (Phase 2) — load_config(name) replaces os.path.join boilerplate
+│   ├── model_registry.json    # ✅ DONE (Phase 1) — JSON source of truth for all table→model mappings
 │   └── ...existing json files unchanged...
 ├── models/
-│   ├── mixins.py              # NEW — MakerCheckerMixin, TimestampMixin
-│   ├── registry.py            # NEW — MODEL_REGISTRY replacing the 3+1 per-file dicts
+│   ├── mixins.py              # NEW (Phase 5) — MakerCheckerMixin, TimestampMixin
+│   ├── registry.py            # ✅ DONE (Phase 1) — reads model_registry.json, exposes MODEL_REGISTRY etc.
 │   └── ...existing files, updated to use mixins...
 ├── services/
-│   ├── batch_logger.py        # NEW — BatchLogger class extracted from allocation_engine
-│   ├── filter_engine.py       # NEW — apply_filters() shared by allocation and datafile
+│   ├── batch_logger.py        # NEW (Phase 6) — BatchLogger class extracted from allocation_engine
+│   ├── filter_engine.py       # NEW (Phase 3) — apply_filters() shared by allocation and datafile
 │   └── ...existing files, updated to import from new modules...
 ```
 
@@ -335,63 +348,27 @@ app/services/batch_logger.py
 
 ---
 
-### Phase 1 — Model Registry (`app/models/registry.py`)
+### Phase 1 — JSON-Driven Model Registry ✅ COMPLETE (commit `babbc69`)
 
-**Problem:** Three service files and one route file each maintain their own
-`dict[str, type]` mapping table names to SQLAlchemy models.
+**Status:** Implemented and pushed. 123 tests passing.
 
-**Solution:** Create `app/models/registry.py` as the single source of truth.
+**Actual implementation** improved on the original proposal by making the registry fully JSON-driven:
 
-```python
-# app/models/registry.py
-"""Single model registry — maps table name strings to SQLAlchemy model classes.
+- `app/config/model_registry.json` — declares all 15 table entries; `key_column` marks dimension tables; `upload_preview` section replaces the route-level inline dict
+- `app/models/registry.py` — reads JSON at startup via `importlib.import_module`, exposes `MODEL_REGISTRY`, `DIMENSION_REGISTRY`, `UPLOAD_PREVIEW_REGISTRY`
 
-All service files and route files import from here instead of maintaining
-their own local dicts.
-"""
-from app.models.staging import StgInstData, StgGlData, ProcInstData, ProcGlData
-from app.models.allocation import (
-    RefStaticAllocation, RefOrgReclass,
-    RefStaticDistribution, RefStaticAlloc,
-    FctMgmtLedger, FctMgmtInstrument,
-)
-from app.models.ftp import RefInterestRate
-from app.models.dimensions import DimCustomer, DimProduct, DimOrgUnit, DimAccount
+**Lines of code removed across 4 files:** ~45 lines of duplicate dict declarations + 9 model import lines
 
-MODEL_REGISTRY: dict[str, type] = {
-    # Staging
-    "stg_inst_data":            StgInstData,
-    "stg_gl_data":              StgGlData,
-    # Processed
-    "proc_inst_data":           ProcInstData,
-    "proc_gl_data":             ProcGlData,
-    # Reference
-    "ref_static_allocation":    RefStaticAllocation,
-    "ref_org_reclass":          RefOrgReclass,
-    "ref_static_distribution":  RefStaticDistribution,
-    "ref_static_alloc":         RefStaticAlloc,
-    "ref_interest_rate":        RefInterestRate,
-    # Output / fact
-    "fct_mgmt_ledger":          FctMgmtLedger,
-    "fct_mgmt_instrument":      FctMgmtInstrument,
-    # Dimensions
-    "dim_customer":             DimCustomer,
-    "dim_product":              DimProduct,
-    "dim_org_unit":             DimOrgUnit,
-    "dim_account":              DimAccount,
+**How to add a new model (after this change):**
+```json
+// app/config/model_registry.json — the only file to edit
+{
+  "tables": {
+    "new_table_name": { "module": "app.models.new_module", "class": "NewModelClass" }
+  }
 }
 ```
-
-**Files to update:**
-
-| File | Replace | With |
-|---|---|---|
-| `allocation_engine.py` | `_SOURCE_MODELS`, `_LOOKUP_MODELS`, `_OUTPUT_MODELS` | `from app.models.registry import MODEL_REGISTRY` |
-| `upload_service.py` | `_STAGING_MODELS` | `from app.models.registry import MODEL_REGISTRY` |
-| `datafile_service.py` | `_TABLE_MODELS` | `from app.models.registry import MODEL_REGISTRY` |
-| `routes/upload.py` | `_PREVIEW_MODELS` (inline dict) | `from app.models.registry import MODEL_REGISTRY` |
-
-**API compatibility:** Existing callers use `_SOURCE_MODELS.get(rule.source_table)`, which becomes `MODEL_REGISTRY.get(rule.source_table)`. One-line change per call site.
+No Python file changes required.
 
 ---
 
