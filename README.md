@@ -885,6 +885,228 @@ def require_bearer(f):
 
 ---
 
+## Batch Parallel Run & Async UI Implementation Consideration
+
+The current engine runs each `BatchRun` synchronously inside the HTTP request. For month-end or large entity volumes this blocks the web worker for minutes and makes the UI unresponsive. Two complementary patterns solve this.
+
+---
+
+### Pattern 1 — Parallel rule execution (multi-threading / multi-processing)
+
+Each `AllocationRule` is independent (separate source rows, separate output rows). They can be fanned out concurrently.
+
+**Current flow (synchronous):**
+```
+POST /api/v1/batch/run
+  └── for rule_id in rule_ids:
+        engine.run_rule(rule_id, as_of_date)   # blocks until done
+  └── return 200
+```
+
+**Target flow (parallel):**
+```
+POST /api/v1/batch/run
+  └── executor = ThreadPoolExecutor(max_workers=N)
+  └── futures = {executor.submit(engine.run_rule, rule_id, date): rule_id for rule_id in rule_ids}
+  └── for future in as_completed(futures):
+        result = future.result()               # collect per-rule outcome
+  └── return 200 (all done) or 207 (partial failures)
+```
+
+**Implementation options:**
+
+| Option | Library | Best for |
+|---|---|---|
+| Thread pool | `concurrent.futures.ThreadPoolExecutor` | I/O-bound rules (DB reads/writes) — simplest change |
+| Process pool | `concurrent.futures.ProcessPoolExecutor` | CPU-bound transform logic |
+| Celery + Redis | `celery`, `redis` | Production; per-rule retry, visibility, rate limiting |
+| APScheduler | `apscheduler` | Scheduled month-end runs without Celery overhead |
+
+**Thread pool sketch (minimal change to `allocation_engine.py`):**
+
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def run_batch_parallel(rule_ids: list[int], as_of_date: date, max_workers: int = 4):
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(run_rule, rid, as_of_date): rid for rid in rule_ids}
+        for future in as_completed(futures):
+            rid = futures[future]
+            try:
+                results[rid] = future.result()   # BatchRun record
+            except Exception as exc:
+                results[rid] = {"status": "FAILED", "error": str(exc)}
+    return results
+```
+
+**Concurrency guard — avoid double-posting:**
+```sql
+-- Before inserting a BatchRun, check no RUNNING run exists for same rule + date
+SELECT 1 FROM batch_run
+WHERE rule_id = :rule_id AND as_of_date = :date AND status = 'RUNNING'
+LIMIT 1;
+```
+
+---
+
+### Pattern 2 — Async / fire-and-forget with real-time UI
+
+For runs that take > ~5 seconds, the HTTP response should return immediately with a job ID, and the browser should poll (or stream) for progress — eliminating gateway timeouts and giving users a live status screen.
+
+**Request/response contract:**
+
+```
+POST /api/v1/batch/run
+Body: { "rule_ids": [1,2,3], "as_of_date": "2026-03-31" }
+
+→ 202 Accepted
+{
+  "job_id": "a3f9...",
+  "status_url": "/api/v1/batch/job/a3f9...",
+  "message": "Batch queued. Poll status_url for updates."
+}
+```
+
+**Backend (Celery task):**
+
+```python
+# app/tasks/batch_tasks.py
+from celery import Celery, group
+from app.services.allocation_engine import run_rule
+
+celery_app = Celery("bankpft", broker="redis://localhost:6379/0",
+                    backend="redis://localhost:6379/1")
+
+@celery_app.task(bind=True)
+def run_rule_task(self, rule_id: int, as_of_date: str):
+    try:
+        result = run_rule(rule_id, date.fromisoformat(as_of_date))
+        return {"rule_id": rule_id, "batch_run_id": result.id, "status": "COMPLETED"}
+    except Exception as exc:
+        self.update_state(state="FAILURE", meta={"exc": str(exc)})
+        raise
+
+def submit_batch_job(rule_ids: list[int], as_of_date: str) -> str:
+    job = group(run_rule_task.s(rid, as_of_date) for rid in rule_ids)
+    result = job.apply_async()
+    return result.id   # group result ID → stored in Redis
+```
+
+**Flask route (fire-and-forget):**
+
+```python
+@bp.post("/batch/run")
+@require_bearer
+def start_batch():
+    body        = request.get_json()
+    rule_ids    = body["rule_ids"]
+    as_of_date  = body["as_of_date"]
+    job_id      = submit_batch_job(rule_ids, as_of_date)
+    return jsonify({"job_id": job_id,
+                    "status_url": f"/api/v1/batch/job/{job_id}"}), 202
+
+@bp.get("/batch/job/<job_id>")
+@require_bearer
+def poll_batch(job_id):
+    result = celery_app.GroupResult.restore(job_id)
+    if result is None:
+        return jsonify({"error": "unknown job"}), 404
+    completed = [r for r in result.results if r.ready()]
+    return jsonify({
+        "job_id":     job_id,
+        "total":      len(result.results),
+        "completed":  len(completed),
+        "failed":     sum(1 for r in result.results if r.failed()),
+        "done":       result.ready(),
+        "results":    [r.result for r in completed],
+    })
+```
+
+**Frontend — async status screen:**
+
+```javascript
+// Poll every 3 seconds until done; update a progress bar
+async function runBatch(ruleIds, asOfDate) {
+  const resp = await fetch("/api/v1/batch/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": bearerHeader },
+    body: JSON.stringify({ rule_ids: ruleIds, as_of_date: asOfDate })
+  });
+  const { job_id, status_url } = await resp.json(); // 202 Accepted
+
+  const poll = setInterval(async () => {
+    const status = await fetch(status_url, { headers: { "Authorization": bearerHeader } });
+    const data   = await status.json();
+    updateProgressBar(data.completed, data.total, data.failed);
+    if (data.done) {
+      clearInterval(poll);
+      showResults(data.results);
+    }
+  }, 3000);
+}
+```
+
+Alternatively, replace polling with **Server-Sent Events (SSE)** — the Flask route pushes `data:` lines as each rule completes, and `EventSource` in the browser receives them without repeated HTTP round-trips.
+
+```python
+# SSE endpoint (Flask streaming response)
+@bp.get("/batch/job/<job_id>/stream")
+def stream_batch(job_id):
+    def generate():
+        result = celery_app.GroupResult.restore(job_id)
+        seen = set()
+        while not result.ready():
+            for r in result.results:
+                if r.ready() and r.id not in seen:
+                    seen.add(r.id)
+                    yield f"data: {json.dumps(r.result)}\n\n"
+            time.sleep(1)
+        yield "data: {\"done\": true}\n\n"
+    return Response(generate(), mimetype="text/event-stream")
+```
+
+---
+
+### Infrastructure required
+
+| Component | Dev | Production |
+|---|---|---|
+| Message broker | Redis (Docker) | Azure Cache for Redis / Service Bus |
+| Result backend | Redis | Azure Cache for Redis |
+| Worker process | `celery -A app.tasks.batch_tasks worker` | Containerized worker (Kubernetes Job / ACI) |
+| Monitoring | Flower (`celery flower`) | Azure Monitor + Application Insights |
+| Concurrency | `--concurrency=4` Celery option | Scale worker replicas horizontally |
+
+**Docker Compose addition:**
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  worker:
+    build: .
+    command: celery -A app.tasks.batch_tasks worker --loglevel=info --concurrency=4
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on: [redis, db]
+```
+
+---
+
+### Decision guide
+
+| Scenario | Recommendation |
+|---|---|
+| < 10 rules, < 30 s total | `ThreadPoolExecutor` — minimal change, no new infra |
+| 10–50 rules or month-end | Celery + Redis, polling UI (3 s interval) |
+| 50+ rules or SLA < 10 s response | Celery group + SSE streaming status screen |
+| Scheduled overnight run | APScheduler or Celery beat (no human waiting) |
+
+---
+
 ## License
 
 Prototype / Demo — not for production use.
