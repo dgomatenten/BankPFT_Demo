@@ -338,10 +338,12 @@ def _parse_file_rows(filepath: str, fmt_cfg: dict):
                     continue
                 raw_vals: dict[str, str] = {}
                 for field in fields:
+                    # "source" overrides header lookup key; "name" is always the target key
+                    header_key = field.get("source", field["name"])
                     if "column" in field:
                         col_idx = field["column"]
-                    elif use_header and field["name"] in header_map:
-                        col_idx = header_map[field["name"]]
+                    elif use_header and header_key in header_map:
+                        col_idx = header_map[header_key]
                     else:
                         raw_vals[field["name"]] = ""
                         continue
