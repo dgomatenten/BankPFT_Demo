@@ -1,110 +1,311 @@
 {% extends "layout/base.html" %}
 {% block title %}Batch Execution — BankPFT{% endblock %}
 {% block content %}
+
 <div class="d-flex align-items-center justify-content-between mb-4">
     <h2 class="mb-0">Batch Execution</h2>
-    <a href="{{ url_for('batch.list_definitions') }}" class="btn btn-outline-primary">
-        <i class="bi bi-collection-play"></i> Multi-Task Batch Definitions
+    <a href="{{ url_for('batch.new_definition') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> New Batch Definition
     </a>
 </div>
 
-<div class="row g-4 mb-4">
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-header">Run Allocation Batch</div>
-            <div class="card-body">
-                <form method="POST" action="/batch/run" class="row g-3 align-items-end">
-                    <div class="col-12">
-                        <label class="form-label">Allocation Rule</label>
-                        <select name="rule_id" class="form-select" required>
-                            <option value="">— Select Rule —</option>
-                            {% for r in rules %}
-                            <option value="{{ r.id }}">{{ r.name }} (ID: {{ r.id }})</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-8">
-                        <label class="form-label">As-of Date</label>
-                        <input type="date" name="as_of_date" class="form-control" required>
-                    </div>
-                    <div class="col-4">
-                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-play-fill"></i> Run</button>
-                    </div>
-                </form>
-                {% if not rules %}
-                <div class="alert alert-info mt-3 mb-0">No active rules. Create a rule first.</div>
-                {% endif %}
-            </div>
-        </div>
+<!-- ── Run a Defined Batch ─────────────────────────────────────────── -->
+<div class="card mb-4 border-success">
+    <div class="card-header bg-success text-white fw-semibold">
+        <i class="bi bi-play-fill"></i> Run a Batch
     </div>
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-header">Run FTP Batch</div>
-            <div class="card-body">
-                <p class="text-muted small">Calculates moving-average base rates and cost of funds for all instruments with an active FTP product config.</p>
-                <form method="POST" action="/batch/run-ftp" class="row g-3 align-items-end">
-                    <div class="col-8">
-                        <label class="form-label">As-of Date</label>
-                        <input type="date" name="as_of_date" class="form-control" required>
-                    </div>
-                    <div class="col-4">
-                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-currency-exchange"></i> Run FTP</button>
-                    </div>
-                </form>
+    <div class="card-body">
+        {% if definitions %}
+        <form method="POST" class="row g-3 align-items-end" id="runBatchForm">
+            <div class="col-md-6">
+                <label class="form-label fw-semibold">Batch Definition</label>
+                <select name="def_id" id="defSelect" class="form-select" required onchange="updateStepPreview()">
+                    <option value="">— Select a batch —</option>
+                    {% for d in definitions %}
+                    <option value="{{ d.id }}"
+                            data-steps="{{ d.tasks | length }}"
+                            data-coe="{{ 'true' if d.continue_on_error else 'false' }}"
+                            data-desc="{{ d.description or '' }}"
+                            data-tasks="{{ d.tasks | map(attribute='label') | join(' → ') }}">
+                        {{ d.name }}
+                        <span class="text-muted">({{ d.tasks | length }} step{{ 's' if d.tasks | length != 1 }})</span>
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">As-of Date</label>
+                <input type="date" name="as_of_date" class="form-control" required>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-success w-100 fw-semibold">
+                    <i class="bi bi-play-fill"></i> Execute Batch
+                </button>
+            </div>
+            <!-- submit goes to definition run endpoint -->
+            <input type="hidden" name="_route" value="run_definition">
+        </form>
+
+        <!-- Step preview panel (populated by JS) -->
+        <div id="stepPreview" class="mt-3" style="display:none">
+            <hr class="my-2">
+            <div class="row g-2 align-items-start">
+                <div class="col-auto">
+                    <small class="text-muted fw-semibold">Steps:</small>
+                </div>
+                <div class="col">
+                    <div id="stepBadges" class="d-flex flex-wrap gap-1"></div>
+                </div>
+                <div class="col-auto" id="coeLabel"></div>
+            </div>
+            <div id="defDesc" class="text-muted small mt-1"></div>
         </div>
+
+        {% else %}
+        <div class="alert alert-info mb-0">
+            No batch definitions yet.
+            <a href="{{ url_for('batch.new_definition') }}" class="alert-link">Create your first batch</a>
+            and add steps (allocation rules, FTP, data file imports/exports, or custom SP calls).
+        </div>
+        {% endif %}
     </div>
 </div>
 
+<!-- ── Batch Definitions Table ────────────────────────────────────── -->
 <div class="card mb-4">
-    <div class="card-header">Allocation Batch History</div>
+    <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-collection-play"></i> Batch Definitions</span>
+        <a href="{{ url_for('batch.list_definitions') }}" class="btn btn-sm btn-outline-primary">
+            Manage All
+        </a>
+    </div>
     <div class="card-body p-0">
         <table class="table table-hover mb-0">
-            <thead><tr><th>Batch ID</th><th>Date</th><th>Status</th><th>Source Rows</th><th>Output Rows</th><th>Orphans</th><th>Source Total</th><th>Output Total</th></tr></thead>
+            <thead>
+                <tr><th>Name</th><th>Description</th><th>Steps</th><th>On Error</th><th></th></tr>
+            </thead>
             <tbody>
-            {% for b in batches %}
+            {% for d in definitions %}
             <tr>
-                <td><a href="/batch/{{ b.id }}">{{ b.id[:8] }}...</a></td>
-                <td>{{ b.as_of_date }}</td>
-                <td><span class="badge bg-{{ 'success' if b.status == 'COMPLETED' else 'danger' if b.status == 'FAILED' else 'info' }}">{{ b.status }}</span></td>
-                <td>{{ b.source_row_count }}</td>
-                <td>{{ b.output_row_count }}</td>
-                <td>{{ b.orphan_count }}</td>
-                <td>{{ "{:,.2f}".format(b.source_total) }}</td>
-                <td>{{ "{:,.2f}".format(b.output_total) }}</td>
+                <td>
+                    <a href="{{ url_for('batch.definition_detail', def_id=d.id) }}" class="fw-semibold">
+                        {{ d.name }}
+                    </a>
+                </td>
+                <td class="text-muted small">{{ d.description or '—' }}</td>
+                <td>
+                    {% for task in d.tasks %}
+                    {% set type_colors = {
+                        'ALLOCATION':      'primary',
+                        'FTP':             'info',
+                        'DATAFILE_IMPORT': 'success',
+                        'DATAFILE_EXPORT': 'warning',
+                        'CUSTOM_SP':       'secondary',
+                    } %}
+                    <span class="badge bg-{{ type_colors.get(task.task_type,'secondary') }} me-1"
+                          title="{{ task.label or task.ref_id }}">
+                        {{ task.step_order }}. {{ task.task_type }}
+                    </span>
+                    {% endfor %}
+                    {% if not d.tasks %}<span class="text-muted small">No steps</span>{% endif %}
+                </td>
+                <td>
+                    {% if d.continue_on_error %}
+                    <span class="badge bg-warning text-dark">Continue</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Stop</span>
+                    {% endif %}
+                </td>
+                <td class="text-end">
+                    <a href="{{ url_for('batch.definition_detail', def_id=d.id) }}"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-pencil"></i> Edit
+                    </a>
+                </td>
             </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-3">No batch definitions.</td></tr>
             {% endfor %}
-            {% if not batches %}
-            <tr><td colspan="8" class="text-center text-muted py-3">No allocation batches yet.</td></tr>
-            {% endif %}
             </tbody>
         </table>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-header">FTP Run History</div>
+<!-- ── Execution History ───────────────────────────────────────────── -->
+<div class="card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-clock-history"></i> Execution History</div>
     <div class="card-body p-0">
         <table class="table table-hover mb-0">
-            <thead><tr><th>Run ID</th><th>Date</th><th>Status</th><th>Processed</th><th>Matched</th><th>Skipped</th><th>Run By</th><th>Completed</th></tr></thead>
+            <thead>
+                <tr>
+                    <th>Run ID</th>
+                    <th>Batch</th>
+                    <th>As-of Date</th>
+                    <th>Status</th>
+                    <th>Steps</th>
+                    <th>Run By</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
             <tbody>
-            {% for r in ftp_runs %}
+            {% for ex in executions %}
+            {% set sc = {'COMPLETED':'success','FAILED':'danger','PARTIAL':'warning','RUNNING':'info'} %}
             <tr>
-                <td><a href="{{ url_for('ftp.run_detail', run_id=r.id) }}">{{ r.id[:8] }}...</a></td>
-                <td>{{ r.as_of_date }}</td>
-                <td><span class="badge bg-{{ 'success' if r.status == 'COMPLETED' else 'danger' if r.status == 'FAILED' else 'info' }}">{{ r.status }}</span></td>
-                <td>{{ r.instruments_processed }}</td>
-                <td>{{ r.instruments_matched }}</td>
-                <td>{{ r.instruments_skipped }}</td>
-                <td>{{ r.run_by }}</td>
-                <td>{{ r.completed_at.strftime('%Y-%m-%d %H:%M') if r.completed_at else '—' }}</td>
+                <td>
+                    <a href="{{ url_for('batch.execution_detail', exec_id=ex.id) }}"
+                       class="font-monospace">{{ ex.id[:8] }}…</a>
+                </td>
+                <td>{{ ex.definition.name }}</td>
+                <td>{{ ex.as_of_date }}</td>
+                <td>
+                    <span class="badge bg-{{ sc.get(ex.status,'secondary') }}">{{ ex.status }}</span>
+                </td>
+                <td>
+                    {% set done    = ex.steps | selectattr('status','in',['COMPLETED','FAILED','SKIPPED']) | list | length %}
+                    {% set total   = ex.steps | length %}
+                    {% set failed  = ex.steps | selectattr('status','eq','FAILED')  | list | length %}
+                    <span class="text-muted small">{{ done }}/{{ total }}</span>
+                    {% if failed > 0 %}
+                    <span class="badge bg-danger ms-1">{{ failed }} failed</span>
+                    {% endif %}
+                </td>
+                <td class="small text-muted">{{ ex.run_by }}</td>
+                <td class="small text-muted">{{ ex.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="small text-muted">
+                    {% if ex.completed_at %}
+                    {% set secs = (ex.completed_at - ex.started_at).total_seconds() | int %}
+                    {% if secs < 60 %}{{ secs }}s
+                    {% else %}{{ (secs // 60) }}m {{ secs % 60 }}s{% endif %}
+                    {% else %}—{% endif %}
+                </td>
             </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-3">No batch executions yet.</td></tr>
             {% endfor %}
-            {% if not ftp_runs %}
-            <tr><td colspan="8" class="text-center text-muted py-3">No FTP runs yet.</td></tr>
-            {% endif %}
             </tbody>
         </table>
     </div>
 </div>
+
+<!-- ── Advanced: Individual Engine Runs (collapsible) ─────────────── -->
+<div class="accordion mb-4" id="advancedAccordion">
+    <div class="accordion-item border">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed fw-semibold text-muted" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#advancedPanel">
+                <i class="bi bi-sliders me-2"></i> Advanced — Run Individual Engine
+            </button>
+        </h2>
+        <div id="advancedPanel" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                <p class="text-muted small mb-3">
+                    Run a single allocation rule or FTP calculation directly, without using a batch definition.
+                    Useful for development, ad-hoc testing, or re-running a single step after a failure.
+                </p>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header small fw-semibold">Run Single Allocation Rule</div>
+                            <div class="card-body">
+                                <form method="POST" action="/batch/run" class="row g-3 align-items-end">
+                                    <div class="col-12">
+                                        <label class="form-label">Allocation Rule</label>
+                                        <select name="rule_id" class="form-select" required>
+                                            <option value="">— Select Rule —</option>
+                                            {% for r in rules %}
+                                            <option value="{{ r.id }}">{{ r.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        {% if not rules %}
+                                        <div class="alert alert-info mt-2 mb-0 py-2 small">No active rules.</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-8">
+                                        <label class="form-label">As-of Date</label>
+                                        <input type="date" name="as_of_date" class="form-control" required>
+                                    </div>
+                                    <div class="col-4">
+                                        <button type="submit" class="btn btn-success w-100">
+                                            <i class="bi bi-play-fill"></i> Run
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header small fw-semibold">Run FTP Calculation</div>
+                            <div class="card-body">
+                                <p class="text-muted small">Moving-average base rates and cost of funds for all active FTP product configs.</p>
+                                <form method="POST" action="/batch/run-ftp" class="row g-3 align-items-end">
+                                    <div class="col-8">
+                                        <label class="form-label">As-of Date</label>
+                                        <input type="date" name="as_of_date" class="form-control" required>
+                                    </div>
+                                    <div class="col-4">
+                                        <button type="submit" class="btn btn-primary w-100">
+                                            <i class="bi bi-currency-exchange"></i> Run FTP
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JS: route the Run Batch form to the correct definition endpoint -->
+<script>
+document.getElementById('runBatchForm') && document.getElementById('runBatchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const defId = document.getElementById('defSelect').value;
+    if (!defId) return;
+    const asOf  = this.querySelector('[name=as_of_date]').value;
+    const form  = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/batch/definitions/' + defId + '/run';
+    const inp   = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'as_of_date'; inp.value = asOf;
+    form.appendChild(inp);
+    document.body.appendChild(form);
+    form.submit();
+});
+
+function updateStepPreview() {
+    const sel     = document.getElementById('defSelect');
+    const opt     = sel.options[sel.selectedIndex];
+    const preview = document.getElementById('stepPreview');
+    const badges  = document.getElementById('stepBadges');
+    const coe     = document.getElementById('coeLabel');
+    const desc    = document.getElementById('defDesc');
+
+    if (!opt.value) { preview.style.display = 'none'; return; }
+
+    const taskLabels = opt.dataset.tasks ? opt.dataset.tasks.split(' → ') : [];
+    const typeColors = {
+        'ALLOCATION': 'primary', 'FTP': 'info',
+        'DATAFILE_IMPORT': 'success', 'DATAFILE_EXPORT': 'warning', 'CUSTOM_SP': 'secondary'
+    };
+
+    badges.innerHTML = taskLabels.map((lbl, i) => {
+        const type = ['ALLOCATION','FTP','DATAFILE_IMPORT','DATAFILE_EXPORT','CUSTOM_SP']
+            .find(t => lbl.includes(t)) || '';
+        const color = typeColors[type] || 'secondary';
+        return `<span class="badge bg-${color}">${i+1}. ${lbl}</span>`;
+    }).join('<span class="text-muted mx-1">→</span>');
+
+    coe.innerHTML = opt.dataset.coe === 'true'
+        ? '<span class="badge bg-warning text-dark"><i class="bi bi-arrow-repeat"></i> Continue on error</span>'
+        : '<span class="badge bg-secondary"><i class="bi bi-stop-fill"></i> Stop on error</span>';
+
+    desc.textContent = opt.dataset.desc || '';
+    preview.style.display = '';
+}
+</script>
 {% endblock %}
+

@@ -19,10 +19,18 @@ bp = Blueprint("batch", __name__)
 @bp.route("/")
 @login_required
 def list_batches():
-    batches = BatchRun.query.order_by(BatchRun.started_at.desc()).all()
-    rules = AllocationRule.query.filter_by(is_active=True).all()
-    ftp_runs = FtpRun.query.order_by(FtpRun.started_at.desc()).limit(30).all()
-    return render_template("batch/list.html", batches=batches, rules=rules, ftp_runs=ftp_runs)
+    definitions  = BatchDefinition.query.filter_by(is_active=True).order_by(BatchDefinition.name).all()
+    executions   = BatchExecution.query.order_by(BatchExecution.started_at.desc()).limit(30).all()
+    # kept for the advanced / legacy single-engine panel
+    rules        = AllocationRule.query.filter_by(is_active=True).all()
+    ftp_runs     = FtpRun.query.order_by(FtpRun.started_at.desc()).limit(10).all()
+    return render_template(
+        "batch/list.html",
+        definitions=definitions,
+        executions=executions,
+        rules=rules,
+        ftp_runs=ftp_runs,
+    )
 
 
 @bp.route("/run", methods=["POST"])
