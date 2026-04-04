@@ -1,0 +1,66 @@
+{% extends "layout/base.html" %}
+{% block title %}Batch Definitions — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h2 class="mb-0">Batch Definitions</h2>
+    <div>
+        <a href="{{ url_for('batch.new_definition') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> New Batch
+        </a>
+        <a href="{{ url_for('batch.list_batches') }}" class="btn btn-outline-secondary ms-2">
+            <i class="bi bi-arrow-left"></i> Back to Run History
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Steps</th>
+                    <th>On Error</th>
+                    <th>Active</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for d in definitions %}
+            <tr>
+                <td>{{ d.id }}</td>
+                <td><a href="{{ url_for('batch.definition_detail', def_id=d.id) }}">{{ d.name }}</a></td>
+                <td class="text-muted small">{{ d.description or '—' }}</td>
+                <td><span class="badge bg-secondary">{{ d.tasks | length }}</span></td>
+                <td>
+                    {% if d.continue_on_error %}
+                    <span class="badge bg-warning text-dark">Continue</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Stop</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if d.is_active %}
+                    <span class="badge bg-success">Active</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Inactive</span>
+                    {% endif %}
+                </td>
+                <td class="small text-muted">{{ d.created_at.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    <a href="{{ url_for('batch.definition_detail', def_id=d.id) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-pencil"></i> Edit / Run
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">No batch definitions yet. <a href="{{ url_for('batch.new_definition') }}">Create one</a>.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

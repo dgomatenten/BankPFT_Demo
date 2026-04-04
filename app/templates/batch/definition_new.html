@@ -1,0 +1,37 @@
+{% extends "layout/base.html" %}
+{% block title %}New Batch Definition — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('batch.list_definitions') }}" class="btn btn-outline-secondary me-3">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <h2 class="mb-0">New Batch Definition</h2>
+</div>
+
+<div class="card" style="max-width:600px;">
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('batch.new_definition') }}">
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. MONTH_END_RUN" required>
+                <div class="form-text">Unique identifier for this batch (no spaces recommended).</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Description</label>
+                <textarea name="description" class="form-control" rows="2" placeholder="Optional description…"></textarea>
+            </div>
+            <div class="mb-4">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="continue_on_error" value="1" id="coe">
+                    <label class="form-check-label" for="coe">
+                        Continue on step failure
+                        <small class="text-muted d-block">If unchecked, the batch stops and skips remaining steps when any step fails.</small>
+                    </label>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Create</button>
+            <a href="{{ url_for('batch.list_definitions') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

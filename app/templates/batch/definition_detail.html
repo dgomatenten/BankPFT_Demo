@@ -1,0 +1,239 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ defn.name }} — Batch Definition{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4 gap-3">
+    <a href="{{ url_for('batch.list_definitions') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h2 class="mb-0">{{ defn.name }}</h2>
+        {% if defn.description %}<p class="text-muted mb-0 small">{{ defn.description }}</p>{% endif %}
+    </div>
+    <div class="ms-auto d-flex gap-2 align-items-center">
+        {% if defn.continue_on_error %}
+        <span class="badge bg-warning text-dark">Continue on error</span>
+        {% else %}
+        <span class="badge bg-secondary">Stop on error</span>
+        {% endif %}
+        {% if not defn.is_active %}<span class="badge bg-danger">Inactive</span>{% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+
+    <!-- Left: Step list + add form -->
+    <div class="col-lg-7">
+
+        <!-- Current steps -->
+        <div class="card mb-4">
+            <div class="card-header fw-semibold">
+                <i class="bi bi-list-ol"></i> Steps
+                <small class="text-muted ms-2">(executed top to bottom)</small>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr><th style="width:50px">#</th><th>Type</th><th>Reference</th><th>Label</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    {% for task in defn.tasks %}
+                    <tr>
+                        <td class="text-center fw-bold text-muted">{{ task.step_order }}</td>
+                        <td>
+                            {% set type_colors = {
+                                'ALLOCATION':      'primary',
+                                'FTP':             'info',
+                                'DATAFILE_IMPORT': 'success',
+                                'DATAFILE_EXPORT': 'warning',
+                                'CUSTOM_SP':       'secondary',
+                            } %}
+                            <span class="badge bg-{{ type_colors.get(task.task_type, 'secondary') }}">
+                                {{ task.task_type }}
+                            </span>
+                        </td>
+                        <td class="font-monospace small">{{ task.ref_id or '—' }}</td>
+                        <td class="small">{{ task.label or '—' }}</td>
+                        <td class="text-end">
+                            <form method="POST"
+                                  action="{{ url_for('batch.remove_task', def_id=defn.id, task_id=task.id) }}"
+                                  onsubmit="return confirm('Remove this step?');"
+                                  class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="text-center text-muted py-3">No steps yet — add one below.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Add step form -->
+        <div class="card">
+            <div class="card-header fw-semibold"><i class="bi bi-plus-circle"></i> Add Step</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('batch.add_task', def_id=defn.id) }}">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Task Type</label>
+                            <select name="task_type" id="taskTypeSelect" class="form-select" required onchange="updateRefInput()">
+                                <option value="">— Select —</option>
+                                {% for tt in task_types %}
+                                <option value="{{ tt }}">{{ tt }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- ALLOCATION ref -->
+                        <div class="col-md-4" id="ref_allocation" style="display:none">
+                            <label class="form-label">Allocation Rule</label>
+                            <select name="ref_id_allocation" class="form-select">
+                                <option value="">— Select Rule —</option>
+                                {% for r in rules %}
+                                <option value="{{ r.id }}">{{ r.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- DATAFILE_IMPORT ref -->
+                        <div class="col-md-4" id="ref_import" style="display:none">
+                            <label class="form-label">Import Format</label>
+                            <select name="ref_id_import" class="form-select">
+                                <option value="">— Select Format —</option>
+                                {% for f in formats %}
+                                <option value="{{ f.format_id }}">{{ f.format_id }} — {{ f.get('name','') }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- DATAFILE_EXPORT ref -->
+                        <div class="col-md-4" id="ref_export" style="display:none">
+                            <label class="form-label">Export</label>
+                            <select name="ref_id_export" class="form-select">
+                                <option value="">— Select Export —</option>
+                                {% for e in exports %}
+                                <option value="{{ e.export_id }}">{{ e.export_id }} — {{ e.get('name','') }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- CUSTOM_SP ref -->
+                        <div class="col-md-4" id="ref_custom_sp" style="display:none">
+                            <label class="form-label">SP Job Name</label>
+                            <input type="text" name="ref_id_custom_sp" class="form-control" placeholder="e.g. reporting.sp_extract">
+                            <div class="form-text text-warning"><i class="bi bi-exclamation-triangle"></i> Placeholder — not yet executed</div>
+                        </div>
+
+                        <!-- FTP has no ref -->
+                        <div class="col-md-4" id="ref_ftp" style="display:none">
+                            <label class="form-label">Reference</label>
+                            <input type="text" class="form-control" value="(no reference needed)" disabled>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">Label <small class="text-muted">(optional)</small></label>
+                            <input type="text" name="label" class="form-control" placeholder="Auto-generated if blank">
+                        </div>
+                    </div>
+                    <!-- hidden unified ref_id populated by JS -->
+                    <input type="hidden" name="ref_id" id="refIdHidden">
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-success" onclick="mergeRefId()">
+                            <i class="bi bi-plus"></i> Add Step
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Run panel + execution history -->
+    <div class="col-lg-5">
+
+        <!-- Run panel -->
+        <div class="card mb-4 border-success">
+            <div class="card-header bg-success text-white fw-semibold">
+                <i class="bi bi-play-fill"></i> Run This Batch
+            </div>
+            <div class="card-body">
+                {% if defn.tasks %}
+                <form method="POST" action="{{ url_for('batch.run_definition', def_id=defn.id) }}">
+                    <div class="mb-3">
+                        <label class="form-label">As-of Date</label>
+                        <input type="date" name="as_of_date" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="bi bi-play-fill"></i> Execute {{ defn.tasks | length }} step(s)
+                    </button>
+                </form>
+                <div class="mt-3 small text-muted">
+                    Steps will run <strong>sequentially</strong>.
+                    {% if defn.continue_on_error %}
+                    On failure, execution <strong>continues</strong> to the next step.
+                    {% else %}
+                    On failure, remaining steps are <strong>skipped</strong>.
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="alert alert-warning mb-0">Add at least one step before running.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent execution history -->
+        <div class="card">
+            <div class="card-header fw-semibold">
+                <i class="bi bi-clock-history"></i> Recent Executions
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th>Run ID</th><th>Date</th><th>Status</th><th>Run By</th></tr></thead>
+                    <tbody>
+                    {% for ex in recent_executions %}
+                    <tr>
+                        <td><a href="{{ url_for('batch.execution_detail', exec_id=ex.id) }}">{{ ex.id[:8] }}…</a></td>
+                        <td>{{ ex.as_of_date }}</td>
+                        <td>
+                            {% set sc = {'COMPLETED':'success','FAILED':'danger','PARTIAL':'warning','RUNNING':'info'} %}
+                            <span class="badge bg-{{ sc.get(ex.status,'secondary') }}">{{ ex.status }}</span>
+                        </td>
+                        <td class="small text-muted">{{ ex.run_by }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-center text-muted py-3">No runs yet.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateRefInput() {
+    const t = document.getElementById('taskTypeSelect').value;
+    ['allocation','import','export','custom_sp','ftp'].forEach(id => {
+        document.getElementById('ref_' + id).style.display = 'none';
+    });
+    if (t === 'ALLOCATION')      document.getElementById('ref_allocation').style.display = '';
+    if (t === 'DATAFILE_IMPORT') document.getElementById('ref_import').style.display     = '';
+    if (t === 'DATAFILE_EXPORT') document.getElementById('ref_export').style.display     = '';
+    if (t === 'CUSTOM_SP')       document.getElementById('ref_custom_sp').style.display  = '';
+    if (t === 'FTP')             document.getElementById('ref_ftp').style.display         = '';
+}
+function mergeRefId() {
+    const t = document.getElementById('taskTypeSelect').value;
+    let val = '';
+    if (t === 'ALLOCATION')      val = document.querySelector('[name=ref_id_allocation]').value;
+    if (t === 'DATAFILE_IMPORT') val = document.querySelector('[name=ref_id_import]').value;
+    if (t === 'DATAFILE_EXPORT') val = document.querySelector('[name=ref_id_export]').value;
+    if (t === 'CUSTOM_SP')       val = document.querySelector('[name=ref_id_custom_sp]').value;
+    document.getElementById('refIdHidden').value = val;
+}
+</script>
+{% endblock %}

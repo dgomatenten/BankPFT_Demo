@@ -1,7 +1,12 @@
 {% extends "layout/base.html" %}
 {% block title %}Batch Execution — BankPFT{% endblock %}
 {% block content %}
-<h2 class="mb-4">Batch Execution</h2>
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h2 class="mb-0">Batch Execution</h2>
+    <a href="{{ url_for('batch.list_definitions') }}" class="btn btn-outline-primary">
+        <i class="bi bi-collection-play"></i> Multi-Task Batch Definitions
+    </a>
+</div>
 
 <div class="row g-4 mb-4">
     <div class="col-md-6">

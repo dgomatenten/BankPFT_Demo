@@ -1,0 +1,169 @@
+{% extends "layout/base.html" %}
+{% block title %}Batch Execution — {{ execution.id[:8] }}{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4 gap-3">
+    <a href="{{ url_for('batch.definition_detail', def_id=execution.definition_id) }}"
+       class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h2 class="mb-0">Execution: {{ execution.id[:12] }}…</h2>
+        <p class="text-muted mb-0 small">
+            Batch: <strong>{{ execution.definition.name }}</strong> &nbsp;|&nbsp;
+            As of: <strong>{{ execution.as_of_date }}</strong> &nbsp;|&nbsp;
+            Run by: <strong>{{ execution.run_by }}</strong>
+        </p>
+    </div>
+    <div class="ms-auto">
+        {% set sc = {'COMPLETED':'success','FAILED':'danger','PARTIAL':'warning','RUNNING':'info'} %}
+        <span class="badge bg-{{ sc.get(execution.status,'secondary') }} fs-5 px-3 py-2">
+            {{ execution.status }}
+        </span>
+    </div>
+</div>
+
+<!-- Timing summary -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Started</div>
+                <div class="fw-semibold">{{ execution.started_at.strftime('%H:%M:%S') }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Completed</div>
+                <div class="fw-semibold">
+                    {{ execution.completed_at.strftime('%H:%M:%S') if execution.completed_at else '—' }}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Total Steps</div>
+                <div class="fw-semibold">{{ execution.steps | length }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Failed / Skipped</div>
+                {% set failed  = execution.steps | selectattr('status','eq','FAILED')  | list | length %}
+                {% set skipped = execution.steps | selectattr('status','eq','SKIPPED') | list | length %}
+                <div class="fw-semibold
+                    {{ 'text-danger' if failed > 0 else 'text-success' }}">
+                    {{ failed }} / {{ skipped }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step-by-step results -->
+<div class="card">
+    <div class="card-header fw-semibold"><i class="bi bi-list-check"></i> Step Results</div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th style="width:50px">#</th>
+                    <th>Type</th>
+                    <th>Label</th>
+                    <th>Status</th>
+                    <th>Summary / Error</th>
+                    <th>Started</th>
+                    <th>Completed</th>
+                    <th>Run ID</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for step in execution.steps %}
+            {% set step_colors = {
+                'COMPLETED': 'success',
+                'FAILED':    'danger',
+                'SKIPPED':   'secondary',
+                'RUNNING':   'info',
+                'PENDING':   'light',
+            } %}
+            {% set type_colors = {
+                'ALLOCATION':      'primary',
+                'FTP':             'info',
+                'DATAFILE_IMPORT': 'success',
+                'DATAFILE_EXPORT': 'warning',
+                'CUSTOM_SP':       'secondary',
+            } %}
+            <tr class="{{ 'table-danger' if step.status == 'FAILED' else 'table-warning' if step.status == 'SKIPPED' else '' }}">
+                <td class="text-center fw-bold text-muted">{{ step.step_order }}</td>
+                <td>
+                    <span class="badge bg-{{ type_colors.get(step.task_type, 'secondary') }}">
+                        {{ step.task_type }}
+                    </span>
+                </td>
+                <td class="small">{{ step.label or step.ref_id or '—' }}</td>
+                <td>
+                    <span class="badge bg-{{ step_colors.get(step.status, 'secondary') }}
+                        {{ 'text-dark' if step.status == 'PENDING' else '' }}">
+                        {{ step.status }}
+                    </span>
+                </td>
+                <td class="small">
+                    {% if step.error_message %}
+                    <span class="text-danger"><i class="bi bi-exclamation-triangle"></i> {{ step.error_message }}</span>
+                    {% elif step.summary %}
+                    {{ step.summary }}
+                    {% elif step.status == 'SKIPPED' %}
+                    <span class="text-muted">Step skipped due to earlier failure</span>
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+                <td class="small text-muted">
+                    {{ step.started_at.strftime('%H:%M:%S') if step.started_at else '—' }}
+                </td>
+                <td class="small text-muted">
+                    {{ step.completed_at.strftime('%H:%M:%S') if step.completed_at else '—' }}
+                </td>
+                <td class="small font-monospace text-muted">
+                    {% if step.ref_run_id %}
+                    {% if step.task_type == 'ALLOCATION' %}
+                    <a href="{{ url_for('batch.detail', batch_id=step.ref_run_id) }}">{{ step.ref_run_id[:8] }}…</a>
+                    {% elif step.task_type == 'FTP' %}
+                    <a href="{{ url_for('ftp.run_detail', run_id=step.ref_run_id) }}">{{ step.ref_run_id[:8] }}…</a>
+                    {% elif step.task_type in ('DATAFILE_IMPORT', 'DATAFILE_EXPORT') %}
+                    <a href="{{ url_for('datafile.batch_detail', batch_id=step.ref_run_id) }}">{{ step.ref_run_id[:8] }}…</a>
+                    {% else %}
+                    {{ step.ref_run_id[:8] }}…
+                    {% endif %}
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if execution.error_message %}
+<div class="alert alert-danger mt-3">{{ execution.error_message }}</div>
+{% endif %}
+
+<div class="mt-3">
+    <a href="{{ url_for('batch.definition_detail', def_id=execution.definition_id) }}"
+       class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Definition
+    </a>
+    <a href="{{ url_for('batch.list_definitions') }}" class="btn btn-outline-secondary ms-2">
+        All Definitions
+    </a>
+</div>
+
+{% endblock %}

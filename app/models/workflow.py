@@ -1,5 +1,6 @@
 from app.models import db
 from datetime import datetime
+import uuid
 
 
 class UploadBatch(db.Model):
@@ -59,4 +60,78 @@ class BatchRun(db.Model):
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
     run_by = db.Column(db.String(50), nullable=False)
+    error_message = db.Column(db.Text, nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-task Batch Definition & Execution
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BatchDefinition(db.Model):
+    """A named, ordered sequence of batch tasks (allocation, FTP, data file, custom SP)."""
+    __tablename__ = "batch_definition"
+    id                = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name              = db.Column(db.String(100), nullable=False, unique=True)
+    description       = db.Column(db.Text, nullable=True)
+    continue_on_error = db.Column(db.Boolean, default=False)
+    is_active         = db.Column(db.Boolean, default=True)
+    created_by        = db.Column(db.String(50), nullable=True)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at        = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    tasks             = db.relationship(
+        "BatchTask", backref="definition",
+        order_by="BatchTask.step_order", cascade="all, delete-orphan", lazy="select"
+    )
+    executions        = db.relationship(
+        "BatchExecution", backref="definition",
+        order_by="BatchExecution.started_at.desc()", lazy="dynamic"
+    )
+
+
+TASK_TYPES = ("ALLOCATION", "FTP", "DATAFILE_IMPORT", "DATAFILE_EXPORT", "CUSTOM_SP")
+
+
+class BatchTask(db.Model):
+    """One ordered step inside a BatchDefinition."""
+    __tablename__ = "batch_task"
+    id            = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    definition_id = db.Column(db.Integer, db.ForeignKey("batch_definition.id"), nullable=False)
+    step_order    = db.Column(db.Integer, nullable=False, default=0)
+    task_type     = db.Column(db.String(30), nullable=False)   # one of TASK_TYPES
+    ref_id        = db.Column(db.String(100), nullable=True)   # rule_id | format_id | export_id | sp_name
+    label         = db.Column(db.String(200), nullable=True)   # human-readable
+
+
+class BatchExecution(db.Model):
+    """Top-level run record for a single execution of a BatchDefinition."""
+    __tablename__ = "batch_execution"
+    id            = db.Column(db.String(36), primary_key=True,
+                              default=lambda: str(uuid.uuid4()))
+    definition_id = db.Column(db.Integer, db.ForeignKey("batch_definition.id"), nullable=False)
+    as_of_date    = db.Column(db.Date, nullable=False)
+    status        = db.Column(db.String(20), default="RUNNING")  # RUNNING|COMPLETED|FAILED|PARTIAL
+    started_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at  = db.Column(db.DateTime, nullable=True)
+    run_by        = db.Column(db.String(50), nullable=False)
+    error_message = db.Column(db.Text, nullable=True)
+    steps         = db.relationship(
+        "BatchExecutionStep", backref="execution",
+        order_by="BatchExecutionStep.step_order", cascade="all, delete-orphan", lazy="select"
+    )
+
+
+class BatchExecutionStep(db.Model):
+    """Per-task result row within a BatchExecution."""
+    __tablename__ = "batch_execution_step"
+    id            = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    execution_id  = db.Column(db.String(36), db.ForeignKey("batch_execution.id"), nullable=False)
+    step_order    = db.Column(db.Integer, nullable=False)
+    task_type     = db.Column(db.String(30), nullable=False)
+    ref_id        = db.Column(db.String(100), nullable=True)
+    label         = db.Column(db.String(200), nullable=True)
+    status        = db.Column(db.String(20), default="PENDING")  # PENDING|RUNNING|COMPLETED|FAILED|SKIPPED
+    ref_run_id    = db.Column(db.String(36), nullable=True)      # ID of created underlying run record
+    started_at    = db.Column(db.DateTime, nullable=True)
+    completed_at  = db.Column(db.DateTime, nullable=True)
+    summary       = db.Column(db.Text, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
