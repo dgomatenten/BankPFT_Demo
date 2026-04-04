@@ -24,6 +24,7 @@ This guide walks through every screen in the Management Allocation System, expla
 16. [Batch Execution — Detail](#16-batch-execution--detail)
 17. [Fund Transfer Pricing — Dashboard](#17-fund-transfer-pricing--dashboard)
 18. [Fund Transfer Pricing — Product Config](#18-fund-transfer-pricing--product-config)
+18a. [Fund Transfer Pricing — Import Config from JSON](#18a-fund-transfer-pricing--import-config-from-json)
 19. [Fund Transfer Pricing — Interest Rates Browser](#19-fund-transfer-pricing--interest-rates-browser)
 20. [Fund Transfer Pricing — Run Detail](#20-fund-transfer-pricing--run-detail)
 21. [Reports — Index](#21-reports--index)
@@ -548,6 +549,71 @@ Manage per-product FTP calculation parameters.
 | **Active** | Whether this config is used in FTP runs |
 
 The FTP engine skips any instrument whose product code has no active config — those instruments appear in the **Skipped** count on the run detail.
+
+---
+
+## 18a. Fund Transfer Pricing — Import Config from JSON
+
+**URL:** `/ftp/config/import`
+
+Import one or more FTP product configurations from a JSON file or pasted JSON text. This is useful for bulk setup, version control of FTP configurations, or copying configs between environments.
+
+**How to use:**
+1. Click **Import JSON** on the FTP Product Config list page (`/ftp/config`)
+2. Either **upload a `.json` file** or **paste JSON** into the text area
+3. Click **Import Config**
+
+The JSON may be a **single config object** or an **array of config objects**. If a `product_code` already exists in the database, its configuration is updated in-place — no duplicate is created.
+
+**Single config object example:**
+```json
+{
+  "product_code": "LOAN_FIXED",
+  "rate_code":    "SWAP_RATE",
+  "term": 5,
+  "term_mult": "Y",
+  "avg_period": 3,
+  "avg_period_mult": "M",
+  "is_active": true
+}
+```
+
+**Array example (multiple configs at once):**
+```json
+[
+  {
+    "product_code": "LOAN_FIXED",
+    "rate_code": "SWAP_RATE",
+    "term": 5,
+    "term_mult": "Y",
+    "avg_period": 3,
+    "avg_period_mult": "M"
+  },
+  {
+    "product_code": "DEPOSIT",
+    "rate_code": "LIBOR_USD",
+    "term": 3,
+    "term_mult": "M",
+    "avg_period": 1,
+    "avg_period_mult": "M"
+  }
+]
+```
+
+**JSON field reference:**
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `product_code` | Yes | — | Must be unique per config; should match a value in `dim_product` |
+| `rate_code` | Yes | — | Must match `interest_rate_code` in the uploaded rate table |
+| `term` | Yes | — | Positive integer — the tenor number |
+| `term_mult` | No | `M` | `D` (days) / `M` (months, default) / `Y` (years) |
+| `avg_period` | No | `1` | Moving-average lookback period length |
+| `avg_period_mult` | No | `M` | `D` / `M` (default) / `Y` |
+| `method` | No | `MOVING_AVG` | Only `MOVING_AVG` is supported |
+| `is_active` | No | `true` | Whether the config is used by the FTP engine |
+
+After a successful import, the UI redirects back to the **FTP Product Config** list page. Flash messages confirm how many configs were imported, updated, or skipped. A reference sample file is provided at `sample_ftp_config.json` in the project root.
 
 ---
 
@@ -1238,10 +1304,13 @@ The response also includes a `WWW-Authenticate: Basic realm="BankPFT API"` heade
 | `POST` | `/api/v1/datafile/export` | Trigger a file export |
 | `GET` | `/api/v1/datafile/batch/<id>` | Get import/export batch status |
 | `GET` | `/api/v1/batch/rules` | List active allocation rules |
+| `POST` | `/api/v1/rules/import` | Import an allocation rule from JSON body |
 | `POST` | `/api/v1/batch/allocation` | Run an allocation batch |
 | `GET` | `/api/v1/batch/allocation/<id>` | Get allocation batch status |
 | `POST` | `/api/v1/batch/ftp` | Run the FTP calculation engine |
 | `GET` | `/api/v1/batch/ftp/<id>` | Get FTP run status |
+| `GET` | `/api/v1/ftp/configs` | List all FTP product configurations |
+| `POST` | `/api/v1/ftp/config/import` | Import one or more FTP product configs from JSON |
 
 ---
 
@@ -1658,6 +1727,165 @@ Runs the FTP moving-average engine for a given as-of date.
 ### GET `/api/v1/batch/ftp/<run_id>`
 
 Returns the status of a previously triggered FTP run. Same response shape as `POST /batch/ftp`.
+
+---
+
+### POST `/api/v1/rules/import`
+
+Imports an allocation rule directly from a JSON body. Equivalent to using the `/rules/import` web UI but accessible programmatically. The rule is created immediately as `ACTIVE`.
+
+**Request body** — same schema as the `/rules/import` web form:
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `name` | **Yes** | — | Display name |
+| `description` | No | `""` | Free-text notes |
+| `source_table` | No | `proc_inst_data` | Source data table |
+| `lookup_table` | No | `ref_static_allocation` | Ratio lookup table |
+| `output_table` | No | `fct_mgmt_instrument` | Output destination |
+| `join_key` | No | `customer_id` | Column linking source ↔ lookup |
+| `entry_mode` | No | `BOTH` | `BOTH` / `DEBIT_ONLY` / `CREDIT_ONLY` |
+| `filter_json` | No | — | Row-level filter object |
+| `source_dim_json` | No | — | Per-dimension source member filter |
+| `output_dim_json` | No | — | Per-dimension DEBIT dimension mapping |
+| `credit_dim_json` | No | — | Per-dimension CREDIT dimension mapping |
+
+**curl example:**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "name": "Customer Shred Q2",
+       "source_table": "proc_inst_data",
+       "lookup_table": "ref_static_allocation",
+       "output_table": "fct_mgmt_instrument",
+       "join_key": "customer_id",
+       "entry_mode": "BOTH"
+     }' \
+     http://localhost:5000/api/v1/rules/import
+```
+
+**Success response (`201 Created`):**
+```json
+{
+  "rule_id": 5,
+  "name": "Customer Shred Q2",
+  "status": "ACTIVE",
+  "entry_mode": "BOTH",
+  "created_by": "admin",
+  "created_at": "2026-04-04T00:00:00Z"
+}
+```
+
+**Error (`400`) — missing name:**
+```json
+{ "error": "JSON must contain a 'name' field" }
+```
+
+---
+
+### GET `/api/v1/ftp/configs`
+
+Returns all FTP product configurations (active and inactive).
+
+**curl example:**
+```bash
+curl -u admin:admin http://localhost:5000/api/v1/ftp/configs
+```
+
+**Response:**
+```json
+{
+  "configs": [
+    {
+      "id": 1,
+      "product_code": "PROD-LON",
+      "method": "MOVING_AVG",
+      "rate_code": "SWAP_RATE",
+      "term": 5,
+      "term_mult": "Y",
+      "avg_period": 3,
+      "avg_period_mult": "M",
+      "is_active": true,
+      "created_by": "system"
+    }
+  ]
+}
+```
+
+---
+
+### POST `/api/v1/ftp/config/import`
+
+Imports one or more FTP product configurations from a JSON body. If a `product_code` already exists, its configuration is updated in-place (no duplicate created).
+
+The body may be a **single object** or an **array of objects**.
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `product_code` | **Yes** | — | Must match `dim_product`; unique key |
+| `rate_code` | **Yes** | — | Must match `interest_rate_code` in rate table |
+| `term` | **Yes** | — | Positive integer tenor number |
+| `term_mult` | No | `M` | `D` / `M` / `Y` |
+| `avg_period` | No | `1` | Moving-average lookback period |
+| `avg_period_mult` | No | `M` | `D` / `M` / `Y` |
+| `method` | No | `MOVING_AVG` | Only `MOVING_AVG` is supported |
+| `is_active` | No | `true` | Whether config is used by FTP engine |
+
+**curl — array of configs:**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '[
+       {"product_code": "LOAN_FIXED", "rate_code": "SWAP_RATE", "term": 5, "term_mult": "Y", "avg_period": 3, "avg_period_mult": "M"},
+       {"product_code": "DEPOSIT",    "rate_code": "LIBOR_USD",  "term": 3, "term_mult": "M"}
+     ]' \
+     http://localhost:5000/api/v1/ftp/config/import
+```
+
+**curl — single config:**
+```bash
+curl -u admin:admin \
+     -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"product_code": "CREDIT_CARD", "rate_code": "PRIME_RATE", "term": 1, "term_mult": "Y"}' \
+     http://localhost:5000/api/v1/ftp/config/import
+```
+
+**Success response (`200`):**
+```json
+{ "imported": 2, "updated": 0, "skipped": 0, "errors": [] }
+```
+
+**Partial success with validation errors (`422` when all items are skipped):**
+```json
+{
+  "imported": 1,
+  "updated": 0,
+  "skipped": 1,
+  "errors": ["Item 2 ('BAD_CODE'): missing 'rate_code' — skipped"]
+}
+```
+
+**Python example (import a config file from disk):**
+```python
+import json, requests
+
+BASE = "http://localhost:5000"
+AUTH = ("admin", "admin")
+
+with open("sample_ftp_config.json") as f:
+    configs = json.load(f)
+
+r = requests.post(f"{BASE}/api/v1/ftp/config/import", json=configs, auth=AUTH)
+result = r.json()
+print(f"Imported: {result['imported']}, Updated: {result['updated']}, Skipped: {result['skipped']}")
+if result["errors"]:
+    for err in result["errors"]:
+        print(" Error:", err)
+```
 
 ---
 

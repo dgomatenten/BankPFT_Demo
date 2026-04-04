@@ -1,0 +1,47 @@
+[
+  {
+    "product_code": "LOAN_FIXED",
+    "rate_code": "SWAP_RATE",
+    "term": 5,
+    "term_mult": "Y",
+    "avg_period": 3,
+    "avg_period_mult": "M",
+    "is_active": true
+  },
+  {
+    "product_code": "MORTGAGE",
+    "rate_code": "SWAP_RATE",
+    "term": 10,
+    "term_mult": "Y",
+    "avg_period": 1,
+    "avg_period_mult": "M",
+    "is_active": true
+  },
+  {
+    "product_code": "DEPOSIT",
+    "rate_code": "LIBOR_USD",
+    "term": 3,
+    "term_mult": "M",
+    "avg_period": 1,
+    "avg_period_mult": "M",
+    "is_active": true
+  },
+  {
+    "product_code": "SAVINGS",
+    "rate_code": "LIBOR_USD",
+    "term": 1,
+    "term_mult": "M",
+    "avg_period": 1,
+    "avg_period_mult": "M",
+    "is_active": true
+  },
+  {
+    "product_code": "CREDIT_CARD",
+    "rate_code": "PRIME_RATE",
+    "term": 1,
+    "term_mult": "Y",
+    "avg_period": 6,
+    "avg_period_mult": "M",
+    "is_active": false
+  }
+]

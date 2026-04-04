@@ -39,6 +39,17 @@ GET  /api/v1/datafile/exports
 GET  /api/v1/batch/rules
     → list of active allocation rules
 
+POST /api/v1/rules/import
+    body: allocation rule JSON (same schema as /rules/import UI)
+    → { "rule_id", "name", "status", "created_by" }
+
+GET  /api/v1/ftp/configs
+    → list of all FTP product configurations
+
+POST /api/v1/ftp/config/import
+    body: single FTP config object or array of config objects
+    → { "imported", "updated", "skipped", "errors": [...] }
+
 GET  /api/v1/batch/definitions
     → list of active multi-task batch definitions (with step counts)
 
@@ -59,10 +70,11 @@ from functools import wraps
 
 from flask import Blueprint, jsonify, request
 
+from app.models import db
 from app.models.auth import User
 from app.models.datafile import DataFileBatch
 from app.models.workflow import AllocationRule, BatchRun, BatchDefinition, BatchExecution, BatchExecutionStep
-from app.models.ftp import FtpRun
+from app.models.ftp import FtpRun, FtpProductConfig
 from app.services.datafile_service import (
     DATAFILE_CONFIG, import_file, export_data,
 )
@@ -355,6 +367,197 @@ def api_ftp_status(api_user, run_id):
     if ftp_run is None:
         return jsonify({"error": "run not found"}), 404
     return jsonify(_ftp_run_dict(ftp_run))
+
+
+# ── Rule import endpoint ──────────────────────────────────────────────────────
+
+@bp.post("/rules/import")
+@api_login_required
+def api_import_rule(api_user):
+    """Import an allocation rule from a JSON body.
+
+    Request body: allocation rule JSON (same schema as the /rules/import UI).
+    Required field: name.
+
+    Returns the newly created rule.
+    """
+    body = request.get_json(silent=True)
+    if not body or not isinstance(body, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+
+    if not body.get("name"):
+        return jsonify({"error": "JSON must contain a 'name' field"}), 400
+
+    def _to_json(v):
+        if v is None:
+            return None
+        return json.dumps(v) if isinstance(v, dict) else str(v)
+
+    raw_jk = body.get("join_key", body.get("join_keys", "customer_id"))
+    if isinstance(raw_jk, list):
+        join_key_val = ",".join(str(k).strip() for k in raw_jk if str(k).strip())
+    else:
+        join_key_val = str(raw_jk).strip() or "customer_id"
+
+    entry_mode = body.get("entry_mode") or (
+        "BOTH" if body.get("generate_offset", True) else "DEBIT_ONLY"
+    )
+    if entry_mode not in ("BOTH", "DEBIT_ONLY", "CREDIT_ONLY"):
+        entry_mode = "BOTH"
+
+    rule = AllocationRule(
+        name=body["name"],
+        description=body.get("description", ""),
+        source_table=body.get("source_table", "proc_inst_data"),
+        lookup_table=body.get("lookup_table", "ref_static_allocation"),
+        output_table=body.get("output_table", "fct_mgmt_instrument"),
+        join_key=join_key_val,
+        filter_json=_to_json(body.get("filter_json")),
+        source_dim_json=_to_json(body.get("source_dim_json")),
+        output_dim_json=_to_json(body.get("output_dim_json")),
+        credit_dim_json=_to_json(body.get("credit_dim_json")),
+        entry_mode=entry_mode,
+        generate_offset=bool(body.get("generate_offset", True)),
+        created_by=api_user.username,
+        status="ACTIVE",
+    )
+    db.session.add(rule)
+    db.session.commit()
+
+    return jsonify({
+        "rule_id":    rule.id,
+        "name":       rule.name,
+        "status":     rule.status,
+        "entry_mode": rule.entry_mode,
+        "created_by": rule.created_by,
+        "created_at": _fmt_dt(rule.created_at),
+    }), 201
+
+
+# ── FTP config endpoints ──────────────────────────────────────────────────────
+
+@bp.get("/ftp/configs")
+@api_login_required
+def api_list_ftp_configs(api_user):
+    """List all FTP product configurations."""
+    configs = FtpProductConfig.query.order_by(FtpProductConfig.product_code).all()
+    return jsonify({
+        "configs": [
+            {
+                "id":               c.id,
+                "product_code":     c.product_code,
+                "method":           c.method,
+                "rate_code":        c.rate_code,
+                "term":             c.term,
+                "term_mult":        c.term_mult,
+                "avg_period":       c.avg_period,
+                "avg_period_mult":  c.avg_period_mult,
+                "is_active":        c.is_active,
+                "created_by":       c.created_by,
+            }
+            for c in configs
+        ]
+    })
+
+
+@bp.post("/ftp/config/import")
+@api_login_required
+def api_import_ftp_config(api_user):
+    """Import one or more FTP product configs from a JSON body.
+
+    Request body: a single config object OR an array of config objects.
+    Required per item: product_code, rate_code, term.
+
+    If a product_code already exists, the config is updated in-place.
+
+    Returns a summary of imported, updated, and skipped items.
+    """
+    body = request.get_json(silent=True)
+    if body is None:
+        return jsonify({"error": "Request body must be a JSON object or array"}), 400
+
+    if isinstance(body, dict):
+        items = [body]
+    elif isinstance(body, list):
+        items = body
+    else:
+        return jsonify({"error": "Request body must be a JSON object or array"}), 400
+
+    imported_count = 0
+    updated_count = 0
+    skipped_count = 0
+    errors = []
+
+    for idx, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            errors.append(f"Item {idx}: not an object — skipped")
+            skipped_count += 1
+            continue
+
+        product_code = str(item.get("product_code", "")).strip()
+        if not product_code:
+            errors.append(f"Item {idx}: missing 'product_code' — skipped")
+            skipped_count += 1
+            continue
+
+        rate_code = str(item.get("rate_code", "")).strip()
+        if not rate_code:
+            errors.append(f"Item {idx} ('{product_code}'): missing 'rate_code' — skipped")
+            skipped_count += 1
+            continue
+
+        try:
+            term = int(item.get("term", 0))
+            avg_period = int(item.get("avg_period", 1))
+        except (TypeError, ValueError):
+            errors.append(f"Item {idx} ('{product_code}'): 'term' and 'avg_period' must be integers — skipped")
+            skipped_count += 1
+            continue
+
+        if term <= 0:
+            errors.append(f"Item {idx} ('{product_code}'): 'term' must be a positive integer — skipped")
+            skipped_count += 1
+            continue
+
+        term_mult = str(item.get("term_mult", "M")).strip().upper()
+        if term_mult not in ("D", "M", "Y"):
+            term_mult = "M"
+        avg_period_mult = str(item.get("avg_period_mult", "M")).strip().upper()
+        if avg_period_mult not in ("D", "M", "Y"):
+            avg_period_mult = "M"
+
+        existing = FtpProductConfig.query.filter_by(product_code=product_code).first()
+        if existing:
+            existing.rate_code = rate_code
+            existing.term = term
+            existing.term_mult = term_mult
+            existing.avg_period = avg_period
+            existing.avg_period_mult = avg_period_mult
+            existing.is_active = bool(item.get("is_active", True))
+            updated_count += 1
+        else:
+            cfg = FtpProductConfig(
+                product_code=product_code,
+                method=str(item.get("method", "MOVING_AVG")).strip() or "MOVING_AVG",
+                rate_code=rate_code,
+                term=term,
+                term_mult=term_mult,
+                avg_period=avg_period,
+                avg_period_mult=avg_period_mult,
+                is_active=bool(item.get("is_active", True)),
+                created_by=api_user.username,
+            )
+            db.session.add(cfg)
+            imported_count += 1
+
+    db.session.commit()
+
+    return jsonify({
+        "imported": imported_count,
+        "updated":  updated_count,
+        "skipped":  skipped_count,
+        "errors":   errors,
+    }), 200 if (imported_count + updated_count) > 0 else 422
 
 
 # ── Multi-task batch definition & execution routes ────────────────────────────

@@ -1,0 +1,171 @@
+{% extends "layout/base.html" %}
+{% block title %}Test Run {{ run.id[:8] }} — BankPFT{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-0">
+            <i class="bi bi-clipboard2-check"></i> Test Run
+            <code class="fs-6 ms-2">{{ run.id[:8] }}…</code>
+        </h2>
+        <small class="text-muted">
+            Started {{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else '—' }}
+            &nbsp;·&nbsp;
+            Duration {{ '%.2f'|format(run.duration_s) }}s
+            &nbsp;·&nbsp;
+            Triggered by <strong>{{ run.triggered_by or '—' }}</strong>
+        </small>
+    </div>
+    <div>
+        <a href="/tests/run/{{ run.id }}/log" class="btn btn-sm btn-outline-secondary me-2" target="_blank">
+            <i class="bi bi-terminal"></i> Raw Log
+        </a>
+        <a href="/tests/" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-arrow-left"></i> All Runs
+        </a>
+    </div>
+</div>
+
+{# ── Summary badges ── #}
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold">{{ run.total }}</div>
+                <small class="text-muted">Total</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center border-success">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-success">{{ run.passed }}</div>
+                <small class="text-muted">Passed</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center {% if run.failed > 0 %}border-danger{% endif %}">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold {% if run.failed > 0 %}text-danger{% else %}text-muted{% endif %}">{{ run.failed }}</div>
+                <small class="text-muted">Failed</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center {% if run.error > 0 %}border-warning{% endif %}">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold {% if run.error > 0 %}text-warning{% else %}text-muted{% endif %}">{{ run.error }}</div>
+                <small class="text-muted">Errors</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-muted">{{ run.skipped }}</div>
+                <small class="text-muted">Skipped</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                {% if run.status == 'PASS' %}
+                    <div class="fs-5 fw-bold text-success"><i class="bi bi-check-circle-fill"></i> PASS</div>
+                {% elif run.status == 'FAIL' %}
+                    <div class="fs-5 fw-bold text-danger"><i class="bi bi-x-circle-fill"></i> FAIL</div>
+                {% elif run.status == 'ERROR' %}
+                    <div class="fs-5 fw-bold text-warning"><i class="bi bi-exclamation-triangle-fill"></i> ERROR</div>
+                {% else %}
+                    <div class="fs-5 fw-bold text-secondary">{{ run.status }}</div>
+                {% endif %}
+                <small class="text-muted">Status</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Progress bar ── #}
+{% if run.total > 0 %}
+<div class="mb-4">
+    <div class="progress" style="height: 12px;">
+        <div class="progress-bar bg-success" style="width: {{ (run.passed / run.total * 100)|round|int }}%"
+             title="{{ run.passed }} passed"></div>
+        <div class="progress-bar bg-danger" style="width: {{ (run.failed / run.total * 100)|round|int }}%"
+             title="{{ run.failed }} failed"></div>
+        <div class="progress-bar bg-warning" style="width: {{ (run.error / run.total * 100)|round|int }}%"
+             title="{{ run.error }} errors"></div>
+        <div class="progress-bar bg-secondary" style="width: {{ (run.skipped / run.total * 100)|round|int }}%"
+             title="{{ run.skipped }} skipped"></div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Per-module test results ── #}
+{% if modules %}
+{% for module_name, mtests in modules.items() %}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span>
+            <i class="bi bi-file-code"></i>
+            <code>{{ module_name }}</code>
+        </span>
+        <span>
+            {% set m_pass  = mtests|selectattr('outcome','eq','passed')|list|length %}
+            {% set m_fail  = mtests|selectattr('outcome','eq','failed')|list|length %}
+            {% set m_error = mtests|selectattr('outcome','eq','error')|list|length %}
+            {% set m_skip  = mtests|selectattr('outcome','eq','skipped')|list|length %}
+            <span class="badge bg-success">{{ m_pass }} pass</span>
+            {% if m_fail > 0 %}<span class="badge bg-danger">{{ m_fail }} fail</span>{% endif %}
+            {% if m_error > 0 %}<span class="badge bg-warning text-dark">{{ m_error }} err</span>{% endif %}
+            {% if m_skip > 0 %}<span class="badge bg-secondary">{{ m_skip }} skip</span>{% endif %}
+        </span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:44px">Status</th>
+                    <th>Test</th>
+                    <th class="text-end" style="width:80px">Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for t in mtests %}
+            <tr {% if t.outcome in ('failed','error') %}class="table-danger"{% elif t.outcome == 'skipped' %}class="table-secondary"{% endif %}>
+                <td>
+                    {% if t.outcome == 'passed' %}
+                        <span class="badge bg-success">✓</span>
+                    {% elif t.outcome == 'failed' %}
+                        <span class="badge bg-danger">✗</span>
+                    {% elif t.outcome == 'error' %}
+                        <span class="badge bg-warning text-dark">!</span>
+                    {% else %}
+                        <span class="badge bg-secondary">–</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <code class="small">{{ t.test_name }}</code>
+                    {% if t.message %}
+                    <div class="text-danger small mt-1"><pre class="mb-0" style="white-space:pre-wrap;font-size:0.75em;">{{ t.message }}</pre></div>
+                    {% endif %}
+                </td>
+                <td class="text-end text-muted small">{{ t.duration }}s</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="card">
+    <div class="card-body text-muted text-center py-4">
+        No individual test results available.
+        <a href="/tests/run/{{ run.id }}/log" target="_blank">View raw log</a> for details.
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

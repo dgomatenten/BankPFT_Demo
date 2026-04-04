@@ -1,0 +1,102 @@
+{% extends "layout/base.html" %}
+{% block title %}Import FTP Config — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">Import FTP Product Config from JSON</h2>
+
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-upload"></i> Upload or Paste Config JSON</div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">Upload JSON file</label>
+                        <input type="file" name="config_file" id="config_file_input" class="form-control" accept=".json,application/json">
+                        <div class="form-text text-muted">Selecting a file will load its contents into the text area below for review.</div>
+                    </div>
+                    <div class="text-center text-muted my-2">— or —</div>
+                    <div class="mb-3">
+                        <label class="form-label">Paste JSON directly</label>
+                        <textarea name="config_json" id="config_json_area" class="form-control font-monospace" rows="16"
+                            placeholder='[
+  {
+    "product_code": "LOAN_FIXED",
+    "rate_code": "SWAP_RATE",
+    "term": 5,
+    "term_mult": "Y",
+    "avg_period": 3,
+    "avg_period_mult": "M",
+    "is_active": true
+  },
+  {
+    "product_code": "DEPOSIT",
+    "rate_code": "LIBOR_USD",
+    "term": 3,
+    "term_mult": "M",
+    "avg_period": 1,
+    "avg_period_mult": "M",
+    "is_active": true
+  }
+]'></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Import Config</button>
+                    <a href="/ftp/config" class="btn btn-outline-secondary ms-2">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white"><i class="bi bi-info-circle"></i> JSON Schema Reference</div>
+            <div class="card-body small">
+                <p>JSON may be a <strong>single config object</strong> or an <strong>array of config objects</strong>. If a <code>product_code</code> already exists, its configuration is updated in-place.</p>
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light"><tr><th>Field</th><th>Required</th><th>Notes</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>product_code</code></td><td><span class="badge bg-danger">Yes</span></td><td>Must be unique; matches <code>dim_product</code></td></tr>
+                        <tr><td><code>rate_code</code></td><td><span class="badge bg-danger">Yes</span></td><td>Matches <code>interest_rate_code</code> in rate table</td></tr>
+                        <tr><td><code>term</code></td><td><span class="badge bg-danger">Yes</span></td><td>Positive integer — tenor number</td></tr>
+                        <tr><td><code>term_mult</code></td><td>No</td><td><code>D</code> / <code>M</code> (default) / <code>Y</code></td></tr>
+                        <tr><td><code>avg_period</code></td><td>No</td><td>Integer, default <code>1</code></td></tr>
+                        <tr><td><code>avg_period_mult</code></td><td>No</td><td><code>D</code> / <code>M</code> (default) / <code>Y</code></td></tr>
+                        <tr><td><code>method</code></td><td>No</td><td><code>MOVING_AVG</code> (only available)</td></tr>
+                        <tr><td><code>is_active</code></td><td>No</td><td><code>true</code> (default) / <code>false</code></td></tr>
+                    </tbody>
+                </table>
+                <hr>
+                <p class="mb-1"><strong>Single object example:</strong></p>
+                <pre class="bg-light p-2 rounded" style="font-size:0.75rem;">{
+  "product_code": "LOAN_FIXED",
+  "rate_code":    "SWAP_RATE",
+  "term": 5,      "term_mult": "Y",
+  "avg_period": 3,"avg_period_mult": "M"
+}</pre>
+                <p class="mb-1"><strong>Array example:</strong></p>
+                <pre class="bg-light p-2 rounded mb-0" style="font-size:0.75rem;">[
+  { "product_code": "LOAN_FIXED", ... },
+  { "product_code": "DEPOSIT",    ... }
+]</pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('config_file_input').addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const area = document.getElementById('config_json_area');
+        area.value = e.target.result;
+        try {
+            area.value = JSON.stringify(JSON.parse(e.target.result), null, 2);
+        } catch (_) { /* leave raw if malformed */ }
+    };
+    reader.readAsText(file);
+});
+</script>
+{% endblock %}

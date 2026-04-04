@@ -18,8 +18,10 @@ A prototype **Management Allocation System** that redistributes financial balanc
 - [Data Validation](#data-validation)
 - [Output Tables](#output-tables)
 - [Allocation Rule JSON Import](#allocation-rule-json-import)
+- [FTP Product Config JSON Import](#ftp-product-config-json-import)
 - [Data File Management](#data-file-management)
 - [REST API](#rest-api)
+- [Test Framework](#test-framework)
 - [start.sh Reference](#startsh-reference)
 - **Implementation Considerations**
   - [Authentication (Azure AD / Entra ID)](#authentication-implementation-consideration)
@@ -40,14 +42,16 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, and Org Reclassification data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
+| **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
 | **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. The batch execution screen selects a definition, previews its steps, and executes them sequentially. Individual steps can also be run directly from an Advanced panel |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
 | **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default) |
-| **REST API** | HTTP Basic Auth API at `/api/v1/` — trigger data file imports/exports, run allocation batches, run FTP batches, run multi-task batch definitions, and poll status. All responses JSON |
+| **REST API** | HTTP Basic Auth API at `/api/v1/` — trigger data file imports/exports, run allocation batches, run FTP batches, run multi-task batch definitions, import allocation rules and FTP configs from JSON, and poll status. All responses JSON |
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
+| **Regression Test Framework** | 94-test pytest suite covering auth, allocation engine, FTP engine, API endpoints, batch, and datafile. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
 
 ## Architecture
 
@@ -178,8 +182,17 @@ app/
 │   ├── ftp_engine.py        # FTP moving-average engine (run_ftp)
 │   ├── datafile_service.py  # Fixed-length & delimited import/export engine
 │   ├── batch_executor.py    # Multi-task batch orchestrator (sequential step dispatch)
+│   ├── test_runner.py       # In-app pytest runner — executes tests/, parses JSON report
 │   └── testdata_service.py  # Test data generators (incl. FTP rate seeding)
 └── templates/               # Jinja2 / Bootstrap 5 templates
+
+tests/
+├── __init__.py              # Package marker
+├── conftest.py              # Shared fixtures (app, db_session, client, auth_client, seeded_db)
+├── test_auth.py             # Auth, login/logout, access control, User/Group model
+├── test_rules.py            # AllocationRule CRUD, JSON import, filter engine, allocation E2E
+├── test_ftp_batch.py        # FTP config model, UI routes, lookback math, FTP engine, batch, datafile
+└── test_api.py              # All /api/v1/ endpoints (auth guard, happy path, validation)
 ```
 
 ## JSON vs Database — What Lives Where
@@ -505,6 +518,44 @@ Rules can be defined as JSON and imported via `/rules/import`. This allows batch
 }
 ```
 
+## FTP Product Config JSON Import
+
+FTP product configurations can be imported in bulk from a JSON file via `/ftp/config/import` (UI) or `POST /api/v1/ftp/config/import` (REST API). If a `product_code` already exists, its configuration is updated in-place.
+
+**Single config object:**
+```json
+{
+  "product_code": "LOAN_FIXED",
+  "rate_code": "SWAP_RATE",
+  "term": 5,
+  "term_mult": "Y",
+  "avg_period": 3,
+  "avg_period_mult": "M",
+  "is_active": true
+}
+```
+
+**Array of config objects:**
+```json
+[
+  { "product_code": "LOAN_FIXED", "rate_code": "SWAP_RATE", "term": 5, "term_mult": "Y", "avg_period": 3, "avg_period_mult": "M" },
+  { "product_code": "DEPOSIT",    "rate_code": "LIBOR_USD",  "term": 3, "term_mult": "M", "avg_period": 1, "avg_period_mult": "M" }
+]
+```
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `product_code` | Yes | — | Must be unique; matches `dim_product` |
+| `rate_code` | Yes | — | Matches `interest_rate_code` in rate table |
+| `term` | Yes | — | Positive integer tenor number |
+| `term_mult` | No | `M` | `D` / `M` / `Y` |
+| `avg_period` | No | `1` | Moving-average lookback period length |
+| `avg_period_mult` | No | `M` | `D` / `M` / `Y` |
+| `method` | No | `MOVING_AVG` | Only supported method |
+| `is_active` | No | `true` | Whether config is used by the FTP engine |
+
+A reference file with five sample configs is at `sample_ftp_config.json` in the project root.
+
 ## Data File Management
 
 A JSON-configured batch file I/O engine that reads from an **inbox** folder and writes to an **outbox** folder, independent of the Excel upload workflow.
@@ -736,10 +787,13 @@ print(result["status"], "rows:", result["row_count"], "file:", result["filename"
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/v1/batch/rules` | List active allocation rules |
+| `POST` | `/api/v1/rules/import` | Import an allocation rule from JSON body |
 | `POST` | `/api/v1/batch/allocation` | Run an allocation batch |
 | `GET` | `/api/v1/batch/allocation/<id>` | Get allocation batch status |
 | `POST` | `/api/v1/batch/ftp` | Run the FTP calculation engine |
 | `GET` | `/api/v1/batch/ftp/<id>` | Get FTP run status |
+| `GET` | `/api/v1/ftp/configs` | List all FTP product configurations |
+| `POST` | `/api/v1/ftp/config/import` | Import one or more FTP product configs from JSON |
 
 **POST `/api/v1/batch/allocation`**
 ```json
@@ -749,6 +803,48 @@ print(result["status"], "rows:", result["row_count"], "file:", result["filename"
 **POST `/api/v1/batch/ftp`**
 ```json
 { "as_of_date": "2026-01-01" }
+```
+
+**POST `/api/v1/rules/import`** — import an allocation rule directly from JSON:
+```json
+{
+  "name": "Customer Shred Q1",
+  "source_table": "proc_inst_data",
+  "lookup_table": "ref_static_allocation",
+  "output_table": "fct_mgmt_instrument",
+  "join_key": "customer_id",
+  "entry_mode": "BOTH",
+  "filter_json": {"logic": "AND", "conditions": [{"field": "product_code", "operator": "in", "value": "LOAN,DEPOSIT"}]},
+  "output_dim_json": {"org_unit_id": {"mode": "lookup", "lookup_column": "target_org_unit_id"}}
+}
+```
+
+Response (201 Created):
+```json
+{ "rule_id": 5, "name": "Customer Shred Q1", "status": "ACTIVE", "entry_mode": "BOTH", "created_by": "admin", "created_at": "2026-04-04T00:00:00Z" }
+```
+
+**POST `/api/v1/ftp/config/import`** — import one or more FTP product configs:
+```json
+[
+  { "product_code": "LOAN_FIXED", "rate_code": "SWAP_RATE", "term": 5, "term_mult": "Y", "avg_period": 3, "avg_period_mult": "M" },
+  { "product_code": "DEPOSIT",    "rate_code": "LIBOR_USD",  "term": 3, "term_mult": "M" }
+]
+```
+
+Response:
+```json
+{ "imported": 2, "updated": 0, "skipped": 0, "errors": [] }
+```
+
+**GET `/api/v1/ftp/configs`**:
+```json
+{
+  "configs": [
+    { "id": 1, "product_code": "LOAN_FIXED", "method": "MOVING_AVG", "rate_code": "SWAP_RATE",
+      "term": 5, "term_mult": "Y", "avg_period": 3, "avg_period_mult": "M", "is_active": true, "created_by": "admin" }
+  ]
+}
 ```
 
 **Response (allocation batch):**
@@ -917,6 +1013,78 @@ curl $AUTH $BASE/api/v1/batch/executions/<execution_id>
 | `401` | Unauthorized (missing or wrong credentials) |
 | `404` | Resource not found |
 | `422` | Run triggered but completed with errors (check `error_message` / `errors`) |
+
+---
+
+## Test Framework
+
+BankPFT ships with a fully integrated regression test suite and an in-app test runner. The framework ensures that inter-dependent enterprise workflows — allocation engine, FTP engine, Maker/Checker workflow, REST API — remain correct as the codebase grows.
+
+### Quick Run (command line)
+
+```bash
+# Activate virtualenv if not active
+source venv/bin/activate
+
+# Run the full suite
+python -m pytest tests/ -q
+
+# Run a single module
+python -m pytest tests/test_api.py -v
+
+# Run a single test
+python -m pytest tests/test_rules.py::TestAllocationEngine::test_run_allocation_creates_batch -v
+```
+
+**Current result: 94 passed, 0 failed** (in-memory SQLite, ~4 seconds).
+
+### In-App Test Runner
+
+Admins can trigger the test suite and view results directly from the browser without using the terminal:
+
+| URL | Description |
+|---|---|
+| `/tests/` | Run history — all past runs with pass/fail summary badges |
+| **Run Full Suite** button | Triggers `pytest tests/` as a subprocess; redirects to results when done |
+| `/tests/run/<id>` | Per-test results grouped by module — outcome, duration, error message |
+| `/tests/run/<id>/log` | Raw pytest stdout (plain text) |
+
+The "Test Suite" link appears in the sidebar under the Admin section for Admin users.
+
+### Test Suite Overview
+
+| File | Tests | What is tested |
+|---|---|---|
+| `tests/test_auth.py` | 14 | Login, logout, wrong credentials, protected route redirects, User model password hashing, admin routes |
+| `tests/test_rules.py` | 20 | AllocationRule model defaults, UI routes, JSON import (valid/missing name), `_apply_filters()` for eq / gt / in / OR / between / invalid JSON, allocation engine end-to-end, DEBIT+CREDIT balance equality |
+| `tests/test_ftp_batch.py` | 24 | FtpProductConfig model, unique constraint, FTP UI routes, import single/array JSON, `_lookback_start()` for D/M/Y across year boundaries, FTP engine E2E match & rate write-back, zero-instrument clean run, BatchDefinition model, datafile config loading and format validation |
+| `tests/test_api.py` | 36 | 401 guard on every endpoint, wrong credentials, GET listing shapes, `POST /api/v1/rules/import` (valid, missing name, empty body), `POST /api/v1/ftp/config/import` (single, array, update, missing product_code), datafile path-traversal rejection, allocation missing rule_id, FTP run with and without date |
+| **Total** | **94** | |
+
+### Test Isolation
+
+- Each test runs against an **in-memory SQLite database** (`sqlite:///:memory:`) — the production `instance/bankpft.db` is never touched.
+- Each test function is wrapped in a transaction that is **rolled back** when the test completes, so tests are fully independent.
+- The `seeded_db` fixture inserts minimal master data (dimensions, one instrument row, allocation ratio, FTP config, interest rate) for engine-level tests.
+- The `auth_client` fixture logs in as `admin` via the form POST so UI route tests have an authenticated session.
+
+### Adding Tests for New Features
+
+1. Create `tests/test_<feature>.py` — it is auto-discovered by pytest.
+2. Use `client` for unauthenticated routes, `auth_client` for admin UI, `seeded_db` when the engine needs data.
+3. Follow the class-per-concern pattern (`TestMyModelRoutes`, `TestMyEngine`).
+4. Run `python -m pytest tests/ -q` or click **Run Full Suite** in the app to validate.
+
+### Dependencies
+
+```
+pytest>=8.0
+pytest-json-report>=1.5.0
+```
+
+Both are listed in `requirements.txt` and installed by `./start.sh` or `pip install -r requirements.txt`.
+
+For a detailed reference — fixture descriptions, test case catalogue, how to extend the suite, and in-app runner internals — see [docs/TEST_FRAMEWORK.md](docs/TEST_FRAMEWORK.md).
 
 ---
 
