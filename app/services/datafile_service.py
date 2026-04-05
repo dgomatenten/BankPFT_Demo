@@ -180,7 +180,17 @@ def _safe_eval(expr: str, value: Any) -> Any:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 def _coerce(raw: str, field_cfg: dict) -> Any:
-    """Strip, transform, and coerce a raw string value according to field config."""
+    """Strip, transform, and coerce a raw string value according to field config.
+
+    Supported types: ``date``, ``float``, ``int``, ``string``.
+    Applies optional ``transform`` expressions via ``_safe_eval`` after coercion.
+
+    See also
+    --------
+    ``app.services.upload_service._cast_value`` — analogous function for
+    Excel/CSV upload columns, operating on pandas DataFrame cells rather
+    than raw fixed-length strings.
+    """
     val = raw.strip()
     t = field_cfg.get("type", "string")
     transform = field_cfg.get("transform")

@@ -124,7 +124,18 @@ def _run_validation_rule(rule_id: str, df: pd.DataFrame, type_cfg: dict, max_sho
 
 
 def _cast_value(value, col_cfg):
-    """Cast a DataFrame cell value according to column_mapping config."""
+    """Cast a DataFrame cell value according to column_mapping config.
+
+    Supported types: ``date``, ``integer``, ``float``, ``string``.
+    Uses ``pandas.to_datetime`` and ``pandas.notna`` for robust NA handling
+    on values coming directly from a DataFrame.
+
+    See also
+    --------
+    ``app.services.datafile_service._coerce`` — analogous function for
+    fixed-length file fields, operating on raw stripped strings rather than
+    DataFrame cells.
+    """
     col_type = col_cfg["type"]
     if col_type == "date":
         try:
