@@ -1,27 +1,23 @@
 from app.models import db
 from app.core.time_utils import utc_now
+from app.models.mixins import TimestampMixin, MakerCheckerMixin
 import uuid
 
 
-class UploadBatch(db.Model):
+class UploadBatch(MakerCheckerMixin, db.Model):
     """Tracks every file upload and its lifecycle through Maker/Checker."""
     __tablename__ = "upload_batch"
     id = db.Column(db.String(36), primary_key=True)
     data_type = db.Column(db.String(20), nullable=False)  # INSTRUMENT, GL, ALLOCATION
     filename = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED, PROCESSED
     row_count = db.Column(db.Integer, default=0)
     error_count = db.Column(db.Integer, default=0)
     errors_json = db.Column(db.Text, nullable=True)
-    maker_id = db.Column(db.String(50), nullable=False)
-    checker_id = db.Column(db.String(50), nullable=True)
     maker_comment = db.Column(db.Text, nullable=True)
     checker_comment = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
 
-class AllocationRule(db.Model):
+class AllocationRule(TimestampMixin, db.Model):
     """Configurable rule linking source -> lookup -> output."""
     __tablename__ = "allocation_rule"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -43,8 +39,6 @@ class AllocationRule(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     status = db.Column(db.String(20), default="ACTIVE")
     created_by = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
 
 class BatchRun(db.Model):
@@ -69,7 +63,7 @@ class BatchRun(db.Model):
 # Multi-task Batch Definition & Execution
 # ─────────────────────────────────────────────────────────────────────────────
 
-class BatchDefinition(db.Model):
+class BatchDefinition(TimestampMixin, db.Model):
     """A named, ordered sequence of batch tasks (allocation, FTP, data file, custom SP)."""
     __tablename__ = "batch_definition"
     id                = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -78,8 +72,6 @@ class BatchDefinition(db.Model):
     continue_on_error = db.Column(db.Boolean, default=False)
     is_active         = db.Column(db.Boolean, default=True)
     created_by        = db.Column(db.String(50), nullable=True)
-    created_at        = db.Column(db.DateTime, default=utc_now)
-    updated_at        = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     tasks             = db.relationship(
         "BatchTask", backref="definition",
         order_by="BatchTask.step_order", cascade="all, delete-orphan", lazy="select"

@@ -1,8 +1,9 @@
 from app.models import db
 from app.core.time_utils import utc_now
+from app.models.mixins import MakerCheckerMixin
 
 
-class RefStaticAllocation(db.Model):
+class RefStaticAllocation(MakerCheckerMixin, db.Model):
     __tablename__ = "ref_static_allocation"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
@@ -11,15 +12,10 @@ class RefStaticAllocation(db.Model):
     source_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
     target_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
     ratio = db.Column(db.Float, nullable=False)
-    status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
-    maker_id = db.Column(db.String(50), nullable=False)
-    checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
-class RefOrgReclass(db.Model):
+class RefOrgReclass(MakerCheckerMixin, db.Model):
     __tablename__ = "ref_org_reclass"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
@@ -27,15 +23,10 @@ class RefOrgReclass(db.Model):
     source_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
     target_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
     ratio = db.Column(db.Float, nullable=False, default=1.0)
-    status = db.Column(db.String(20), default="DRAFT")
-    maker_id = db.Column(db.String(50), nullable=False)
-    checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
-class RefStaticDistribution(db.Model):
+class RefStaticDistribution(MakerCheckerMixin, db.Model):
     """Distribution table for Static Distribution allocation method.
 
     Each row maps a source dimension value to a target dimension (target_dim)
@@ -54,15 +45,10 @@ class RefStaticDistribution(db.Model):
     # Target
     target_dim = db.Column(db.String(50), nullable=False)
     ratio = db.Column(db.Float, nullable=False)
-    status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
-    maker_id = db.Column(db.String(50), nullable=False)
-    checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
-class RefStaticAlloc(db.Model):
+class RefStaticAlloc(MakerCheckerMixin, db.Model):
     """Simple source-to-target mapping for Static Allocation method.
 
     Used for 1:1 reclassification or aggregation.  The ratio defaults to 1.0;
@@ -80,11 +66,6 @@ class RefStaticAlloc(db.Model):
     # Target
     target_dim = db.Column(db.String(50), nullable=False)
     ratio = db.Column(db.Float, nullable=False, default=1.0)
-    status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
-    maker_id = db.Column(db.String(50), nullable=False)
-    checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
