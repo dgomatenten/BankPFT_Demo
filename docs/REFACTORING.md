@@ -1,7 +1,7 @@
 # BankPFT — Refactoring Design Document
 
 **Date:** 2026-04-04  
-**Status:** In Progress — Phase 1 Complete  
+**Status:** Complete — All 7 Phases Done  
 **Scope:** `app/services/`, `app/models/`, `app/routes/`, `app/config/`
 
 ### Implementation Progress
@@ -9,12 +9,12 @@
 | Phase | Title | Status | Commit |
 |---|---|---|---|
 | 1 | JSON-Driven Model Registry | ✅ Complete | `babbc69` |
-| 2 | Config Loader | ⬜ Pending | — |
-| 3 | Shared Filter Engine | ⬜ Pending | — |
-| 4 | DateTime Modernisation | ⬜ Pending | — |
-| 5 | Model Mixins | ⬜ Pending | — |
-| 6 | Shared BatchLogger | ⬜ Pending | — |
-| 7 | Value-Cast Documentation | ⬜ Pending | — |
+| 2 | Config Loader → `app/core/config_loader.py` | ✅ Complete | `2e378ec` |
+| 3 | Shared Filter Engine → `app/core/filter_engine.py` | ✅ Complete | `17642e6` |
+| 4 | DateTime Modernisation → `app/core/time_utils.py` | ✅ Complete | `7d84146` |
+| 5 | Model Mixins → `app/models/mixins.py` | ✅ Complete | `1d010ed` |
+| 6 | Shared BatchLogger → `app/core/batch_logger.py` | ✅ Complete | `da8e52a` |
+| 7 | Value-Cast Documentation | ✅ Complete | `2595b9a` |
 
 ---
 
@@ -307,40 +307,54 @@ These are **intentionally different** in scope—upload deals with typed DataFra
 
 The following new files resolve the issues above. All existing files remain in place and are updated to import from the new modules.
 
+A `core/` package is introduced as the **pure infrastructure layer** — utilities with no business-domain knowledge. The rule is strict: `core/` modules may only import from the Python standard library and `app/models/__init__.py` (for the `db` object). They must never import from `app/services/` or `app/routes/`. This makes the layer safe to reuse across any future entry point (REST API, CLI, background worker).
+
+`models/mixins.py` intentionally stays in `models/` rather than `core/` because SQLAlchemy mixins _are_ ORM model definitions — moving them to `core/` would create a circular dependency risk.
+
 ```
 app/
-├── config/
-│   ├── loader.py              # NEW (Phase 2) — load_config(name) replaces os.path.join boilerplate
-│   ├── model_registry.json    # ✅ DONE (Phase 1) — JSON source of truth for all table→model mappings
-│   └── ...existing json files unchanged...
+├── core/                        ← NEW — pure infrastructure, zero domain knowledge
+│   ├── __init__.py
+│   ├── config_loader.py         # Phase 2 — load_config(name)
+│   ├── filter_engine.py         # Phase 3 — apply_df_filters(), apply_row_filters()
+│   ├── batch_logger.py          # Phase 6 — BatchLogger class
+│   └── time_utils.py            # Phase 4 — utc_now() helper
+│
 ├── models/
-│   ├── mixins.py              # NEW (Phase 5) — MakerCheckerMixin, TimestampMixin
-│   ├── registry.py            # ✅ DONE (Phase 1) — reads model_registry.json, exposes MODEL_REGISTRY etc.
+│   ├── mixins.py                # Phase 5 — MakerCheckerMixin, TimestampMixin (stays in models/)
+│   ├── registry.py              # ✅ DONE (Phase 1)
 │   └── ...existing files, updated to use mixins...
-├── services/
-│   ├── batch_logger.py        # NEW (Phase 6) — BatchLogger class extracted from allocation_engine
-│   ├── filter_engine.py       # NEW (Phase 3) — apply_filters() shared by allocation and datafile
-│   └── ...existing files, updated to import from new modules...
+│
+├── services/                    ← business logic only; imports from core/ and models/
+│   └── ...existing files unchanged except import updates...
+│
+└── config/
+    ├── model_registry.json      # ✅ DONE (Phase 1)
+    └── ...existing json files unchanged...
 ```
 
 ### Dependency Flow (after refactoring)
 
 ```
-app/config/loader.py
-    ↑ imported by: allocation_engine, upload_service, datafile_service, routes/rules
-
-app/models/registry.py
-    ↑ imported by: allocation_engine, upload_service, datafile_service, routes/upload
-
-app/models/mixins.py
-    ↑ imported by: models/allocation, models/workflow, models/ftp, models/datafile
-
-app/services/filter_engine.py
-    ↑ imported by: allocation_engine, datafile_service
-
-app/services/batch_logger.py
-    ↑ imported by: allocation_engine, (future: ftp_engine, batch_executor)
+                        ┌─────────────────────────┐
+                        │        app/core/         │  ← imports: stdlib only
+                        │  config_loader.py        │     + app.models.db (for mixins: NO)
+                        │  filter_engine.py        │
+                        │  batch_logger.py         │
+                        │  time_utils.py           │
+                        └────────────┬────────────┘
+                                     │ imported by
+              ┌──────────────────────┼──────────────────────┐
+              ▼                      ▼                      ▼
+     app/models/               app/services/          app/routes/
+     mixins.py                 allocation_engine      rules.py
+     registry.py               ftp_engine             upload.py
+                               batch_executor
+                               upload_service
+                               datafile_service
 ```
+
+**The «no upward imports» rule:** `core/` never imports from `services/` or `routes/`. `models/` never imports from `services/` or `routes/`. Violations should be caught in code review.
 
 ---
 
@@ -372,18 +386,18 @@ No Python file changes required.
 
 ---
 
-### Phase 2 — Config Loader (`app/config/loader.py`)
+### Phase 2 — Config Loader (`app/core/config_loader.py`)
 
 **Problem:** Every file that needs a JSON config computes the same relative path and calls `open` / `json.load` directly.
 
-**Solution:** A single `load_config(name)` function that resolves paths from the canonical config directory at import time.
+**Solution:** A single `load_config(name)` function in `app/core/config_loader.py` that resolves paths from the canonical config directory at import time. Placing it in `core/` signals that it is pure infrastructure with no domain knowledge.
 
 ```python
-# app/config/loader.py
+# app/core/config_loader.py
 """Centralised JSON config loader.
 
 Usage:
-    from app.config.loader import load_config
+    from app.core.config_loader import load_config
     ALLOC_CONFIG = load_config("allocation_config")
     UPLOAD_CONFIG = load_config("upload_config")
     FILTER_CFG = load_config("filter_config")
@@ -391,7 +405,7 @@ Usage:
 import json
 import os
 
-_CONFIG_DIR = os.path.join(os.path.dirname(__file__))  # app/config/
+_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "config")
 
 
 def load_config(name: str) -> dict:
@@ -419,16 +433,17 @@ def load_config(name: str) -> dict:
 
 ---
 
-### Phase 3 — Filter Engine (`app/services/filter_engine.py`)
+### Phase 3 — Filter Engine (`app/core/filter_engine.py`)
 
 **Problem:** Two files implement the same condition-matching logic independently, with minor surface differences.
 
-**Solution:** Extract the shared logic to `filter_engine.py` with two entry points:
+**Solution:** Extract the shared logic to `app/core/filter_engine.py` with two entry points. It lives in `core/` because it has no knowledge of any specific domain table, rule, or business concept — it is a pure data-filtering utility.
+
 - `apply_df_filters(df, filter_json)` — for pandas DataFrames (allocation engine)
 - `apply_row_filters(rows, filter_cfg)` — for SQLAlchemy model instances (datafile export)
 
 ```python
-# app/services/filter_engine.py
+# app/core/filter_engine.py
 """Shared filter engine for condition-based data selection.
 
 Two entry points:
@@ -460,8 +475,8 @@ def apply_row_filters(rows: list, filter_cfg: dict) -> list:
 
 | File | Function to remove | Import to add |
 |---|---|---|
-| `allocation_engine.py` | `_apply_filters()` | `from app.services.filter_engine import apply_df_filters` |
-| `datafile_service.py` | `_apply_export_filters()` | `from app.services.filter_engine import apply_row_filters` |
+| `allocation_engine.py` | `_apply_filters()` | `from app.core.filter_engine import apply_df_filters` |
+| `datafile_service.py` | `_apply_export_filters()` | `from app.core.filter_engine import apply_row_filters` |
 
 **Tests:** The existing `tests/test_rules.py` imports `_apply_filters` directly from `allocation_engine`. After Phase 3, the import path changes:
 
@@ -470,30 +485,37 @@ def apply_row_filters(rows: list, filter_cfg: dict) -> list:
 from app.services.allocation_engine import _apply_filters
 
 # After
-from app.services.filter_engine import apply_df_filters as _apply_filters
+from app.core.filter_engine import apply_df_filters as _apply_filters
 ```
 
 ---
 
-### Phase 4 — DateTime Modernisation
+### Phase 4 — DateTime Modernisation (`app/core/time_utils.py`)
 
 **Problem:** `datetime.utcnow()` is deprecated in Python 3.12+ and returns naive datetimes.
 
-**Solution:** Replace all call sites with `datetime.now(timezone.utc)` and update model column defaults.
+**Solution:** Introduce `app/core/time_utils.py` with a single `utc_now()` function, then replace all call sites. Centralising this in `core/` means a future timezone-strategy change (e.g. switching to a timezone-aware store) is a one-file edit.
 
 ```python
-# Before (deprecated)
-from datetime import datetime
-started_at = datetime.utcnow()
-default=datetime.utcnow
+# app/core/time_utils.py
+"""Timezone-safe datetime utilities.
 
-# After
+Usage:
+    from app.core.time_utils import utc_now
+    started_at = utc_now()
+    created_at = db.Column(db.DateTime, default=utc_now)
+"""
 from datetime import datetime, timezone
-started_at = datetime.now(timezone.utc)
-default=lambda: datetime.now(timezone.utc)
+
+
+def utc_now() -> datetime:
+    """Return current UTC time as a timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 ```
 
-**Note on SQLAlchemy defaults:** The column default `default=datetime.utcnow` passes the function reference and has it called at insert time. After the change, a lambda wrapper is required: `default=lambda: datetime.now(timezone.utc)`.
+All model column defaults change from `default=datetime.utcnow` to `default=utc_now` (the function reference works directly as a SQLAlchemy default callable — no lambda wrapper needed).
+
+All service call sites change from `datetime.utcnow()` to `utc_now()`.
 
 **Files to update:** All 5 service files + all 7 model files listed in §3.4.
 
@@ -546,26 +568,26 @@ class MakerCheckerMixin(TimestampMixin):
 
 ---
 
-### Phase 6 — Shared BatchLogger (`app/services/batch_logger.py`)
+### Phase 6 — Shared BatchLogger (`app/core/batch_logger.py`)
 
 **Problem:** `_BatchLogger` is a private class inside `allocation_engine.py` and cannot be reused by other engines without import-coupling.
 
-**Solution:** Move the class to a dedicated module.
+**Solution:** Move the class to `app/core/batch_logger.py`. It belongs in `core/` because it is pure I/O infrastructure — it writes `.log` files and knows nothing about allocations, FTP, or any other business concept.
 
 ```python
-# app/services/batch_logger.py
+# app/core/batch_logger.py
 """File-based structured batch logger.
 
 Writes human-readable .log files to instance/batch_logs/<batch_id>.log.
 
 Usage:
-    from app.services.batch_logger import BatchLogger
+    from app.core.batch_logger import BatchLogger
     logger = BatchLogger(batch_id)
     logger.log("START", "Batch initiated by user_x")
     logger.close()
 """
 import os
-from datetime import datetime, timezone
+from app.core.time_utils import utc_now
 
 
 class BatchLogger:
@@ -583,7 +605,7 @@ class BatchLogger:
 
 | File | Change |
 |---|---|
-| `allocation_engine.py` | Remove `_BatchLogger`; replace with `from app.services.batch_logger import BatchLogger` |
+| `allocation_engine.py` | Remove `_BatchLogger`; replace with `from app.core.batch_logger import BatchLogger` |
 | `ftp_engine.py` | (Optional Phase 6b) Add `BatchLogger` for FTP run file logging |
 | `batch_executor.py` | (Optional Phase 6b) Add `BatchLogger` for multi-task execution logging |
 
@@ -603,10 +625,10 @@ The following constraints must be observed throughout all phases:
 
 1. **One phase at a time.** Each phase must leave the test suite green before the next phase begins. Do not batch multiple phases into a single commit.
 
-2. **Backward-compatible imports.** If a function is moved (e.g. `_apply_filters` to `filter_engine.py`), add a re-export in the original file until all tests are updated:
+2. **Backward-compatible imports.** If a function is moved (e.g. `_apply_filters` to `core/filter_engine.py`), add a re-export in the original file until all tests are updated:
    ```python
    # allocation_engine.py — temporary compatibility shim
-   from app.services.filter_engine import apply_df_filters as _apply_filters  # noqa: F401
+   from app.core.filter_engine import apply_df_filters as _apply_filters  # noqa: F401
    ```
 
 3. **No public API changes.** The signatures of `run_allocation`, `run_ftp`, `run_batch`, `process_upload`, `import_file`, and `export_data` must not change.
