@@ -156,7 +156,13 @@ app/
 │       ├── import_inst_csv.json   # example: CSV instrument file
 │       ├── export_inst_proc.json  # example: fixed-length export
 │       └── ...                    # one JSON per import or export rule
+├── core/
+│   ├── config_loader.py     # load_config(name) — centralised JSON config access
+│   ├── filter_engine.py     # apply_df_filters() and apply_row_filters() — shared filter logic
+│   ├── time_utils.py        # utc_now() — timezone-aware UTC helper used by all models & services
+│   └── batch_logger.py      # BatchLogger class + BATCH_LOG_DIR constant
 ├── models/
+│   ├── mixins.py            # TimestampMixin, MakerCheckerMixin — reusable SQLAlchemy column mixins
 │   ├── auth.py              # User, Group, UserGroup (login & role management)
 │   ├── dimensions.py        # DimOrgUnit, DimProduct, DimCustomer, DimAccount
 │   ├── staging.py           # StgInstData, ProcInstData, StgGlData, ProcGlData
@@ -1059,7 +1065,7 @@ python -m pytest tests/test_api.py -v
 python -m pytest tests/test_rules.py::TestAllocationEngine::test_run_allocation_creates_batch -v
 ```
 
-**Current result: 117 passed, 0 failed** — 94 unit tests (in-memory SQLite) + 23 UI tests (headless Chrome), ~17 seconds.
+**Current result: 125 passed, 79 warnings** — 102 unit tests (in-memory SQLite) + 23 UI tests (headless Chrome), ~17 seconds.
 
 To run only unit tests (no browser required):
 ```bash
@@ -1088,12 +1094,12 @@ The "Test Suite" link appears in the sidebar under the Admin section for Admin u
 
 | File | Tests | What is tested |
 |---|---|---|
-| `tests/test_auth.py` | 14 | Login, logout, wrong credentials, protected route redirects, User model password hashing, admin routes |
-| `tests/test_rules.py` | 20 | AllocationRule model defaults, UI routes, JSON import (valid/missing name), `_apply_filters()` for eq / gt / in / OR / between / invalid JSON, allocation engine end-to-end, DEBIT+CREDIT balance equality |
-| `tests/test_ftp_batch.py` | 24 | FtpProductConfig model, unique constraint, FTP UI routes, import single/array JSON, `_lookback_start()` for D/M/Y across year boundaries, FTP engine E2E match & rate write-back, zero-instrument clean run, BatchDefinition model, datafile config loading and format validation |
-| `tests/test_api.py` | 36 | 401 guard on every endpoint, wrong credentials, GET listing shapes, `POST /api/v1/rules/import` (valid, missing name, empty body), `POST /api/v1/ftp/config/import` (single, array, update, missing product_code), datafile path-traversal rejection, allocation missing rule_id, FTP run with and without date |
+| `tests/test_auth.py` | 18 | Login, logout, wrong credentials, protected route redirects, User model password hashing, group permissions, admin property, admin routes (users + groups list) |
+| `tests/test_rules.py` | 26 | AllocationRule model defaults, UI routes, JSON import (valid/missing name), `_apply_filters()` for eq / gt / in / OR / between / invalid JSON, allocation engine end-to-end, DEBIT+CREDIT balance equality, Static Allocation engine (no-orphan guarantee), Distribution driver filtering and storage, `RefStaticDistribution` and `RefStaticAlloc` model constraints |
+| `tests/test_ftp_batch.py` | 25 | FtpProductConfig model, unique constraint, FTP UI routes, import single/array JSON, `_lookback_start()` for D/M/Y across year boundaries, FTP engine E2E match & rate write-back, zero-instrument clean run, BatchDefinition model, datafile config loading and format validation |
+| `tests/test_api.py` | 33 | 401 guard on every endpoint, wrong credentials, GET listing shapes, `POST /api/v1/rules/import` (valid, missing name, empty body), `POST /api/v1/ftp/config/import` (single, array, update, missing product_code), datafile path-traversal rejection, allocation missing rule_id, FTP run with and without date |
 | `tests/test_ui.py` | 23 | Selenium headless-Chrome browser tests — login flow, sidebar navigation, filter editor (empty state, add/remove condition rows, AND/OR radios), file upload input fields on rule import and FTP import pages, admin user/group pages |
-| **Total** | **117** | |
+| **Total** | **125** | |
 
 ### Test Isolation
 
