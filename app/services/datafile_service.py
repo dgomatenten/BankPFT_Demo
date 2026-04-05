@@ -24,6 +24,7 @@ from app.models import db
 from app.models.datafile import DataFileBatch
 from app.models.registry import MODEL_REGISTRY
 from app.core.config_loader import load_config
+from app.core.filter_engine import apply_row_filters
 
 # ── Config ──────────────────────────────────────────────────────────────────
 DATAFILE_CONFIG = load_config("datafile_config")
@@ -199,42 +200,6 @@ def _coerce(raw: str, field_cfg: dict) -> Any:
     result = _safe_eval(transform, val) if transform else val
     return str(result)
 
-
-def _apply_export_filters(rows: list, filter_cfg: dict) -> list:
-    """Apply filter_json conditions to a list of SQLAlchemy model instances."""
-    conditions = filter_cfg.get("conditions", [])
-    if not conditions:
-        return rows
-    logic = filter_cfg.get("logic", "AND")
-
-    def _matches(row) -> bool:
-        results = []
-        for c in conditions:
-            col, op, val = c.get("field"), c.get("operator"), str(c.get("value", ""))
-            attr = str(getattr(row, col, "")) if col else ""
-            if op == "eq":
-                results.append(attr == val)
-            elif op == "neq":
-                results.append(attr != val)
-            elif op == "in":
-                results.append(attr in {v.strip() for v in val.split(",")})
-            elif op == "not_in":
-                results.append(attr not in {v.strip() for v in val.split(",")})
-            elif op == "contains":
-                results.append(val.lower() in attr.lower())
-            elif op == "gt":
-                results.append(float(attr) > float(val))
-            elif op == "gte":
-                results.append(float(attr) >= float(val))
-            elif op == "lt":
-                results.append(float(attr) < float(val))
-            elif op == "lte":
-                results.append(float(attr) <= float(val))
-            else:
-                results.append(True)
-        return all(results) if logic == "AND" else any(results)
-
-    return [r for r in rows if _matches(r)]
 
 
 def _format_delimited_field(raw: Any, field_cfg: dict) -> str:
@@ -498,7 +463,7 @@ def export_data(export_id: str, run_by: str, as_of_date_str: str | None = None) 
 
         # Apply filter_json from export config
         filter_cfg = exp_cfg.get("filter_json", {})
-        filtered_rows = _apply_export_filters(all_rows, filter_cfg)
+        filtered_rows = apply_row_filters(all_rows, filter_cfg)
 
         field_defs = exp_cfg["fields"]
         export_format = exp_cfg.get("format", "fixed_length")
