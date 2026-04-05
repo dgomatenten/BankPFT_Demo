@@ -18,32 +18,16 @@ from app.models.workflow import AllocationRule, BatchRun
 from app.models.registry import MODEL_REGISTRY
 from app.core.config_loader import load_config
 from app.core.filter_engine import apply_df_filters
+from app.core.batch_logger import BatchLogger, BATCH_LOG_DIR
 
 # ── Load configuration ──
 ALLOC_CONFIG = load_config("allocation_config")
 
-# ── Batch log directory ──
-BATCH_LOG_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "instance", "batch_logs"
-)
 
-
-class _BatchLogger:
-    """Writes timestamped processing log entries to a per-batch file."""
-
-    def __init__(self, batch_id: str):
-        os.makedirs(BATCH_LOG_DIR, exist_ok=True)
-        self.path = os.path.join(BATCH_LOG_DIR, f"batch_{batch_id}.log")
-        self._fh = open(self.path, "w", encoding="utf-8")
-
-    def log(self, level: str, msg: str) -> None:
-        ts = utc_now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        self._fh.write(f"[{ts}] [{level:<8}] {msg}\n")
-        self._fh.flush()
-
-    def close(self) -> None:
-        self._fh.close()
-
+# ──────────────────────────────────────────────────────────────────────────────
+# BatchLogger — shim for backward compatibility; canonical: app/core/batch_logger
+# ──────────────────────────────────────────────────────────────────────────────
+_BatchLogger = BatchLogger
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helper: general row filter — shim for backward compatibility
