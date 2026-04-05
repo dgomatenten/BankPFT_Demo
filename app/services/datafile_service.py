@@ -23,11 +23,10 @@ from typing import Any
 from app.models import db
 from app.models.datafile import DataFileBatch
 from app.models.registry import MODEL_REGISTRY
+from app.core.config_loader import load_config
 
 # ── Config ──────────────────────────────────────────────────────────────────
-_CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "datafile_config.json")
-with open(_CFG_PATH) as _f:
-    DATAFILE_CONFIG = json.load(_f)
+DATAFILE_CONFIG = load_config("datafile_config")
 
 # ── Load per-file import/export rules from app/config/datafile/*.json ────────
 _RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "config", "datafile")

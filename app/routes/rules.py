@@ -1,17 +1,13 @@
-import json, os
+import json
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app.models import db
 from app.models.workflow import AllocationRule
 from app.models.allocation import RefStaticAllocation
+from app.core.config_loader import load_config
 
-_CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "rule_config.json")
-with open(_CFG_PATH) as _f:
-    RULE_CONFIG = json.load(_f)
-
-_FILTER_CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "filter_config.json")
-with open(_FILTER_CFG_PATH) as _f:
-    FILTER_CONFIG = json.load(_f)
+RULE_CONFIG = load_config("rule_config")
+FILTER_CONFIG = load_config("filter_config")
 
 bp = Blueprint("rules", __name__)
 

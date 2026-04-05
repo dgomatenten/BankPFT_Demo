@@ -9,13 +9,11 @@ from werkzeug.utils import secure_filename
 from app.models import db
 from app.models.workflow import UploadBatch
 from app.models.registry import MODEL_REGISTRY, DIMENSION_REGISTRY
+from app.core.config_loader import load_config
 
 # ── Load configuration ──
-_CFG_DIR = os.path.join(os.path.dirname(__file__), "..", "config")
-with open(os.path.join(_CFG_DIR, "upload_config.json")) as _f:
-    UPLOAD_CONFIG = json.load(_f)
-with open(os.path.join(_CFG_DIR, "validation_rules.json")) as _f:
-    VALIDATION_RULES_CONFIG = json.load(_f)
+UPLOAD_CONFIG = load_config("upload_config")
+VALIDATION_RULES_CONFIG = load_config("validation_rules")
 
 ALLOWED_EXTENSIONS = set(UPLOAD_CONFIG["allowed_extensions"])
 

@@ -16,11 +16,10 @@ import pandas as pd
 from app.models import db
 from app.models.workflow import AllocationRule, BatchRun
 from app.models.registry import MODEL_REGISTRY
+from app.core.config_loader import load_config
 
 # ── Load configuration ──
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "allocation_config.json")
-with open(_CONFIG_PATH) as _f:
-    ALLOC_CONFIG = json.load(_f)
+ALLOC_CONFIG = load_config("allocation_config")
 
 # ── Batch log directory ──
 BATCH_LOG_DIR = os.path.join(
