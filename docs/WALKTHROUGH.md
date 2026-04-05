@@ -183,15 +183,16 @@ Create a new allocation rule. The form is organised into five sections.
 **How to use:**
 1. **Rule Name / Description** — name and optional notes
 2. **Allocation Method** — choose the method (see below); the Lookup Table and Join Key panels appear/hide based on selection
-3. **Source Table** — processed data table to read from
-4. **Lookup Table** — allocation ratio table to join with (hidden when Static Allocation is selected)
-5. **Output Table** — where to write allocated results (`fct_mgmt_instrument` recommended)
-6. **Join Key** — column linking source to lookup (hidden when Static Allocation is selected)
-7. **Entry Mode** — choose BOTH, Debit only, or Credit only (see section 8)
-8. **Source Dimension Filters** — per-dimension member filter (see section 9)
-9. **Debit & Credit Dimension Mapping** — per-dimension output value control (see section 10)
-10. **Data Filters** — row-level filter conditions (see section 11)
-11. **Click Create Rule** — saved immediately as ACTIVE
+3. **Distribution Driver** — visible only when **Static Distribution** is selected; enter the `driver_name` that identifies which named driver set within `ref_static_distribution` this rule will use
+4. **Source Table** — processed data table to read from
+5. **Lookup Table** — allocation ratio table to join with (hidden when Static Allocation is selected)
+6. **Output Table** — where to write allocated results (`fct_mgmt_instrument` recommended)
+7. **Join Key** — column linking source to lookup (hidden when Static Allocation is selected)
+8. **Entry Mode** — choose BOTH, Debit only, or Credit only (see section 8)
+9. **Source Dimension Filters** — per-dimension member filter (see section 9)
+10. **Debit & Credit Dimension Mapping** — per-dimension output value control (see section 10)
+11. **Data Filters** — row-level filter conditions (see section 11)
+12. **Click Create Rule** — saved immediately as ACTIVE
 
 All dropdown options are driven by `rule_config.json`.
 
@@ -200,10 +201,31 @@ All dropdown options are driven by `rule_config.json`.
 | Method | Label | How it works | Lookup Table |
 |---|---|---|---|
 | `RATIO` | Ratio-Based Allocation | Joins source data with a lookup table on the configured join key; splits the balance across target dimensions by ratio. Ratios must sum to 1.0 per join-key group. Unmatched rows are posted as orphans at source org | `ref_static_allocation`, `ref_org_reclass` |
-| `DISTRIBUTION` | Static Distribution | Same join-and-ratio logic as RATIO, but uses the dedicated `ref_static_distribution` table. Output dimension value is taken from the `target_dim` column in the distribution table | `ref_static_distribution` |
+| `DISTRIBUTION` | Static Distribution | Same join-and-ratio logic as RATIO, but uses the dedicated `ref_static_distribution` table. Output dimension value is taken from the `target_dim` column in the distribution table. A **Distribution Driver** must be specified to select which named driver set within the table to use | `ref_static_distribution` |
 | `STATIC` | Static Allocation | No lookup join. Each source row maps 1:1 to output at ratio = 1.0. Suitable for aggregation from instrument data or org-level reclassification | `ref_static_alloc` (metadata only, no join) |
 
-> **UI behaviour:** Selecting **Static Allocation** hides the Lookup Table and Join Key controls. Selecting **Static Distribution** pre-selects `ref_static_distribution` as the lookup table.
+> **UI behaviour:** Selecting **Static Allocation** hides the Lookup Table and Join Key controls. Selecting **Static Distribution** pre-selects `ref_static_distribution` as the lookup table and shows the **Distribution Driver** card.
+
+### Distribution Driver
+
+![New Rule — Distribution Driver card](images/39_rule_new_distribution_driver.png)
+
+When **Static Distribution** is selected, a **Distribution Driver** card appears below the Allocation Method card.
+
+| Field | Description |
+|---|---|
+| **Driver Name** | The `driver_name` value that identifies a named group of rows in `ref_static_distribution`. Must match APPROVED rows in the table (e.g. `PRODUCT_MIX_2026`, `ORG_SPLIT_Q1`) |
+
+**Concept:** `ref_static_distribution` is one physical table that can hold multiple independent distribution sets, each identified by a `driver_name`. Rows for `PRODUCT_MIX_2026` coexist with rows for `ORG_SPLIT_Q1` in the same table. The rule's **Distribution Driver** tells the engine _which_ set to load.
+
+When the engine runs, it queries:
+```
+SELECT * FROM ref_static_distribution
+WHERE status = 'APPROVED'
+  AND driver_name = '<rule.distribution_driver>'
+```
+
+This means you can maintain multiple versioned or scenario-based distribution drivers without creating separate tables.
 
 ---
 
@@ -327,6 +349,7 @@ View a rule's full configuration.
 **Key elements:**
 - Source / Lookup / Output table names
 - **Allocation Method** badge — "Ratio-Based" (blue), "Static Distribution" (green), or "Static Allocation" (cyan)
+- **Distribution Driver** — shown below the Allocation Method badge when method is Static Distribution; displays the `driver_name` the rule is bound to (e.g. `PRODUCT_MIX_2026`)
 - **Entry Mode** badge — "DEBIT + CREDIT", "DEBIT only", or "CREDIT only"
 - **Join Keys** — shows "N/A (Static)" when the Static Allocation method is selected
 - **Source Dimension Filters** card — shows mode and members per dimension
@@ -336,6 +359,8 @@ View a rule's full configuration.
 - **Edit Rule** — opens the edit form with all fields pre-populated
 - **Toggle / Delete** actions
 - **Allocation ratios preview** — APPROVED ratios the rule would use
+
+![Rule Detail — Distribution Driver](images/40_rule_detail_distribution_driver.png)
 
 ---
 
@@ -388,6 +413,7 @@ Create an allocation rule from a JSON file or pasted JSON text. Useful for versi
   "output_table": "fct_mgmt_instrument",
   "join_key": "customer_id",
   "allocation_method": "RATIO",
+  "distribution_driver": null,
   "entry_mode": "BOTH",
   "filter_json": {
     "logic": "AND",
@@ -414,7 +440,7 @@ Create an allocation rule from a JSON file or pasted JSON text. Useful for versi
 }
 ```
 
-Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**. Valid `entry_mode` values: `BOTH` (default), `DEBIT_ONLY`, `CREDIT_ONLY`. Valid `allocation_method` values: `RATIO` (default), `DISTRIBUTION`, `STATIC`.
+Omitting `credit_dim_json` defaults all credit dimensions to **Same as Source**. Valid `entry_mode` values: `BOTH` (default), `DEBIT_ONLY`, `CREDIT_ONLY`. Valid `allocation_method` values: `RATIO` (default), `DISTRIBUTION`, `STATIC`. When `allocation_method` is `DISTRIBUTION`, set `distribution_driver` to the `driver_name` of the approved driver set to use (e.g. `"distribution_driver": "PRODUCT_MIX_2026"`).
 
 ### How the Rule Is Stored
 

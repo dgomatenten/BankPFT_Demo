@@ -41,7 +41,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, Org Reclassification, Static Distribution, and Static Allocation data with column-level validation |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
-| **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
+| **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), **distribution driver** (named sub-table within `ref_static_distribution`), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
 | **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. The batch execution screen selects a definition, previews its steps, and executes them sequentially. Individual steps can also be run directly from an Advanced panel |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
@@ -51,7 +51,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
-| **Regression Test Framework** | 123-test pytest suite (100 unit + 23 Selenium UI) covering auth, allocation engine (all three methods), FTP engine, API endpoints, batch, datafile, and browser-level UI interactions. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
+| **Regression Test Framework** | 125-test pytest suite (102 unit + 23 Selenium UI) covering auth, allocation engine (all three methods including distribution driver filtering), FTP engine, API endpoints, batch, datafile, and browser-level UI interactions. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
 
 ## Architecture
 
@@ -255,6 +255,7 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 
 ── RATIO / DISTRIBUTION method ──
 4. Query lookup table (ref_static_allocation / ref_static_distribution)
+   For DISTRIBUTION: if rule.distribution_driver is set, adds WHERE driver_name = rule.distribution_driver
 5. Pandas LEFT JOIN on rule's join_key
 6. For each matched row: allocated_balance = source × ratio
    Output dimension for DISTRIBUTION taken from lookup's target_dim column
@@ -314,7 +315,7 @@ The system supports multiple lookup tables that the allocation engine can join a
 |---|---|---|---|---|
 | `ref_static_allocation` | RATIO | Shred balances across orgs by customer-level ratios | `customer_id` | Variable (must sum to 1.0 per group) |
 | `ref_org_reclass` | RATIO | Reclassify one org unit to another (1:1 mapping) | `org_unit_id` | Always 1.0 |
-| `ref_static_distribution` | DISTRIBUTION | Flexible ratio shredding; output dimension taken from `target_dim` column | `customer_id` / `org_unit_id` / `product_code` | Variable (must sum to 1.0 per distribution_id) |
+| `ref_static_distribution` | DISTRIBUTION | Flexible ratio shredding; output dimension taken from `target_dim` column. Supports multiple named **driver sets** within one table — each row carries a `driver_name`; a rule references one driver by name via `distribution_driver` | `customer_id` / `org_unit_id` / `product_code` | Variable (must sum to 1.0 per `driver_name` + `distribution_id` group) |
 | `ref_static_alloc` | STATIC | 1:1 source-to-target mapping for aggregation or reclassification | any | Always 1.0 (no lookup join) |
 
 ## Fund Transfer Pricing (FTP)
@@ -375,6 +376,8 @@ Defines each upload data type (INSTRUMENT, GL, ALLOCATION, ORG_RECLASS, DISTRIBU
 
 The upload form dropdown and expected-columns display are rendered dynamically from this file.
 
+> **DISTRIBUTION type:** The `driver_name` column is required (alongside `distribution_id`, `target_dim`, `ratio`). The `ratio_validation` group-by is `[driver_name, distribution_id]` so ratios sum to 1.0 within each driver/distribution-id combination.
+
 ### `app/config/validation_rules.json`
 
 Defines the available validation rule types with per-rule settings:
@@ -415,7 +418,7 @@ Filter conditions are stored as JSON in `allocation_rule.filter_json` and applie
 
 Controls the batch allocation engine with per-table column definitions:
 - **source_tables** — keyed by table name, each with `columns`, `balance_columns`, `date_filter_column`, `account_id_column`
-- **lookup_tables** — keyed by table name, each with `columns`, `ratio_column`, `id_column`, `target_org_column`, `status_filter`
+- **lookup_tables** — keyed by table name, each with `columns`, `ratio_column`, `id_column`, `target_org_column`, `status_filter`; `ref_static_distribution` also carries `driver_filter_column: "driver_name"` which the engine uses to filter rows by the active driver
 - **output_tables** — keyed by table name (model reference)
 - **join_keys** — available join keys with `available_in` list showing which source tables support them
 - **orphan_handling** — enabled flag, default ratio (1.0), target org source
@@ -507,6 +510,7 @@ Rules can be defined as JSON and imported via `/rules/import`. This allows batch
   "output_table": "fct_mgmt_instrument",
   "join_key": "customer_id",
   "allocation_method": "RATIO",
+  "distribution_driver": null,
   "generate_offset": true,
   "offset_account": "GL_OFFSET_9000",
   "filter_json": {
