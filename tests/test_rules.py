@@ -370,3 +370,82 @@ class TestStaticAllocationEngine:
             orphans = [e for e in entries if e.is_orphan]
             assert len(orphans) == 0
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Distribution engine — driver_name filtering
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDistributionDriverEngine:
+    """Verify the DISTRIBUTION allocation engine filters rows by driver_name."""
+
+    def test_distribution_driver_filters_rows(self, seeded_db, app):
+        """Engine loads only rows matching rule.distribution_driver."""
+        from app.services.allocation_engine import run_allocation
+        from app.models.workflow import AllocationRule
+        from app.models.allocation import RefStaticDistribution, FctMgmtInstrument
+        from datetime import date
+
+        with app.app_context():
+            # Add two drivers; only DRIVER_A should be used by this rule
+            seeded_db.add(RefStaticDistribution(
+                driver_name="DRIVER_A",
+                distribution_id="DIST-A",
+                customer_id="CUST-0001",
+                target_dim="ORG-002",
+                ratio=1.0,
+                status="APPROVED",
+                maker_id="admin",
+            ))
+            # Rows for DRIVER_B should be completely ignored
+            seeded_db.add(RefStaticDistribution(
+                driver_name="DRIVER_B",
+                distribution_id="DIST-B",
+                customer_id="CUST-0001",
+                target_dim="ORG-001",
+                ratio=1.0,
+                status="APPROVED",
+                maker_id="admin",
+            ))
+            seeded_db.flush()
+
+            rule = AllocationRule(
+                name="Distribution Driver Test",
+                source_table="proc_inst_data",
+                lookup_table="ref_static_distribution",
+                output_table="fct_mgmt_instrument",
+                join_key="customer_id",
+                allocation_method="DISTRIBUTION",
+                distribution_driver="DRIVER_A",
+                entry_mode="DEBIT_ONLY",
+                is_active=True,
+                created_by="admin",
+                output_dim_json='{"org_unit_id":{"mode":"lookup","lookup_column":"target_dim"}}',
+            )
+            seeded_db.add(rule)
+            seeded_db.flush()
+
+            batch = run_allocation(rule.id, date(2026, 1, 1), "admin")
+            assert batch is not None
+            assert batch.status == "COMPLETED"
+
+            entries = FctMgmtInstrument.query.filter_by(batch_run_id=batch.id).all()
+            non_orphan = [e for e in entries if not e.is_orphan]
+            # DRIVER_A maps customer to ORG-002; DRIVER_B would produce ORG-001
+            assert len(non_orphan) >= 1
+            assert all(e.target_org_unit_id == "ORG-002" for e in non_orphan)
+
+    def test_distribution_driver_stored_on_rule(self, db_session, app):
+        """AllocationRule.distribution_driver persists correctly."""
+        from app.models.workflow import AllocationRule
+        with app.app_context():
+            rule = AllocationRule(
+                name="Driver Persistence Test",
+                allocation_method="DISTRIBUTION",
+                distribution_driver="PRODUCT_MIX_2026",
+                created_by="admin",
+            )
+            db_session.add(rule)
+            db_session.flush()
+            loaded = AllocationRule.query.get(rule.id)
+            assert loaded.distribution_driver == "PRODUCT_MIX_2026"
+

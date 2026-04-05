@@ -45,6 +45,7 @@ class RefStaticDistribution(db.Model):
     __tablename__ = "ref_static_distribution"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    driver_name = db.Column(db.String(100), nullable=False, index=True, default="")
     distribution_id = db.Column(db.String(50), nullable=False, index=True)
     # Source join columns — populate the one that matches the rule's join_key
     customer_id = db.Column(db.String(20), nullable=True, index=True)

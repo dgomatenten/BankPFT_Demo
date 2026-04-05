@@ -122,6 +122,10 @@ def _apply_schema_migrations():
         _add_col_if_missing("allocation_rule", "entry_mode VARCHAR(20) DEFAULT 'BOTH'")
         _add_col_if_missing("allocation_rule", "generate_offset INTEGER DEFAULT 1")
         _add_col_if_missing("allocation_rule", "offset_account VARCHAR(50)")
+        _add_col_if_missing("allocation_rule", "distribution_driver VARCHAR(100)")
+
+    if inspector.has_table("ref_static_distribution"):
+        _add_col_if_missing("ref_static_distribution", "driver_name VARCHAR(100) DEFAULT ''")
 
     if inspector.has_table("fct_mgmt_ledger"):
         _add_col_if_missing("fct_mgmt_ledger", "entry_type VARCHAR(10) DEFAULT 'DEBIT'")

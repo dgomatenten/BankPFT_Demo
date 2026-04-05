@@ -26,6 +26,9 @@
                 {% set am = rule.allocation_method or 'RATIO' %}
                 {% if am == 'DISTRIBUTION' %}
                     <span class="badge bg-success">Static Distribution</span>
+                    {% if rule.distribution_driver %}
+                    <br><small class="text-muted">Driver: <strong>{{ rule.distribution_driver }}</strong></small>
+                    {% endif %}
                 {% elif am == 'STATIC' %}
                     <span class="badge bg-info text-dark">Static Allocation</span>
                 {% else %}

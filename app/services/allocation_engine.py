@@ -319,7 +319,14 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         if alloc_method in ("RATIO", "DISTRIBUTION"):
             # ── 4a. Load lookup table ──
             logger.log("QUERY",  f"Loading lookup ratios from '{rule.lookup_table}' (status={lkp_cfg['status_filter']})")
-            alloc_rows = LookupModel.query.filter_by(status=lkp_cfg["status_filter"]).all()
+            if alloc_method == "DISTRIBUTION" and rule.distribution_driver:
+                alloc_rows = LookupModel.query.filter_by(
+                    status=lkp_cfg["status_filter"],
+                    driver_name=rule.distribution_driver,
+                ).all()
+                logger.log("QUERY", f"Filtered by driver_name='{rule.distribution_driver}'")
+            else:
+                alloc_rows = LookupModel.query.filter_by(status=lkp_cfg["status_filter"]).all()
             alloc_data = (
                 pd.DataFrame([
                     {col: getattr(r, col) for col in lkp_cfg["columns"]}

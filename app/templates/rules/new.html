@@ -37,6 +37,17 @@
                 </div>
             </div>
 
+            {# ── Distribution Driver (visible only for DISTRIBUTION method) ── #}
+            <div id="distribution-driver-card" class="card mb-3 border-success" style="display:none">
+                <div class="card-header bg-success text-white"><i class="bi bi-collection"></i> Distribution Driver</div>
+                <div class="card-body">
+                    <label class="form-label">Driver Name</label>
+                    <input type="text" name="distribution_driver" id="distribution_driver"
+                           class="form-control" placeholder="e.g. PRODUCT_MIX_2026">
+                    <div class="form-text">Must match a <code>driver_name</code> in <strong>ref_static_distribution</strong> (APPROVED rows).</div>
+                </div>
+            </div>
+
             {# ── Table / key selection ── #}
             <div class="row mb-3" id="lookup-join-section">
                 <div class="col-md-3">
@@ -293,6 +304,7 @@
     // ── Allocation Method ──
     const allocMethodHidden = document.getElementById('alloc_method_hidden');
     const lookupJoinSection = document.getElementById('lookup-join-section');
+    const distributionDriverCard = document.getElementById('distribution-driver-card');
     const DISTRIBUTION_TABLE = 'ref_static_distribution';
 
     function syncAllocMethod() {
@@ -301,12 +313,16 @@
         allocMethodHidden.value = method;
         if (method === 'STATIC') {
             lookupJoinSection.style.display = 'none';
+            distributionDriverCard.style.display = 'none';
         } else {
             lookupJoinSection.style.display = '';
             if (method === 'DISTRIBUTION') {
                 lkpSelect.value = DISTRIBUTION_TABLE;
+                distributionDriverCard.style.display = '';
                 buildDimMapRows(outBody, srcSelect.value, lkpSelect.value);
                 buildDimMapRows(crdBody, srcSelect.value, lkpSelect.value);
+            } else {
+                distributionDriverCard.style.display = 'none';
             }
         }
     }

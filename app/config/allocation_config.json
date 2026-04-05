@@ -42,10 +42,11 @@
         "ref_static_distribution": {
             "label": "Static Distribution",
             "model": "RefStaticDistribution",
-            "columns": ["distribution_id", "customer_id", "org_unit_id", "product_code", "target_dim", "ratio"],
+            "columns": ["driver_name", "distribution_id", "customer_id", "org_unit_id", "product_code", "target_dim", "ratio"],
             "id_column": "distribution_id",
             "ratio_column": "ratio",
             "target_org_column": "target_dim",
+            "driver_filter_column": "driver_name",
             "status_filter": "APPROVED"
         },
         "ref_static_alloc": {

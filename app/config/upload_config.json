@@ -128,14 +128,14 @@
         },
         "DISTRIBUTION": {
             "label": "Static Distribution",
-            "description": "Distribution table mapping source dimension values to target dimensions with ratios. Used by the Static Distribution allocation method. Required columns: distribution_id, target_dim, ratio. Include one of customer_id / org_unit_id / product_code as the join key column.",
-            "required_columns": ["distribution_id", "target_dim", "ratio"],
+            "description": "Distribution table mapping source dimension values to target dimensions with ratios. Used by the Static Distribution allocation method. Required columns: driver_name, distribution_id, target_dim, ratio. Include one of customer_id / org_unit_id / product_code as the join key column.",
+            "required_columns": ["driver_name", "distribution_id", "target_dim", "ratio"],
             "optional_columns": ["customer_id", "org_unit_id", "product_code"],
             "unique_key": null,
             "staging_table": "ref_static_distribution",
             "ratio_validation": {
                 "enabled": true,
-                "group_by": ["distribution_id"],
+                "group_by": ["driver_name", "distribution_id"],
                 "sum_column": "ratio",
                 "expected_sum": 1.0,
                 "tolerance": 0.001
@@ -144,6 +144,7 @@
                 "ratio": {"min": 0, "max": 1}
             },
             "column_mapping": {
+                "driver_name":     {"type": "string"},
                 "distribution_id": {"type": "string"},
                 "customer_id":     {"type": "string", "default": null},
                 "org_unit_id":     {"type": "string", "default": null},
