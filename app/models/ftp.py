@@ -1,5 +1,5 @@
 from app.models import db
-from datetime import datetime
+from app.core.time_utils import utc_now
 
 
 class RefInterestRate(db.Model):
@@ -17,8 +17,8 @@ class RefInterestRate(db.Model):
     status = db.Column(db.String(20), default="DRAFT")     # DRAFT PENDING APPROVED REJECTED
     maker_id = db.Column(db.String(50), nullable=False)
     checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
 
 class FtpProductConfig(db.Model):
@@ -37,8 +37,8 @@ class FtpProductConfig(db.Model):
     avg_period_mult = db.Column(db.String(1), nullable=False, default="M")  # D, M, Y
     is_active = db.Column(db.Boolean, default=True)
     created_by = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
 
 class FtpRun(db.Model):
@@ -52,6 +52,6 @@ class FtpRun(db.Model):
     instruments_processed = db.Column(db.Integer, default=0)
     instruments_matched = db.Column(db.Integer, default=0)
     instruments_skipped = db.Column(db.Integer, default=0)
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, default=utc_now)
     completed_at = db.Column(db.DateTime, nullable=True)
     error_message = db.Column(db.Text, nullable=True)

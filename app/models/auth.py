@@ -1,5 +1,5 @@
 from app.models import db
-from datetime import datetime
+from app.core.time_utils import utc_now
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -20,7 +20,7 @@ class Group(db.Model):
     can_check = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
 
     users = db.relationship("User", secondary=user_group, back_populates="groups")
 
@@ -35,7 +35,7 @@ class User(UserMixin, db.Model):
     display_name = db.Column(db.String(120), nullable=True)
     password_hash = db.Column(db.String(256), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
 
     groups = db.relationship("Group", secondary=user_group, back_populates="users")
 

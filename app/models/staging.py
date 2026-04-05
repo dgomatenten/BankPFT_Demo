@@ -1,5 +1,5 @@
 from app.models import db
-from datetime import datetime
+from app.core.time_utils import utc_now
 
 
 class StgInstData(db.Model):
@@ -13,7 +13,7 @@ class StgInstData(db.Model):
     org_unit_id = db.Column(db.String(20), nullable=False)
     balance = db.Column(db.Float, nullable=False)
     interest_income = db.Column(db.Float, default=0.0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
 
 
 class ProcInstData(db.Model):
@@ -29,7 +29,7 @@ class ProcInstData(db.Model):
     interest_income = db.Column(db.Float, default=0.0)
     base_rate = db.Column(db.Float, nullable=True)         # filled by FTP engine
     cost_of_fund = db.Column(db.Float, nullable=True)      # filled by FTP engine
-    validated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    validated_at = db.Column(db.DateTime, default=utc_now)
 
 
 class StgGlData(db.Model):
@@ -42,7 +42,7 @@ class StgGlData(db.Model):
     debit = db.Column(db.Float, default=0.0)
     credit = db.Column(db.Float, default=0.0)
     balance = db.Column(db.Float, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
 
 
 class ProcGlData(db.Model):
@@ -55,4 +55,4 @@ class ProcGlData(db.Model):
     debit = db.Column(db.Float, default=0.0)
     credit = db.Column(db.Float, default=0.0)
     balance = db.Column(db.Float, nullable=False)
-    validated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    validated_at = db.Column(db.DateTime, default=utc_now)

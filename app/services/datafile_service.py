@@ -25,6 +25,7 @@ from app.models.datafile import DataFileBatch
 from app.models.registry import MODEL_REGISTRY
 from app.core.config_loader import load_config
 from app.core.filter_engine import apply_row_filters
+from app.core.time_utils import utc_now
 
 # ── Config ──────────────────────────────────────────────────────────────────
 DATAFILE_CONFIG = load_config("datafile_config")
@@ -359,7 +360,7 @@ def import_file(format_id: str, filename: str, run_by: str) -> DataFileBatch:
         target_table=fmt_cfg["target_table"],
         status="RUNNING",
         run_by=run_by,
-        started_at=datetime.utcnow(),
+        started_at=utc_now(),
     )
     db.session.add(batch)
     db.session.commit()
@@ -403,13 +404,13 @@ def import_file(format_id: str, filename: str, run_by: str) -> DataFileBatch:
         batch.status = "COMPLETED" if rows_loaded > 0 else "FAILED"
         if rows_loaded == 0:
             batch.error_message = "No rows were loaded. Check errors for details."
-        batch.completed_at = datetime.utcnow()
+        batch.completed_at = utc_now()
         db.session.commit()
 
     except Exception as exc:
         batch.status = "FAILED"
         batch.error_message = str(exc)
-        batch.completed_at = datetime.utcnow()
+        batch.completed_at = utc_now()
         db.session.commit()
 
     return batch
@@ -429,7 +430,7 @@ def export_data(export_id: str, run_by: str, as_of_date_str: str | None = None) 
     if not SourceModel:
         raise ValueError(f"No model registered for table: {exp_cfg['source_table']!r}")
 
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = utc_now().strftime("%Y%m%d_%H%M%S")
     ext = ".csv" if exp_cfg.get("format") == "delimited" else ".dat"
     out_filename = f"{export_id}_{ts}{ext}"
     batch_id = str(uuid.uuid4())
@@ -442,7 +443,7 @@ def export_data(export_id: str, run_by: str, as_of_date_str: str | None = None) 
         target_table=exp_cfg["source_table"],
         status="RUNNING",
         run_by=run_by,
-        started_at=datetime.utcnow(),
+        started_at=utc_now(),
     )
     db.session.add(batch)
     db.session.commit()
@@ -509,13 +510,13 @@ def export_data(export_id: str, run_by: str, as_of_date_str: str | None = None) 
 
         batch.row_count = rows_written
         batch.status = "COMPLETED"
-        batch.completed_at = datetime.utcnow()
+        batch.completed_at = utc_now()
         db.session.commit()
 
     except Exception as exc:
         batch.status = "FAILED"
         batch.error_message = str(exc)
-        batch.completed_at = datetime.utcnow()
+        batch.completed_at = utc_now()
         db.session.commit()
 
     return batch

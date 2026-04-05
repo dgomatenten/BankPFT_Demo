@@ -7,7 +7,8 @@ BatchExecutionStep so the execution screen can show live status.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date
+from app.core.time_utils import utc_now
 
 from app.models import db
 from app.models.workflow import BatchDefinition, BatchExecution, BatchExecutionStep
@@ -43,17 +44,17 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
     failed_count = 0
     for step in execution.steps:
         step.status = "RUNNING"
-        step.started_at = datetime.utcnow()
+        step.started_at = utc_now()
         db.session.commit()
 
         try:
             _run_step(step, as_of_date, run_by)
-            step.completed_at = datetime.utcnow()
+            step.completed_at = utc_now()
             db.session.commit()
         except Exception as exc:
             step.status = "FAILED"
             step.error_message = str(exc)
-            step.completed_at = datetime.utcnow()
+            step.completed_at = utc_now()
             db.session.commit()
             failed_count += 1
             if not defn.continue_on_error:
@@ -64,7 +65,7 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
                 db.session.commit()
                 break
 
-    execution.completed_at = datetime.utcnow()
+    execution.completed_at = utc_now()
     total = len(execution.steps)
     if failed_count == 0:
         execution.status = "COMPLETED"

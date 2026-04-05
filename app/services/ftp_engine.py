@@ -18,7 +18,8 @@ Calculation (MOVING_AVG):
 
 import uuid
 import calendar
-from datetime import datetime, timedelta, date
+from datetime import timedelta, date
+from app.core.time_utils import utc_now
 
 from app.models import db
 from app.models.staging import ProcInstData
@@ -67,7 +68,7 @@ def run_ftp(as_of_date: date, run_by: str) -> FtpRun:
         as_of_date=as_of_date,
         status="RUNNING",
         run_by=run_by,
-        started_at=datetime.utcnow(),
+        started_at=utc_now(),
     )
     db.session.add(ftp_run)
     db.session.commit()
@@ -120,13 +121,13 @@ def run_ftp(as_of_date: date, run_by: str) -> FtpRun:
         ftp_run.instruments_matched = matched
         ftp_run.instruments_skipped = skipped
         ftp_run.status = "COMPLETED"
-        ftp_run.completed_at = datetime.utcnow()
+        ftp_run.completed_at = utc_now()
         db.session.commit()
 
     except Exception as exc:
         ftp_run.status = "FAILED"
         ftp_run.error_message = str(exc)
-        ftp_run.completed_at = datetime.utcnow()
+        ftp_run.completed_at = utc_now()
         db.session.commit()
         raise
 

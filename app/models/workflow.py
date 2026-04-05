@@ -1,5 +1,5 @@
 from app.models import db
-from datetime import datetime
+from app.core.time_utils import utc_now
 import uuid
 
 
@@ -17,8 +17,8 @@ class UploadBatch(db.Model):
     checker_id = db.Column(db.String(50), nullable=True)
     maker_comment = db.Column(db.Text, nullable=True)
     checker_comment = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
 
 class AllocationRule(db.Model):
@@ -43,8 +43,8 @@ class AllocationRule(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     status = db.Column(db.String(20), default="ACTIVE")
     created_by = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
 
 class BatchRun(db.Model):
@@ -59,7 +59,7 @@ class BatchRun(db.Model):
     orphan_count = db.Column(db.Integer, default=0)
     source_total = db.Column(db.Float, default=0.0)
     output_total = db.Column(db.Float, default=0.0)
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, default=utc_now)
     completed_at = db.Column(db.DateTime, nullable=True)
     run_by = db.Column(db.String(50), nullable=False)
     error_message = db.Column(db.Text, nullable=True)
@@ -78,8 +78,8 @@ class BatchDefinition(db.Model):
     continue_on_error = db.Column(db.Boolean, default=False)
     is_active         = db.Column(db.Boolean, default=True)
     created_by        = db.Column(db.String(50), nullable=True)
-    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at        = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at        = db.Column(db.DateTime, default=utc_now)
+    updated_at        = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     tasks             = db.relationship(
         "BatchTask", backref="definition",
         order_by="BatchTask.step_order", cascade="all, delete-orphan", lazy="select"
@@ -112,7 +112,7 @@ class BatchExecution(db.Model):
     definition_id = db.Column(db.Integer, db.ForeignKey("batch_definition.id"), nullable=False)
     as_of_date    = db.Column(db.Date, nullable=False)
     status        = db.Column(db.String(20), default="RUNNING")  # RUNNING|COMPLETED|FAILED|PARTIAL
-    started_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at    = db.Column(db.DateTime, default=utc_now)
     completed_at  = db.Column(db.DateTime, nullable=True)
     run_by        = db.Column(db.String(50), nullable=False)
     error_message = db.Column(db.Text, nullable=True)
@@ -154,5 +154,5 @@ class PostApprovalLog(db.Model):
     action_ref      = db.Column(db.String(200), nullable=True)   # rule ID(s) CSV or procedure name
     status          = db.Column(db.String(20), nullable=False)   # SUCCESS | FAILED | SKIPPED
     detail          = db.Column(db.Text, nullable=True)          # summary or error message
-    executed_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    executed_at     = db.Column(db.DateTime, default=utc_now)
     executed_by     = db.Column(db.String(50), nullable=False)

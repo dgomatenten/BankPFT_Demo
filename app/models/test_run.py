@@ -1,7 +1,7 @@
 """TestSuiteRun model — persists each in-app pytest invocation and its results."""
 
 from app.models import db
-from datetime import datetime
+from app.core.time_utils import utc_now
 import uuid
 
 
@@ -10,7 +10,7 @@ class TestSuiteRun(db.Model):
     __tablename__ = "test_suite_run"
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, default=utc_now)
     completed_at = db.Column(db.DateTime, nullable=True)
     triggered_by = db.Column(db.String(50), nullable=True)
 

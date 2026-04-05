@@ -1,5 +1,5 @@
 from app.models import db
-from datetime import datetime
+from app.core.time_utils import utc_now
 
 
 class RefStaticAllocation(db.Model):
@@ -14,8 +14,8 @@ class RefStaticAllocation(db.Model):
     status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
     maker_id = db.Column(db.String(50), nullable=False)
     checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -30,8 +30,8 @@ class RefOrgReclass(db.Model):
     status = db.Column(db.String(20), default="DRAFT")
     maker_id = db.Column(db.String(50), nullable=False)
     checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -57,8 +57,8 @@ class RefStaticDistribution(db.Model):
     status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
     maker_id = db.Column(db.String(50), nullable=False)
     checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -83,8 +83,8 @@ class RefStaticAlloc(db.Model):
     status = db.Column(db.String(20), default="DRAFT")  # DRAFT, PENDING, APPROVED, REJECTED
     maker_id = db.Column(db.String(50), nullable=False)
     checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -106,7 +106,7 @@ class FctMgmtLedger(db.Model):
     allocated_income = db.Column(db.Float, default=0.0)
     ratio_applied = db.Column(db.Float, nullable=False)
     is_orphan = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
 
 
 class FctMgmtInstrument(db.Model):
@@ -127,4 +127,4 @@ class FctMgmtInstrument(db.Model):
     allocated_income = db.Column(db.Float, default=0.0)
     ratio_applied = db.Column(db.Float, nullable=False)
     is_orphan = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)

@@ -1,5 +1,5 @@
 from app.models import db
-from datetime import datetime
+from app.core.time_utils import utc_now
 
 
 class DataFileBatch(db.Model):
@@ -17,6 +17,6 @@ class DataFileBatch(db.Model):
     error_count = db.Column(db.Integer, default=0)
     errors_json = db.Column(db.Text, nullable=True)             # JSON list of error strings
     run_by = db.Column(db.String(50), nullable=False)
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, default=utc_now)
     completed_at = db.Column(db.DateTime, nullable=True)
     error_message = db.Column(db.Text, nullable=True)

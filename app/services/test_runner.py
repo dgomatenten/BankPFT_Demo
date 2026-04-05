@@ -8,7 +8,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from app.core.time_utils import utc_now
 
 from app.models import db
 from app.models.test_run import TestSuiteRun
@@ -55,13 +55,13 @@ def run_test_suite(triggered_by: str = "system") -> TestSuiteRun:
     except subprocess.TimeoutExpired:
         suite_run.status = "ERROR"
         suite_run.stdout = "Test suite timed out after 10 minutes."
-        suite_run.completed_at = datetime.utcnow()
+        suite_run.completed_at = utc_now()
         db.session.commit()
         return suite_run
     except Exception as exc:  # pragma: no cover
         suite_run.status = "ERROR"
         suite_run.stdout = str(exc)
-        suite_run.completed_at = datetime.utcnow()
+        suite_run.completed_at = utc_now()
         db.session.commit()
         return suite_run
 
@@ -92,7 +92,7 @@ def run_test_suite(triggered_by: str = "system") -> TestSuiteRun:
     else:
         suite_run.status = "PASS"
 
-    suite_run.completed_at = datetime.utcnow()
+    suite_run.completed_at = utc_now()
     db.session.commit()
     return suite_run
 

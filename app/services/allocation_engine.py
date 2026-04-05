@@ -11,7 +11,7 @@ Flow:
 import os
 import json
 import uuid
-from datetime import datetime
+from app.core.time_utils import utc_now
 import pandas as pd
 from app.models import db
 from app.models.workflow import AllocationRule, BatchRun
@@ -37,7 +37,7 @@ class _BatchLogger:
         self._fh = open(self.path, "w", encoding="utf-8")
 
     def log(self, level: str, msg: str) -> None:
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        ts = utc_now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         self._fh.write(f"[{ts}] [{level:<8}] {msg}\n")
         self._fh.flush()
 
@@ -162,7 +162,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     join_key   = rule.join_key
     batch_id   = str(uuid.uuid4())
     logger     = _BatchLogger(batch_id)
-    _t_start   = datetime.utcnow()
+    _t_start   = utc_now()
 
     logger.log("START",  f"Batch '{batch_id[:8]}...' initiated by {run_by}")
     logger.log("RULE",   f"Rule #{rule_id}: '{rule.name}'")
@@ -179,7 +179,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         as_of_date=as_of_date,
         status="RUNNING",
         run_by=run_by,
-        started_at=datetime.utcnow(),
+        started_at=utc_now(),
     )
     db.session.add(batch)
     db.session.commit()
@@ -195,7 +195,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             logger.log("ERROR",  f"No rows in '{rule.source_table}' for as_of_date={as_of_date}")
             batch.status        = "FAILED"
             batch.error_message = f"No data in {rule.source_table} for {as_of_date}."
-            batch.completed_at  = datetime.utcnow()
+            batch.completed_at  = utc_now()
             db.session.commit()
             return batch
 
@@ -216,7 +216,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             logger.log("ERROR",  "No rows remain after applying data filters")
             batch.status        = "FAILED"
             batch.error_message = "No rows remain after applying data filters."
-            batch.completed_at  = datetime.utcnow()
+            batch.completed_at  = utc_now()
             db.session.commit()
             return batch
 
@@ -233,7 +233,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             logger.log("ERROR",  "No rows remain after applying source dimension filters")
             batch.status        = "FAILED"
             batch.error_message = "No rows remain after applying source dimension filters."
-            batch.completed_at  = datetime.utcnow()
+            batch.completed_at  = utc_now()
             db.session.commit()
             return batch
 
@@ -448,8 +448,8 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         batch.source_total     = float(source_data[balance_cols[0]].sum())
         batch.output_total     = sum(r.allocated_balance for r in debit_rows)
         batch.status           = "COMPLETED"
-        batch.completed_at     = datetime.utcnow()
-        _elapsed = (datetime.utcnow() - _t_start).total_seconds()
+        batch.completed_at     = utc_now()
+        _elapsed = (utc_now() - _t_start).total_seconds()
         logger.log("SUMMARY",  f"source_rows={batch.source_row_count:,}  output_rows={batch.output_row_count:,}  orphans={batch.orphan_count:,}")
         logger.log("SUMMARY",  f"source_total={batch.source_total:,.2f}  output_total={batch.output_total:,.2f}  variance={batch.source_total - batch.output_total:,.2f}")
         logger.log("COMPLETE", f"Batch completed in {_elapsed:.2f}s")
@@ -460,7 +460,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         logger.log("FAILED", "Batch terminated — status=FAILED")
         batch.status        = "FAILED"
         batch.error_message = str(e)
-        batch.completed_at  = datetime.utcnow()
+        batch.completed_at  = utc_now()
         db.session.commit()
         raise
     finally:
