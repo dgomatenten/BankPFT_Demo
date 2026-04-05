@@ -4,9 +4,12 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from sqlalchemy import text
 from app.models import db
-from app.models.workflow import UploadBatch
+from app.models.workflow import UploadBatch, PostApprovalLog
 from app.models.registry import UPLOAD_PREVIEW_REGISTRY
-from app.services.upload_service import allowed_file, process_upload, UPLOAD_CONFIG
+from app.models.staging import StgInstData, StgGlData
+from app.models.allocation import RefStaticAllocation, RefOrgReclass, RefStaticDistribution, RefStaticAlloc
+from app.models.ftp import RefInterestRate
+from app.services.upload_service import allowed_file, process_upload, UPLOAD_CONFIG, run_post_approval
 from app.services import transition, WorkflowError
 from werkzeug.utils import secure_filename
 
@@ -69,8 +72,13 @@ def detail(batch_id):
         stg = model_cls.query.filter_by(upload_batch_id=batch_id).limit(20).all()
         preview_rows = [{c: getattr(r, c, None) for c in preview_cols} for r in stg]
 
+    post_approval_logs = PostApprovalLog.query.filter_by(upload_batch_id=batch_id).order_by(PostApprovalLog.executed_at).all()
+    post_approval_cfg = type_cfg.get("post_approval")
+
     return render_template("upload/detail.html", batch=batch, errors=errors,
-                           preview_cols=preview_cols, preview_rows=preview_rows)
+                           preview_cols=preview_cols, preview_rows=preview_rows,
+                           post_approval_logs=post_approval_logs,
+                           post_approval_cfg=post_approval_cfg)
 
 
 @bp.route("/<batch_id>/action", methods=["POST"])
@@ -108,8 +116,28 @@ def action(batch_id):
             RefInterestRate.query.filter_by(
                 upload_batch_id=batch.id
             ).update({"status": "APPROVED", "checker_id": current_user.username})
+        elif batch.data_type == "DISTRIBUTION":
+            RefStaticDistribution.query.filter_by(
+                upload_batch_id=batch.id
+            ).update({"status": "APPROVED", "checker_id": current_user.username})
+        elif batch.data_type == "STATIC_ALLOC":
+            RefStaticAlloc.query.filter_by(
+                upload_batch_id=batch.id
+            ).update({"status": "APPROVED", "checker_id": current_user.username})
 
     db.session.commit()
+
+    # Run post-approval actions (allocation rules or stored procedure placeholder)
+    if target_status == "APPROVED":
+        pa_logs = run_post_approval(batch, current_user.username)
+        for log in pa_logs:
+            if log.status == "SUCCESS":
+                flash(f"Post-approval [{log.action_type}] {log.action_ref}: {log.detail}", "info")
+            elif log.status == "SKIPPED":
+                flash(f"Post-approval skipped: {log.detail}", "warning")
+            else:
+                flash(f"Post-approval FAILED [{log.action_ref}]: {log.detail}", "danger")
+
     flash(f"Batch {target_status.lower()} successfully.", "success")
     return redirect(url_for("upload.detail", batch_id=batch_id))
 

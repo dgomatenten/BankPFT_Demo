@@ -159,5 +159,59 @@
 </div>
 {% endif %}
 
+{# ── Post-Approval Actions ── #}
+{% if post_approval_cfg %}
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-lightning-charge"></i> Post-Approval Action
+        <span class="badge bg-secondary ms-2">{{ post_approval_cfg.type }}</span>
+        {% if post_approval_cfg.type == 'stored_procedure' %}
+        <span class="badge bg-warning text-dark ms-1">POC placeholder</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if post_approval_cfg.type == 'run_rules' %}
+        <p class="mb-2 text-muted small">
+            Configured rule IDs to run after approval:
+            {% if post_approval_cfg.rule_ids %}
+            <strong>{{ post_approval_cfg.rule_ids | join(', ') }}</strong>
+            {% else %}
+            <em>None configured — add rule IDs to <code>upload_config.json</code> post_approval.rule_ids.</em>
+            {% endif %}
+        </p>
+        {% elif post_approval_cfg.type == 'stored_procedure' %}
+        <p class="mb-2 text-muted small">Stored procedure: <code>{{ post_approval_cfg.procedure_name }}</code></p>
+        {% endif %}
+
+        {% if post_approval_logs %}
+        <table class="table table-sm table-bordered mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Type</th><th>Ref</th><th>Status</th><th>Detail</th><th>Executed At</th><th>By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in post_approval_logs %}
+                <tr>
+                    <td><small>{{ log.action_type }}</small></td>
+                    <td><small>{{ log.action_ref }}</small></td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if log.status == 'SUCCESS' else 'danger' if log.status == 'FAILED' else 'secondary' }}">
+                            {{ log.status }}
+                        </span>
+                    </td>
+                    <td><small>{{ log.detail }}</small></td>
+                    <td><small>{{ log.executed_at.strftime('%Y-%m-%d %H:%M') if log.executed_at else '—' }}</small></td>
+                    <td><small>{{ log.executed_by }}</small></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% elif batch.status != 'APPROVED' %}
+        <p class="text-muted mb-0 small">Actions will execute automatically when this batch is approved.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <a href="/upload" class="btn btn-outline-secondary mt-3"><i class="bi bi-arrow-left"></i> Back to Uploads</a>
 {% endblock %}

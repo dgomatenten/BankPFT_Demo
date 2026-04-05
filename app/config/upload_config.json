@@ -27,7 +27,8 @@
                 "balance": {"type": "float"},
                 "interest_income": {"type": "float", "default": 0}
             },
-            "validation_rules": ["required_columns", "null_check", "unique_key", "dimension_lookup", "numeric_range"]
+            "validation_rules": ["required_columns", "null_check", "unique_key", "dimension_lookup", "numeric_range"],
+            "post_approval": {"type": "run_rules", "rule_ids": [], "description": "Allocation rule IDs to run automatically after instrument data is approved"}
         },
         "GL": {
             "label": "General Ledger",
@@ -51,7 +52,8 @@
                 "credit": {"type": "float", "default": 0},
                 "balance": {"type": "float"}
             },
-            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"]
+            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"],
+            "post_approval": {"type": "run_rules", "rule_ids": [], "description": "Allocation rule IDs to run automatically after GL data is approved"}
         },
         "ALLOCATION": {
             "label": "Allocation Ratios",
@@ -82,7 +84,8 @@
                 "target_org_unit_id": {"type": "string"},
                 "ratio": {"type": "float"}
             },
-            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "ratio_sum", "numeric_range"]
+            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "ratio_sum", "numeric_range"],
+            "post_approval": {"type": "stored_procedure", "procedure_name": "sp_refresh_allocation_cache"}
         },
         "ORG_RECLASS": {
             "label": "Org Reclassification",
@@ -104,7 +107,8 @@
                 "target_org_unit_id": {"type": "string"},
                 "ratio": {"type": "float", "default": 1.0}
             },
-            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"]
+            "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"],
+            "post_approval": null
         },
         "INTEREST_RATE": {
             "label": "Interest Rate Curves",
@@ -124,7 +128,8 @@
                 "term_mult": {"type": "string"},
                 "rate": {"type": "float"}
             },
-            "validation_rules": ["required_columns", "null_check", "numeric_range"]
+            "validation_rules": ["required_columns", "null_check", "numeric_range"],
+            "post_approval": null
         },
         "DISTRIBUTION": {
             "label": "Static Distribution",
@@ -152,7 +157,8 @@
                 "target_dim":      {"type": "string"},
                 "ratio":           {"type": "float"}
             },
-            "validation_rules": ["required_columns", "null_check", "ratio_sum", "numeric_range"]
+            "validation_rules": ["required_columns", "null_check", "ratio_sum", "numeric_range"],
+            "post_approval": {"type": "stored_procedure", "procedure_name": "sp_refresh_distribution_cache"}
         },
         "STATIC_ALLOC": {
             "label": "Static Allocation Mapping",
@@ -172,7 +178,8 @@
                 "target_dim":   {"type": "string"},
                 "ratio":        {"type": "float", "default": 1.0}
             },
-            "validation_rules": ["required_columns", "null_check", "numeric_range"]
+            "validation_rules": ["required_columns", "null_check", "numeric_range"],
+            "post_approval": null
         }
     }
 }

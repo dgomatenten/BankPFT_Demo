@@ -137,3 +137,22 @@ class BatchExecutionStep(db.Model):
     completed_at  = db.Column(db.DateTime, nullable=True)
     summary       = db.Column(db.Text, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
+
+
+class PostApprovalLog(db.Model):
+    """Records each post-approval action triggered when an UploadBatch is approved.
+
+    action_type: "run_rules"        — ran one or more AllocationRules
+                 "stored_procedure" — placeholder SP call (POC)
+    status:      "SUCCESS" | "FAILED" | "SKIPPED"
+    """
+    __tablename__ = "post_approval_log"
+    id              = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    upload_batch_id = db.Column(db.String(36), db.ForeignKey("upload_batch.id"),
+                                nullable=False, index=True)
+    action_type     = db.Column(db.String(20), nullable=False)   # run_rules | stored_procedure
+    action_ref      = db.Column(db.String(200), nullable=True)   # rule ID(s) CSV or procedure name
+    status          = db.Column(db.String(20), nullable=False)   # SUCCESS | FAILED | SKIPPED
+    detail          = db.Column(db.Text, nullable=True)          # summary or error message
+    executed_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    executed_by     = db.Column(db.String(50), nullable=False)

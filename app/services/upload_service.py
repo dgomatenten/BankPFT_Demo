@@ -194,3 +194,85 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
 
     db.session.commit()
     return batch
+
+
+# ── Post-approval action executor ────────────────────────────────────────────
+
+def run_post_approval(batch: UploadBatch, actor: str) -> list:
+    """Execute post-approval actions configured for the batch data_type.
+
+    Returns a list of PostApprovalLog rows (already committed).
+    Action types:
+        run_rules        — invoke run_allocation() for each rule_id in config
+        stored_procedure — placeholder; logs the SP name with status=SUCCESS (POC)
+    """
+    from datetime import date
+    from app.models.workflow import PostApprovalLog
+
+    type_cfg = UPLOAD_CONFIG["data_types"].get(batch.data_type, {})
+    post_approval = type_cfg.get("post_approval")
+    if not post_approval:
+        return []
+
+    action_type = post_approval.get("type")
+    logs = []
+
+    if action_type == "run_rules":
+        rule_ids = post_approval.get("rule_ids") or []
+        if not rule_ids:
+            log = PostApprovalLog(
+                upload_batch_id=batch.id,
+                action_type="run_rules",
+                action_ref="(none)",
+                status="SKIPPED",
+                detail="No rule_ids configured in upload_config.json post_approval block.",
+                executed_by=actor,
+            )
+            db.session.add(log)
+            logs.append(log)
+        else:
+            from app.services.allocation_engine import run_allocation
+            as_of_date = date.today()
+            for rule_id in rule_ids:
+                try:
+                    result = run_allocation(int(rule_id), as_of_date, actor)
+                    log = PostApprovalLog(
+                        upload_batch_id=batch.id,
+                        action_type="run_rules",
+                        action_ref=str(rule_id),
+                        status="SUCCESS" if result.status != "FAILED" else "FAILED",
+                        detail=(
+                            f"Rule {rule_id}: {result.output_row_count} output rows, "
+                            f"{result.orphan_count} orphans, total {result.output_total:,.2f}"
+                        ) if result.status != "FAILED" else result.error_message,
+                        executed_by=actor,
+                    )
+                except Exception as exc:
+                    log = PostApprovalLog(
+                        upload_batch_id=batch.id,
+                        action_type="run_rules",
+                        action_ref=str(rule_id),
+                        status="FAILED",
+                        detail=str(exc),
+                        executed_by=actor,
+                    )
+                db.session.add(log)
+                logs.append(log)
+
+    elif action_type == "stored_procedure":
+        proc_name = post_approval.get("procedure_name", "(unnamed)")
+        # POC placeholder — stored procedure execution is not yet implemented.
+        # Replace the body of this branch with actual SP dispatch when ready.
+        log = PostApprovalLog(
+            upload_batch_id=batch.id,
+            action_type="stored_procedure",
+            action_ref=proc_name,
+            status="SUCCESS",
+            detail=f"[POC] Stored procedure '{proc_name}' was called (placeholder — no-op).",
+            executed_by=actor,
+        )
+        db.session.add(log)
+        logs.append(log)
+
+    db.session.commit()
+    return logs

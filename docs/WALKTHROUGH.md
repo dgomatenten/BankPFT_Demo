@@ -142,12 +142,31 @@ Shows upload details, validation results, and the Maker/Checker workflow.
 - **Workflow progress bar** — shows the current state: DRAFT → PENDING → APPROVED → PROCESSED
 - **Batch info** — ID, type, status, row count, error count, maker, checker
 - **Staged Data Preview** — first 20 rows of the uploaded data
-- **Action buttons** (below preview, not shown):
+- **Action buttons** (below preview):
   - **Submit for Review** — Maker submits (DRAFT → PENDING)
   - **Approve / Reject** — Checker reviews (PENDING → APPROVED or REJECTED)
-  - **Process** — promotes staging data to processing tables (APPROVED → PROCESSED)
+- **Post-Approval Action card** — shows the configured post-approval action for this data type. In PENDING state the card reads _"Actions will execute automatically when this batch is approved."_ After approval it displays the execution log table (type, ref, status, detail, timestamp)
+
+![Upload Detail — PENDING with Post-Approval card](images/41_upload_detail_post_approval_pending.png)
+
+![Upload Detail — APPROVED with Post-Approval log](images/42_upload_detail_post_approval_approved.png)
 
 **4-Eyes Rule:** The Checker must be a different user than the Maker, and must belong to a group with the **Can Check** permission. The system enforces both constraints.
+
+### Post-Approval Action Types
+
+Configured per data type in `upload_config.json` under `post_approval`:
+
+| Type | Behaviour | Data types (default) |
+|---|---|---|
+| `run_rules` | Runs one or more `AllocationRule` IDs (via `rule_ids` list) using `date.today()` as `as_of_date`. Each rule logs SUCCESS / FAILED separately | `INSTRUMENT`, `GL` |
+| `stored_procedure` | POC placeholder — logs procedure name with SUCCESS status (no-op until wired to a real SP) | `ALLOCATION`, `DISTRIBUTION` |
+| `null` | No post-approval action | `ORG_RECLASS`, `INTEREST_RATE`, `STATIC_ALLOC` |
+
+To configure rule IDs for INSTRUMENT or GL, edit the `rule_ids` array in `upload_config.json`:
+```json
+"post_approval": {"type": "run_rules", "rule_ids": [4, 5]}
+```
 
 ---
 

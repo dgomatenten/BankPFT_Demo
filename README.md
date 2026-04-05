@@ -40,7 +40,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 |---|---|
 | **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, Org Reclassification, Static Distribution, and Static Allocation data with column-level validation |
-| **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission |
+| **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission. On approval, configurable **post-approval actions** run automatically (execute allocation rule IDs or call a stored procedure — POC placeholder) |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), **distribution driver** (named sub-table within `ref_static_distribution`), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
 | **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. The batch execution screen selects a definition, previews its steps, and executes them sequentially. Individual steps can also be run directly from an Advanced panel |
@@ -60,6 +60,7 @@ Dimensions (Org Unit, Product, Customer, Account)
         ↓ validation
 Staging (STG_INST_DATA, STG_GL_DATA, REF_INTEREST_RATE)
         ↓ Maker/Checker approval
+        ↓ Post-Approval Actions (run_rules → Allocation Engine | stored_procedure → SP placeholder)
 Processing (PROC_INST_DATA, PROC_GL_DATA)
         ↓ Allocation Engine (Pandas join + ratio shredding)
         ↓ per-dimension source filter  →  join  →  DEBIT dim mapping (output_dim_json)
@@ -373,6 +374,10 @@ Defines each upload data type (INSTRUMENT, GL, ALLOCATION, ORG_RECLASS, DISTRIBU
 - **numeric_ranges** — per-column min/max bounds (e.g. `ratio: {min: 0, max: 1}`)
 - **ratio_validation** — group-by keys, expected sum, and tolerance for allocation ratio checks
 - **validation_rules** — ordered list of rule IDs to run for this data type (references `validation_rules.json`)
+- **post_approval** — action to trigger automatically when the batch is approved:
+  - `{"type": "run_rules", "rule_ids": [4, 5]}` — runs the listed `AllocationRule` IDs using `date.today()`
+  - `{"type": "stored_procedure", "procedure_name": "sp_name"}` — POC placeholder; replace body to call a real SP
+  - `null` — no post-approval action
 
 The upload form dropdown and expected-columns display are rendered dynamically from this file.
 
