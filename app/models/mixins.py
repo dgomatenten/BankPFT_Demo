@@ -20,8 +20,8 @@ from app.core.time_utils import utc_now
 class TimestampMixin:
     """Adds ``created_at`` and ``updated_at`` audit columns."""
 
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
 class MakerCheckerMixin(TimestampMixin):

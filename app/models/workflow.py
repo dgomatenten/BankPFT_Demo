@@ -12,7 +12,7 @@ class UploadBatch(MakerCheckerMixin, db.Model):
     filename = db.Column(db.String(255), nullable=False)
     row_count = db.Column(db.Integer, default=0)
     error_count = db.Column(db.Integer, default=0)
-    errors_json = db.Column(db.Text, nullable=True)
+    errors_json = db.Column(db.JSON, nullable=True)
     maker_comment = db.Column(db.Text, nullable=True)
     checker_comment = db.Column(db.Text, nullable=True)
 
@@ -51,10 +51,10 @@ class BatchRun(db.Model):
     source_row_count = db.Column(db.Integer, default=0)
     output_row_count = db.Column(db.Integer, default=0)
     orphan_count = db.Column(db.Integer, default=0)
-    source_total = db.Column(db.Float, default=0.0)
-    output_total = db.Column(db.Float, default=0.0)
-    started_at = db.Column(db.DateTime, default=utc_now)
-    completed_at = db.Column(db.DateTime, nullable=True)
+    source_total = db.Column(db.Numeric(18, 6), default=0.0)
+    output_total = db.Column(db.Numeric(18, 6), default=0.0)
+    started_at = db.Column(db.DateTime(timezone=True), default=utc_now)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
     run_by = db.Column(db.String(50), nullable=False)
     error_message = db.Column(db.Text, nullable=True)
 
@@ -94,6 +94,7 @@ class BatchTask(db.Model):
     task_type     = db.Column(db.String(30), nullable=False)   # one of TASK_TYPES
     ref_id        = db.Column(db.String(100), nullable=True)   # rule_id | format_id | export_id | sp_name
     label         = db.Column(db.String(200), nullable=True)   # human-readable
+    params_json   = db.Column(db.JSON, nullable=True)          # for CUSTOM_SP: {"param": "value"}
 
 
 class BatchExecution(db.Model):
@@ -104,8 +105,8 @@ class BatchExecution(db.Model):
     definition_id = db.Column(db.Integer, db.ForeignKey("batch_definition.id"), nullable=False)
     as_of_date    = db.Column(db.Date, nullable=False)
     status        = db.Column(db.String(20), default="RUNNING")  # RUNNING|COMPLETED|FAILED|PARTIAL
-    started_at    = db.Column(db.DateTime, default=utc_now)
-    completed_at  = db.Column(db.DateTime, nullable=True)
+    started_at    = db.Column(db.DateTime(timezone=True), default=utc_now)
+    completed_at  = db.Column(db.DateTime(timezone=True), nullable=True)
     run_by        = db.Column(db.String(50), nullable=False)
     error_message = db.Column(db.Text, nullable=True)
     steps         = db.relationship(
@@ -122,11 +123,12 @@ class BatchExecutionStep(db.Model):
     step_order    = db.Column(db.Integer, nullable=False)
     task_type     = db.Column(db.String(30), nullable=False)
     ref_id        = db.Column(db.String(100), nullable=True)
+    params_json   = db.Column(db.JSON, nullable=True)          # copied from BatchTask at dispatch time
     label         = db.Column(db.String(200), nullable=True)
-    status        = db.Column(db.String(20), default="PENDING")  # PENDING|RUNNING|COMPLETED|FAILED|SKIPPED
+    status        = db.Column(db.String(20), default="PENDING")  # PENDING|RUNNING|DISPATCHED|COMPLETED|FAILED|SKIPPED
     ref_run_id    = db.Column(db.String(36), nullable=True)      # ID of created underlying run record
-    started_at    = db.Column(db.DateTime, nullable=True)
-    completed_at  = db.Column(db.DateTime, nullable=True)
+    started_at    = db.Column(db.DateTime(timezone=True), nullable=True)
+    completed_at  = db.Column(db.DateTime(timezone=True), nullable=True)
     summary       = db.Column(db.Text, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
 
@@ -146,5 +148,28 @@ class PostApprovalLog(db.Model):
     action_ref      = db.Column(db.String(200), nullable=True)   # rule ID(s) CSV or procedure name
     status          = db.Column(db.String(20), nullable=False)   # SUCCESS | FAILED | SKIPPED
     detail          = db.Column(db.Text, nullable=True)          # summary or error message
-    executed_at     = db.Column(db.DateTime, default=utc_now)
+    executed_at     = db.Column(db.DateTime(timezone=True), default=utc_now)
     executed_by     = db.Column(db.String(50), nullable=False)
+
+
+class SpRun(db.Model):
+    """Tracks each asynchronous stored-procedure invocation fired from a batch step.
+
+    status: RUNNING → COMPLETED | FAILED
+    The batch step that dispatched this SP is linked via exec_step_id so the
+    monitoring screen can cross-reference back to its parent execution.
+    """
+    __tablename__ = "sp_run"
+    id             = db.Column(db.String(36), primary_key=True,
+                               default=lambda: str(uuid.uuid4()))
+    sp_name        = db.Column(db.String(200), nullable=False)
+    params_json    = db.Column(db.JSON, nullable=True)
+    status         = db.Column(db.String(20), default="RUNNING")  # RUNNING|COMPLETED|FAILED
+    started_at     = db.Column(db.DateTime(timezone=True), default=utc_now)
+    completed_at   = db.Column(db.DateTime(timezone=True), nullable=True)
+    run_by         = db.Column(db.String(50), nullable=True)
+    result_message = db.Column(db.Text, nullable=True)
+    error_message  = db.Column(db.Text, nullable=True)
+    # Back-reference to the batch step that triggered this run
+    exec_step_id   = db.Column(db.Integer,
+                               db.ForeignKey("batch_execution_step.id"), nullable=True)

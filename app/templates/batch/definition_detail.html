@@ -124,9 +124,23 @@
 
                         <!-- CUSTOM_SP ref -->
                         <div class="col-md-4" id="ref_custom_sp" style="display:none">
-                            <label class="form-label">SP Job Name</label>
-                            <input type="text" name="ref_id_custom_sp" class="form-control" placeholder="e.g. reporting.sp_extract">
-                            <div class="form-text text-warning"><i class="bi bi-exclamation-triangle"></i> Placeholder — not yet executed</div>
+                            <label class="form-label">SP Name</label>
+                            <input type="text" name="ref_id_custom_sp" class="form-control"
+                                   placeholder="e.g. reporting.sp_extract">
+                            <div class="form-text">Schema prefix allowed: <code>schema.sp_name</code></div>
+                        </div>
+                        <!-- CUSTOM_SP params (shown only when CUSTOM_SP selected) -->
+                        <div class="col-12" id="ref_custom_sp_params" style="display:none">
+                            <label class="form-label">
+                                Parameters <small class="text-muted">(optional JSON object)</small>
+                            </label>
+                            <textarea name="params_json" class="form-control font-monospace"
+                                      rows="3"
+                                      placeholder='{"as_of_date": "{as_of_date}", "run_by": "{run_by}"}'></textarea>
+                            <div class="form-text">
+                                Use <code>{as_of_date}</code> and <code>{run_by}</code> as runtime tokens.
+                                Keys become named bind parameters in <code>CALL sp_name(:key, …)</code>.
+                            </div>
                         </div>
 
                         <!-- FTP has no ref -->
@@ -220,10 +234,15 @@ function updateRefInput() {
     ['allocation','import','export','custom_sp','ftp'].forEach(id => {
         document.getElementById('ref_' + id).style.display = 'none';
     });
+    const paramsDiv = document.getElementById('ref_custom_sp_params');
+    paramsDiv.style.display = 'none';
     if (t === 'ALLOCATION')      document.getElementById('ref_allocation').style.display = '';
     if (t === 'DATAFILE_IMPORT') document.getElementById('ref_import').style.display     = '';
     if (t === 'DATAFILE_EXPORT') document.getElementById('ref_export').style.display     = '';
-    if (t === 'CUSTOM_SP')       document.getElementById('ref_custom_sp').style.display  = '';
+    if (t === 'CUSTOM_SP') {
+        document.getElementById('ref_custom_sp').style.display  = '';
+        paramsDiv.style.display = '';
+    }
     if (t === 'FTP')             document.getElementById('ref_ftp').style.display         = '';
 }
 function mergeRefId() {

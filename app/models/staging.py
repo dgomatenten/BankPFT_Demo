@@ -11,9 +11,9 @@ class StgInstData(db.Model):
     customer_id = db.Column(db.String(20), nullable=False)
     product_code = db.Column(db.String(20), nullable=False)
     org_unit_id = db.Column(db.String(20), nullable=False)
-    balance = db.Column(db.Float, nullable=False)
-    interest_income = db.Column(db.Float, default=0.0)
-    created_at = db.Column(db.DateTime, default=utc_now)
+    balance = db.Column(db.Numeric(18, 6), nullable=False)
+    interest_income = db.Column(db.Numeric(18, 6), default=0.0)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
 
 
 class ProcInstData(db.Model):
@@ -25,11 +25,11 @@ class ProcInstData(db.Model):
     customer_id = db.Column(db.String(20), nullable=False)
     product_code = db.Column(db.String(20), nullable=False)
     org_unit_id = db.Column(db.String(20), nullable=False)
-    balance = db.Column(db.Float, nullable=False)
-    interest_income = db.Column(db.Float, default=0.0)
-    base_rate = db.Column(db.Float, nullable=True)         # filled by FTP engine
-    cost_of_fund = db.Column(db.Float, nullable=True)      # filled by FTP engine
-    validated_at = db.Column(db.DateTime, default=utc_now)
+    balance = db.Column(db.Numeric(18, 6), nullable=False)
+    interest_income = db.Column(db.Numeric(18, 6), default=0.0)
+    base_rate = db.Column(db.Numeric(18, 6), nullable=True)         # filled by FTP engine
+    cost_of_fund = db.Column(db.Numeric(18, 6), nullable=True)      # filled by FTP engine
+    validated_at = db.Column(db.DateTime(timezone=True), default=utc_now)
 
 
 class StgGlData(db.Model):
@@ -39,10 +39,10 @@ class StgGlData(db.Model):
     as_of_date = db.Column(db.Date, nullable=False)
     gl_account = db.Column(db.String(20), nullable=False)
     org_unit_id = db.Column(db.String(20), nullable=False)
-    debit = db.Column(db.Float, default=0.0)
-    credit = db.Column(db.Float, default=0.0)
-    balance = db.Column(db.Float, nullable=False)
-    created_at = db.Column(db.DateTime, default=utc_now)
+    debit = db.Column(db.Numeric(18, 6), default=0.0)
+    credit = db.Column(db.Numeric(18, 6), default=0.0)
+    balance = db.Column(db.Numeric(18, 6), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
 
 
 class ProcGlData(db.Model):
@@ -52,7 +52,7 @@ class ProcGlData(db.Model):
     as_of_date = db.Column(db.Date, nullable=False)
     gl_account = db.Column(db.String(20), nullable=False)
     org_unit_id = db.Column(db.String(20), nullable=False)
-    debit = db.Column(db.Float, default=0.0)
-    credit = db.Column(db.Float, default=0.0)
-    balance = db.Column(db.Float, nullable=False)
-    validated_at = db.Column(db.DateTime, default=utc_now)
+    debit = db.Column(db.Numeric(18, 6), default=0.0)
+    credit = db.Column(db.Numeric(18, 6), default=0.0)
+    balance = db.Column(db.Numeric(18, 6), nullable=False)
+    validated_at = db.Column(db.DateTime(timezone=True), default=utc_now)

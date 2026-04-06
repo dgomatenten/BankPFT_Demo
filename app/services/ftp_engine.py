@@ -18,6 +18,7 @@ Calculation (MOVING_AVG):
 
 import uuid
 import calendar
+from decimal import Decimal
 from datetime import timedelta, date
 from app.core.time_utils import utc_now
 
@@ -79,7 +80,7 @@ def run_ftp(as_of_date: date, run_by: str) -> FtpRun:
         # Actual/actual day fraction for as_of_date's month
         days_in_month = calendar.monthrange(as_of_date.year, as_of_date.month)[1]
         days_in_year = 366 if calendar.isleap(as_of_date.year) else 365
-        day_fraction = days_in_month / days_in_year
+        day_fraction = Decimal(days_in_month) / Decimal(days_in_year)
 
         processed = 0
         matched = 0

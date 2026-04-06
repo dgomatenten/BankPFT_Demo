@@ -1,0 +1,139 @@
+{% extends "layout/base.html" %}
+{% block title %}SP Monitor — BankPFT{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h2 class="mb-0"><i class="bi bi-activity"></i> Stored Procedure Monitor</h2>
+        <p class="text-muted small mb-0">Async SP runs dispatched from batch steps</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        {% if running_count > 0 %}
+        <span class="badge bg-info fs-6 px-3">
+            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            {{ running_count }} running
+        </span>
+        {% endif %}
+        <a href="{{ url_for('batch.list_batches') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Batch
+        </a>
+    </div>
+</div>
+
+<!-- Summary stats -->
+<div class="row g-3 mb-4">
+    {% set total     = sp_runs | length %}
+    {% set completed = sp_runs | selectattr('status','eq','COMPLETED') | list | length %}
+    {% set failed    = sp_runs | selectattr('status','eq','FAILED')    | list | length %}
+    {% set running   = sp_runs | selectattr('status','eq','RUNNING')   | list | length %}
+    <div class="col-md-3">
+        <div class="card stat-card blue text-center py-3">
+            <div class="text-muted small">Total (last 100)</div>
+            <div class="fs-4 fw-bold">{{ total }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card green text-center py-3">
+            <div class="text-muted small">Completed</div>
+            <div class="fs-4 fw-bold text-success">{{ completed }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card red text-center py-3">
+            <div class="text-muted small">Failed</div>
+            <div class="fs-4 fw-bold {{ 'text-danger' if failed > 0 else '' }}">{{ failed }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card orange text-center py-3">
+            <div class="text-muted small">Running</div>
+            <div class="fs-4 fw-bold {{ 'text-info' if running > 0 else '' }}">{{ running }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- SP run list -->
+<div class="card">
+    <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-ul"></i> SP Run History</span>
+        {% if running_count > 0 %}
+        <small class="text-muted">Auto-refresh in <span id="countdown">10</span>s</small>
+        {% endif %}
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Run ID</th>
+                    <th>SP Name</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                    <th>Run By</th>
+                    <th>Batch Step</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in sp_runs %}
+            {% set sc = {'COMPLETED':'success','FAILED':'danger','RUNNING':'info'} %}
+            <tr class="{{ 'table-danger' if r.status == 'FAILED' else '' }}">
+                <td class="font-monospace small">{{ r.id[:12] }}…</td>
+                <td class="fw-semibold small">{{ r.sp_name }}</td>
+                <td>
+                    <span class="badge bg-{{ sc.get(r.status,'secondary') }}">
+                        {% if r.status == 'RUNNING' %}
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        {% endif %}
+                        {{ r.status }}
+                    </span>
+                </td>
+                <td class="small text-muted">
+                    {{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') if r.started_at else '—' }}
+                </td>
+                <td class="small text-muted">
+                    {% if r.completed_at and r.started_at %}
+                        {% set secs = (r.completed_at - r.started_at).total_seconds() | int %}
+                        {{ secs }}s
+                    {% elif r.status == 'RUNNING' %}
+                        <span class="text-info">running…</span>
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td class="small text-muted">{{ r.run_by or '—' }}</td>
+                <td class="small font-monospace text-muted">
+                    {% if r.exec_step_id %}
+                    step #{{ r.exec_step_id }}
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('batch.sp_detail', run_id=r.id) }}"
+                       class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-search"></i> Detail
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">No SP runs yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if running_count > 0 %}
+<script>
+(function () {
+    let t = 10;
+    const el = document.getElementById('countdown');
+    const iv = setInterval(() => {
+        t--;
+        if (el) el.textContent = t;
+        if (t <= 0) { clearInterval(iv); location.reload(); }
+    }, 1000);
+})();
+</script>
+{% endif %}
+
+{% endblock %}

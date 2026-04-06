@@ -48,6 +48,9 @@ This guide walks through every screen in the Management Allocation System, expla
 39. [Batch Definitions — Detail & Step Configuration](#39-batch-definitions--detail--step-configuration)
 40. [Batch Execution (Redesigned Screen)](#40-batch-execution-redesigned-screen)
 41. [Batch Execution — Step-by-Step Detail](#41-batch-execution--step-by-step-detail)
+42. [Batch Execution — DISPATCHED SP Step](#42-batch-execution--dispatched-sp-step)
+43. [SP Monitor](#43-sp-monitor)
+44. [SP Run Detail](#44-sp-run-detail)
 
 ---
 
@@ -2212,6 +2215,32 @@ Shows all configured steps in execution order. Each row shows:
 
 New steps are appended at the end and assigned the next step order number.
 
+### CUSTOM_SP Step
+
+When **CUSTOM_SP** is selected as the Task Type, two additional fields appear:
+
+![CUSTOM_SP form](images/44_batch_def_custom_sp_form.png)
+
+| Field | Description |
+|---|---|
+| **SP Name** | Stored procedure name. An optional `schema.` prefix is allowed (e.g. `reporting.sp_month_end_alloc`). The name is validated against a strict identifier pattern — spaces, hyphens, semicolons, and SQL injection sequences are rejected |
+| **Parameters** | Optional JSON object. Keys become named bind parameters passed to `CALL sp_name(:key, ...)`. Runtime tokens `{as_of_date}` and `{run_by}` are resolved at dispatch time |
+
+**Runtime token reference:**
+
+| Token | Resolved to | Example |
+|---|---|---|
+| `{as_of_date}` | Batch as-of date (ISO string) | `"2026-04-30"` |
+| `{run_by}` | Username who triggered the batch | `"admin"` |
+
+**Example params JSON:**
+```json
+{"p_as_of_date": "{as_of_date}", "p_run_by": "{run_by}"}
+```
+Resolved at runtime to: `CALL reporting.sp_month_end_alloc(:p_as_of_date, :p_run_by)` with values bound via SQLAlchemy named parameters.
+
+**Async behavior:** The batch step is dispatched to a background daemon thread and returns immediately. The step status is set to **DISPATCHED** (not COMPLETED). The batch itself continues to the next step without waiting. Use the SP Monitor screen to track completion and view errors.
+
 ### Right panel — Run This Batch
 
 - **As-of Date** — the calculation date for all steps
@@ -2274,3 +2303,96 @@ View the granular results of a multi-task batch execution, including per-step st
 - `PENDING` → light
 
 **Navigation**: use the breadcrumb or **Back to Batch Execution** link to return to the main `/batch` screen.
+
+---
+
+## 42. Batch Execution — DISPATCHED SP Step
+
+**URL:** `/batch/executions/<execution_id>`
+
+When a batch includes a `CUSTOM_SP` step, that step is marked **DISPATCHED** rather than COMPLETED. This means the stored procedure was launched in a background daemon thread and the batch continued without waiting for it to finish.
+
+**DISPATCHED step indicators in the step results table:**
+- **Status badge:** Yellow `DISPATCHED` badge
+- **SP Monitor link:** The Run ID cell contains a link directly to the SP Run detail page (`/batch/sp-runs/<run_id>`)
+- `completed_at` is blank on the step row — it is not set at dispatch time
+
+The overall execution status reflects only the dispatch outcome (not SP completion). If all other steps succeed and the SP is dispatched successfully, the execution shows **COMPLETED** even while the SP is still running in the background.
+
+Use the **SP Monitor** link in the sidebar or the link in the step row to check the SP's final status.
+
+---
+
+## 43. SP Monitor
+
+**URL:** `/batch/sp-runs`
+
+The SP Monitor tracks all stored procedure runs dispatched from batch steps.
+
+![SP Monitor](images/43_sp_monitor.png)
+
+### Stats cards (top)
+
+| Card | Description |
+|---|---|
+| **Total (last 100)** | Count of SP runs shown in the history list |
+| **Completed** | Successfully finished runs |
+| **Failed** | Runs where the SP raised an error |
+| **Running** | SPs currently executing — page auto-refreshes every 10 seconds when this count is > 0 |
+
+### SP Run History table columns
+
+| Column | Description |
+|---|---|
+| **Run ID** | Truncated UUID — click **Detail** to view the full record |
+| **SP Name** | Stored procedure name as configured on the batch step |
+| **Status** | `RUNNING` (yellow spinner), `COMPLETED` (green badge), `FAILED` (red badge) |
+| **Started** | UTC timestamp when `dispatch_sp()` was called and the SpRun record was committed |
+| **Duration** | Elapsed time in seconds (blank while still running) |
+| **Run By** | Username who triggered the batch run |
+| **Batch Step** | If launched from a batch execution step, a link to that execution detail page |
+
+**Auto-refresh:** When any SP has status RUNNING, a countdown timer appears in the stats area and the page refreshes automatically every 10 seconds.
+
+Access from the **SP Monitor** link in the sidebar, or from the **SP Monitor** button / Run ID link on a batch execution detail step row.
+
+---
+
+## 44. SP Run Detail
+
+**URL:** `/batch/sp-runs/<run_id>`
+
+View timing, parameters, and result for a single SP run.
+
+![SP Run Detail — Completed](images/45_sp_detail_completed.png)
+
+### Timing cards
+
+| Card | Description |
+|---|---|
+| **Started** | Timestamp when `dispatch_sp()` committed the SpRun record |
+| **Completed** | Timestamp set by the background thread when the SP finished (blank if still running) |
+| **Duration** | Elapsed time in seconds |
+| **Run By** | Username who triggered the batch |
+
+### Parameters panel
+
+Shows the key/value pairs **after token resolution** — the actual values passed to the stored procedure:
+
+| Example key | Example value | Source |
+|---|---|---|
+| `p_as_of_date` | `2026-04-06` | Resolved from `{as_of_date}` token |
+| `p_run_by` | `admin` | Resolved from `{run_by}` token |
+
+If no parameters were configured, the panel shows "No parameters".
+
+### Result / Error panel
+
+| Status | Panel content |
+|---|---|
+| **COMPLETED** | "Stored procedure executed successfully." |
+| **FAILED** | PostgreSQL/database exception message (e.g. `ERROR: routine "sp_does_not_exist" does not exist`) |
+| **RUNNING** | Spinner — the panel polls `/batch/sp-runs/<id>/status` every 5 seconds via JavaScript fetch and updates the status badge and result panel without a full page reload |
+
+**Navigation:** Use the ← back arrow button to return to the SP Monitor list.
+

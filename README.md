@@ -1,6 +1,6 @@
 # BankPFT — Management Allocation System
 
-A prototype **Management Allocation System** that redistributes financial balances and income from a Legal/Booking level to a Management level using static allocation ratios. Built with Flask, SQLAlchemy, and SQLite.
+A prototype **Management Allocation System** that redistributes financial balances and income from a Legal/Booking level to a Management level using static allocation ratios. Built with Flask, SQLAlchemy, and PostgreSQL.
 
 ## Table of Contents
 
@@ -27,7 +27,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
   - [Authentication (Azure AD / Entra ID)](#authentication-implementation-consideration)
   - [Batch Parallel Run & Async UI](#batch-parallel-run--async-ui-implementation-consideration)
   - [Stored Procedure Framework](#stored-procedure-implementation-consideration)
-  - [Custom Stored Procedure Batch Runner](#custom-stored-procedure-batch-runner--implementation-consideration)
+  - [Custom Stored Procedure Batch Runner](#custom-stored-procedure-batch-runner)
   - [Logging Framework](#logging-framework--implementation-consideration)
   - [Exception & Error Handling Framework](#exception--error-handling-framework--implementation-consideration)
 - [License](#license)
@@ -40,10 +40,10 @@ A prototype **Management Allocation System** that redistributes financial balanc
 |---|---|
 | **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
 | **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, Org Reclassification, Static Distribution, and Static Allocation data with column-level validation |
-| **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission. On approval, configurable **post-approval actions** run automatically (execute allocation rule IDs or call a stored procedure — POC placeholder) |
+| **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission. On approval, configurable **post-approval actions** run automatically (execute allocation rule IDs or dispatch a stored procedure via `sp_runner`) |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), **distribution driver** (named sub-table within `ref_static_distribution`), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
-| **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. The batch execution screen selects a definition, previews its steps, and executes them sequentially. Individual steps can also be run directly from an Advanced panel |
+| **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. `CUSTOM_SP` steps are dispatched asynchronously in a background thread — the batch continues with status `DISPATCHED` without waiting for the SP to complete. Monitor SP runs via the **SP Monitor** screen (`/batch/sp-runs`) |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
 | **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default) |
@@ -51,7 +51,8 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
 | **Test Data Generator** | Generate master data, instrument data, GL data, allocation ratio, and interest rate Excel files for testing. Seed FTP product configs in one click |
-| **Regression Test Framework** | 125-test pytest suite (102 unit + 23 Selenium UI) covering auth, allocation engine (all three methods including distribution driver filtering), FTP engine, API endpoints, batch, datafile, and browser-level UI interactions. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
+| **Regression Test Framework** | 163-test suite: 151 unit tests (pytest, in-memory SQLite) + 12 PostgreSQL integration tests covering the full SP dispatch lifecycle. 23 Selenium UI tests. In-app test runner at `/tests/` lets admins trigger the full suite and view per-test results without leaving the browser |
+| **SP Monitor** | Tracks every stored procedure run dispatched from a batch step. Shows status (`RUNNING` / `COMPLETED` / `FAILED`), timing, resolved parameters, and error messages. Auto-refreshes when SPs are running. Accessible at `/batch/sp-runs` |
 
 ## Architecture
 
@@ -79,7 +80,8 @@ Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_
 ## Tech Stack
 
 - **Backend:** Flask 3.0, SQLAlchemy 2.0, Pandas 2.1, Flask-Login 0.6
-- **Database:** SQLite (file-based, zero config)
+- **Database:** PostgreSQL 16 (Docker) for development and production; SQLite (in-memory) for unit tests
+- **PostgreSQL Driver:** psycopg2-binary 2.9.9
 - **Frontend:** Bootstrap 5.3 (CDN), Bootstrap Icons
 - **Auth:** Flask-Login with group-based role permissions
 - **Upload:** openpyxl for Excel parsing
@@ -92,7 +94,7 @@ Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_
 | Variable | Default | Description |
 |---|---|---|
 | `SECRET_KEY` | `dev-secret-change-in-production` | Flask session signing key — **set this in production** |
-| `DATABASE_URL` | `sqlite:///instance/bankpft.db` | SQLAlchemy connection string |
+| `DATABASE_URL` | `postgresql://bankpft:bankpft_dev@localhost:5432/bankpft` | SQLAlchemy connection string. Falls back to `sqlite:///instance/bankpft.db` when unset |
 | `FLASK_DEBUG` | `0` | Set to `1` to enable debug mode (development only) |
 
 ### Local (recommended — `start.sh`)
@@ -137,6 +139,8 @@ Open http://localhost:5000
 ```bash
 docker compose up --build
 ```
+
+This starts two services: **db** (PostgreSQL 16) and **web** (Flask/Gunicorn). The `DATABASE_URL` environment variable is set automatically via `docker-compose.yml`. Wait for the `db` service to report healthy before the web service accepts connections.
 
 ## Project Structure
 
@@ -189,9 +193,17 @@ app/
 │   ├── ftp_engine.py        # FTP moving-average engine (run_ftp)
 │   ├── datafile_service.py  # Fixed-length & delimited import/export engine
 │   ├── batch_executor.py    # Multi-task batch orchestrator (sequential step dispatch)
+│   ├── sp_runner.py         # Async stored-procedure dispatch (background thread + SpRun tracking)
 │   ├── test_runner.py       # In-app pytest runner — executes tests/, parses JSON report
 │   └── testdata_service.py  # Test data generators (incl. FTP rate seeding)
 └── templates/               # Jinja2 / Bootstrap 5 templates
+
+db/
+├── ddl/
+│   └── sp_call_log.sql        # Audit table written to by sp_test_echo (integration test fixture)
+└── procedures/
+    ├── sp_test_echo.sql       # Test stored procedure used exclusively by integration tests
+    └── sp_month_end_sample.sql # Template for month-end SP with standard batch token convention
 
 tests/
 ├── __init__.py              # Package marker
@@ -199,7 +211,9 @@ tests/
 ├── test_auth.py             # Auth, login/logout, access control, User/Group model
 ├── test_rules.py            # AllocationRule CRUD, JSON import, filter engine, allocation E2E
 ├── test_ftp_batch.py        # FTP config model, UI routes, lookback math, FTP engine, batch, datafile
-└── test_api.py              # All /api/v1/ endpoints (auth guard, happy path, validation)
+├── test_api.py              # All /api/v1/ endpoints (auth guard, happy path, validation)
+├── test_sp_batch.py         # SpRun model, sp_runner service, batch executor CUSTOM_SP, SP monitor routes (26 tests)
+└── test_sp_integration.py   # PostgreSQL live integration: sp_test_echo DDL, dispatch_sp end-to-end (12 tests)
 ```
 
 ## JSON vs Database — What Lives Where
@@ -298,7 +312,7 @@ The batch system allows grouping multiple engine calls into a single, ordered ex
 | `FTP` | `ftp_engine.run_ftp(as_of, user)` | *(none — runs all active FTP configs)* |
 | `DATAFILE_IMPORT` | `datafile_service.import_file(path, format_name)` | Format name from `upload_config.json` |
 | `DATAFILE_EXPORT` | `datafile_service.export_data(format_name, user, date)` | Format name |
-| `CUSTOM_SP` | *(placeholder — SP name stored, execution TBD)* | Stored procedure name |
+| `CUSTOM_SP` | `sp_runner.dispatch_sp(sp_name, params, run_by, exec_step_id, app)` | Stored procedure name (optional `schema.` prefix). Dispatches async in a background daemon thread; step marked `DISPATCHED`. Track in SP Monitor |
 
 **Orchestrator flow** (`app/services/batch_executor.py`):
 ```
@@ -309,10 +323,21 @@ The batch system allows grouping multiple engine calls into a single, ordered ex
    a. Mark step RUNNING
    b. Dispatch to correct engine based on task_type
    c. On success: mark COMPLETED, store ref_run_id + summary
-   d. On failure: mark FAILED, store error_message
+   d. If CUSTOM_SP: dispatch async via sp_runner → step DISPATCHED (no completed_at set)
+      SP runs in a background daemon thread; SpRun record tracks status separately
+   e. On failure: mark FAILED, store error_message
       - if continue_on_error=False → mark remaining steps SKIPPED, stop
-5. Mark BatchExecution COMPLETED / FAILED / PARTIAL
+5. Mark BatchExecution COMPLETED / FAILED / PARTIAL (DISPATCHED steps do not block completion)
 ```
+
+**CUSTOM_SP runtime token resolution:**
+
+| Token | Resolved value | Example |
+|---|---|---|
+| `{as_of_date}` | Batch as-of-date (ISO string) | `"2026-04-30"` |
+| `{run_by}` | Username who triggered the batch | `"admin"` |
+
+Tokens are substituted in the `params` JSON values before the SP is called.
 
 ## Lookup Tables
 
@@ -1065,7 +1090,7 @@ python -m pytest tests/test_api.py -v
 python -m pytest tests/test_rules.py::TestAllocationEngine::test_run_allocation_creates_batch -v
 ```
 
-**Current result: 125 passed, 79 warnings** — 102 unit tests (in-memory SQLite) + 23 UI tests (headless Chrome), ~17 seconds.
+**Current result: 151 passed, 0 failed** — unit tests use in-memory SQLite, ~17 seconds.
 
 To run only unit tests (no browser required):
 ```bash
@@ -1075,6 +1100,12 @@ python -m pytest tests/ --ignore=tests/test_ui.py -q
 To run only UI tests:
 ```bash
 python -m pytest tests/test_ui.py -v
+```
+
+To run PostgreSQL integration tests (requires a live PostgreSQL instance):
+```bash
+DATABASE_URL="postgresql://bankpft:bankpft_dev@localhost:5432/bankpft" \
+  python -m pytest tests/test_sp_integration.py -v -m integration
 ```
 
 ### In-App Test Runner
@@ -1098,8 +1129,11 @@ The "Test Suite" link appears in the sidebar under the Admin section for Admin u
 | `tests/test_rules.py` | 26 | AllocationRule model defaults, UI routes, JSON import (valid/missing name), `_apply_filters()` for eq / gt / in / OR / between / invalid JSON, allocation engine end-to-end, DEBIT+CREDIT balance equality, Static Allocation engine (no-orphan guarantee), Distribution driver filtering and storage, `RefStaticDistribution` and `RefStaticAlloc` model constraints |
 | `tests/test_ftp_batch.py` | 25 | FtpProductConfig model, unique constraint, FTP UI routes, import single/array JSON, `_lookback_start()` for D/M/Y across year boundaries, FTP engine E2E match & rate write-back, zero-instrument clean run, BatchDefinition model, datafile config loading and format validation |
 | `tests/test_api.py` | 33 | 401 guard on every endpoint, wrong credentials, GET listing shapes, `POST /api/v1/rules/import` (valid, missing name, empty body), `POST /api/v1/ftp/config/import` (single, array, update, missing product_code), datafile path-traversal rejection, allocation missing rule_id, FTP run with and without date |
+| `tests/test_sp_batch.py` | 26 | SpRun model, sp_runner param resolution and SP-name validation, batch executor CUSTOM_SP async dispatch, SP Monitor routes (list, detail, status endpoint) |
 | `tests/test_ui.py` | 23 | Selenium headless-Chrome browser tests — login flow, sidebar navigation, filter editor (empty state, add/remove condition rows, AND/OR radios), file upload input fields on rule import and FTP import pages, admin user/group pages |
-| **Total** | **125** | |
+| **Unit total** | **151** | |
+| `tests/test_sp_integration.py` | 12 | *PostgreSQL required* — sp_test_echo procedure in catalog, sp_call_log table, direct CALL writes audit row, NULL params, dispatch_sp end-to-end (SpRun created, COMPLETED after thread, audit row written, `{as_of_date}` token resolved), invalid SP name raises ValueError, non-existent SP → FAILED status |
+| **Grand total** | **163** | |
 
 ### Test Isolation
 
@@ -1126,14 +1160,17 @@ webdriver-manager>=4.0
 
 All are listed in `requirements.txt` and installed by `./start.sh` or `pip install -r requirements.txt`.
 
-The `pytest.ini` at the project root registers the `ui` custom mark so pytest does not emit warnings when running the Selenium tests. The `ui` mark also allows selectively running or skipping the browser tests:
+The `pytest.ini` at the project root registers the `ui` and `integration` custom marks so pytest does not emit warnings when running those tests. The marks allow selectively running or skipping tests:
 
 ```bash
-# Run only tests NOT requiring a browser
-python -m pytest tests/ -m "not ui" -q
+# Run only tests NOT requiring a browser or PostgreSQL
+python -m pytest tests/ -m "not ui and not integration" -q
 
 # Run only browser tests
 python -m pytest tests/ -m ui -v
+
+# Run only PostgreSQL integration tests
+python -m pytest tests/ -m integration -v
 ```
 
 For a detailed reference — fixture descriptions, test case catalogue, how to extend the suite, and in-app runner internals — see [docs/TEST_FRAMEWORK.md](docs/TEST_FRAMEWORK.md).
@@ -1851,11 +1888,31 @@ SELECT /*+ PARALLEL(src, 4) PARALLEL(r, 4) */ ...
 
 ---
 
-## Custom Stored Procedure Batch Runner — Implementation Consideration
+## Custom Stored Procedure Batch Runner
 
-Beyond the allocation and FTP engines, a **generic SP runner** allows any database stored procedure to be registered, scheduled, and executed through the same batch framework — without writing new Python engine code. This is useful for custom aggregations, regulatory extracts, inter-system feeds, or any process that a DBA already owns in SQL.
+A **generic SP runner** allows any database stored procedure to be registered and executed through the same batch framework — without writing new Python engine code. This is useful for custom aggregations, regulatory extracts, inter-system feeds, or any process that a DBA already owns in SQL.
 
-The SP runner is a **first-class batch step type** alongside `ALLOCATION` and `FTP`, tracked in the same `batch_run` family of tables, visible in the same batch history UI, and callable through the same REST API.
+### Current Implementation (live)
+
+The SP runner is **fully implemented** as a first-class batch step type:
+
+| Component | Location | Description |
+|---|---|---|
+| `SpRun` model | `app/models/workflow.py` | Tracks every SP dispatch: `sp_name`, `params_json`, `status` (`RUNNING`/`COMPLETED`/`FAILED`), `started_at`, `completed_at`, `run_by`, `error_message`, `exec_step_id` |
+| `dispatch_sp()` | `app/services/sp_runner.py` | Validates SP name, creates a `SpRun` record, then launches a background daemon thread that calls `CALL sp_name(...)` via SQLAlchemy named binds |
+| SP Monitor UI | `/batch/sp-runs` | Lists all SP runs with status cards and auto-refresh when SPs are running |
+| SP Detail UI | `/batch/sp-runs/<run_id>` | Per-run timing, resolved parameters, and result/error panel with live polling |
+| Batch integration | `app/services/batch_executor.py` | `CUSTOM_SP` steps call `dispatch_sp()` and set step status to `DISPATCHED`; batch continues without waiting |
+| Integration tests | `tests/test_sp_integration.py` | 12 tests against live PostgreSQL covering SP catalog, dispatch lifecycle, token resolution, and error handling |
+| DB objects | `db/procedures/`, `db/ddl/` | SQL files for the test SP (`sp_test_echo`) and a real-world template (`sp_month_end_sample.sql`) |
+
+**SP name validation** rejects names with spaces, double-dashes, semicolons, or SQL injection sequences. Only `schema.proc_name` and `proc_name` forms are allowed.
+
+---
+
+### Extended SP Registry — Design Consideration
+
+Beyond the allocation and FTP engines, a **SP job registry** (below) extends the runner to allow named jobs with parameter templates to be managed entirely through the UI \u2014 without any code changes per SP.
 
 ---
 

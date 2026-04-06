@@ -13,12 +13,12 @@ class RefInterestRate(db.Model):
     # term + term_mult represent the tenor, e.g. term=1, term_mult='M' → 1M
     term = db.Column(db.Integer, nullable=False)
     term_mult = db.Column(db.String(1), nullable=False)   # D=day  M=month  Y=year
-    rate = db.Column(db.Float, nullable=False)             # decimal, e.g. 0.05 = 5 %
+    rate = db.Column(db.Numeric(10, 6), nullable=False)             # decimal, e.g. 0.05 = 5 %
     status = db.Column(db.String(20), default="DRAFT")     # DRAFT PENDING APPROVED REJECTED
     maker_id = db.Column(db.String(50), nullable=False)
     checker_id = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
 class FtpProductConfig(db.Model):
@@ -37,8 +37,8 @@ class FtpProductConfig(db.Model):
     avg_period_mult = db.Column(db.String(1), nullable=False, default="M")  # D, M, Y
     is_active = db.Column(db.Boolean, default=True)
     created_by = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
 class FtpRun(db.Model):
@@ -52,6 +52,6 @@ class FtpRun(db.Model):
     instruments_processed = db.Column(db.Integer, default=0)
     instruments_matched = db.Column(db.Integer, default=0)
     instruments_skipped = db.Column(db.Integer, default=0)
-    started_at = db.Column(db.DateTime, default=utc_now)
-    completed_at = db.Column(db.DateTime, nullable=True)
+    started_at = db.Column(db.DateTime(timezone=True), default=utc_now)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
     error_message = db.Column(db.Text, nullable=True)

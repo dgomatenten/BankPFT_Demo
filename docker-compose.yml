@@ -1,4 +1,21 @@
 services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bankpft
+      POSTGRES_USER: bankpft
+      POSTGRES_PASSWORD: bankpft_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankpft"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   web:
     build: .
     ports:
@@ -9,3 +26,10 @@ services:
     environment:
       - FLASK_ENV=development
       - SECRET_KEY=change-me-in-production
+      - DATABASE_URL=postgresql://bankpft:bankpft_dev@db:5432/bankpft
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

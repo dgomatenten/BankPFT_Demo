@@ -11,7 +11,7 @@ class RefStaticAllocation(MakerCheckerMixin, db.Model):
     customer_id = db.Column(db.String(20), db.ForeignKey("dim_customer.customer_id"), nullable=False)
     source_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
     target_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
-    ratio = db.Column(db.Float, nullable=False)
+    ratio = db.Column(db.Numeric(10, 6), nullable=False)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -22,7 +22,7 @@ class RefOrgReclass(MakerCheckerMixin, db.Model):
     reclass_id = db.Column(db.String(36), nullable=False, index=True)
     source_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
     target_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
-    ratio = db.Column(db.Float, nullable=False, default=1.0)
+    ratio = db.Column(db.Numeric(10, 6), nullable=False, default=1.0)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -44,7 +44,7 @@ class RefStaticDistribution(MakerCheckerMixin, db.Model):
     product_code = db.Column(db.String(20), nullable=True, index=True)
     # Target
     target_dim = db.Column(db.String(50), nullable=False)
-    ratio = db.Column(db.Float, nullable=False)
+    ratio = db.Column(db.Numeric(10, 6), nullable=False)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -65,7 +65,7 @@ class RefStaticAlloc(MakerCheckerMixin, db.Model):
     product_code = db.Column(db.String(20), nullable=True, index=True)
     # Target
     target_dim = db.Column(db.String(50), nullable=False)
-    ratio = db.Column(db.Float, nullable=False, default=1.0)
+    ratio = db.Column(db.Numeric(10, 6), nullable=False, default=1.0)
     comments = db.Column(db.Text, nullable=True)
 
 
@@ -82,12 +82,12 @@ class FctMgmtLedger(db.Model):
     product_code = db.Column(db.String(20), nullable=False)
     source_org_unit_id = db.Column(db.String(20), nullable=False)
     target_org_unit_id = db.Column(db.String(20), nullable=False)
-    source_balance = db.Column(db.Float, nullable=False)
-    allocated_balance = db.Column(db.Float, nullable=False)
-    allocated_income = db.Column(db.Float, default=0.0)
-    ratio_applied = db.Column(db.Float, nullable=False)
+    source_balance = db.Column(db.Numeric(18, 6), nullable=False)
+    allocated_balance = db.Column(db.Numeric(18, 6), nullable=False)
+    allocated_income = db.Column(db.Numeric(18, 6), default=0.0)
+    ratio_applied = db.Column(db.Numeric(10, 6), nullable=False)
     is_orphan = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=utc_now)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
 
 
 class FctMgmtInstrument(db.Model):
@@ -103,9 +103,9 @@ class FctMgmtInstrument(db.Model):
     product_code = db.Column(db.String(20), nullable=False)
     source_org_unit_id = db.Column(db.String(20), nullable=False)
     target_org_unit_id = db.Column(db.String(20), nullable=False)
-    source_balance = db.Column(db.Float, nullable=False)
-    allocated_balance = db.Column(db.Float, nullable=False)
-    allocated_income = db.Column(db.Float, default=0.0)
-    ratio_applied = db.Column(db.Float, nullable=False)
+    source_balance = db.Column(db.Numeric(18, 6), nullable=False)
+    allocated_balance = db.Column(db.Numeric(18, 6), nullable=False)
+    allocated_income = db.Column(db.Numeric(18, 6), default=0.0)
+    ratio_applied = db.Column(db.Numeric(10, 6), nullable=False)
     is_orphan = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=utc_now)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)

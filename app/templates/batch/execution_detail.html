@@ -86,11 +86,12 @@
             <tbody>
             {% for step in execution.steps %}
             {% set step_colors = {
-                'COMPLETED': 'success',
-                'FAILED':    'danger',
-                'SKIPPED':   'secondary',
-                'RUNNING':   'info',
-                'PENDING':   'light',
+                'COMPLETED':  'success',
+                'FAILED':     'danger',
+                'SKIPPED':    'secondary',
+                'RUNNING':    'info',
+                'PENDING':    'light',
+                'DISPATCHED': 'warning',
             } %}
             {% set type_colors = {
                 'ALLOCATION':      'primary',
@@ -138,6 +139,11 @@
                     <a href="{{ url_for('ftp.run_detail', run_id=step.ref_run_id) }}">{{ step.ref_run_id[:8] }}…</a>
                     {% elif step.task_type in ('DATAFILE_IMPORT', 'DATAFILE_EXPORT') %}
                     <a href="{{ url_for('datafile.batch_detail', batch_id=step.ref_run_id) }}">{{ step.ref_run_id[:8] }}…</a>
+                    {% elif step.task_type == 'CUSTOM_SP' %}
+                    <a href="{{ url_for('batch.sp_detail', run_id=step.ref_run_id) }}"
+                       class="btn btn-sm btn-outline-warning py-0">
+                        <i class="bi bi-activity"></i> SP Monitor
+                    </a>
                     {% else %}
                     {{ step.ref_run_id[:8] }}…
                     {% endif %}

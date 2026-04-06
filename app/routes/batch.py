@@ -1,10 +1,11 @@
 import os
+import json
 from datetime import date, datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app.models.workflow import (
     AllocationRule, BatchRun,
-    BatchDefinition, BatchTask, BatchExecution, TASK_TYPES,
+    BatchDefinition, BatchTask, BatchExecution, TASK_TYPES, SpRun,
 )
 from app.models.ftp import FtpRun
 from app.models import db
@@ -166,10 +167,22 @@ def add_task(def_id):
     task_type = request.form.get("task_type", "").strip()
     ref_id = request.form.get("ref_id", "").strip() or None
     label = request.form.get("label", "").strip() or None
+    params_raw = request.form.get("params_json", "").strip()
 
     if task_type not in TASK_TYPES:
         flash("Invalid task type.", "danger")
         return redirect(url_for("batch.definition_detail", def_id=def_id))
+
+    # Parse optional params JSON for CUSTOM_SP
+    params_json = None
+    if task_type == "CUSTOM_SP" and params_raw:
+        try:
+            params_json = json.loads(params_raw)
+            if not isinstance(params_json, dict):
+                raise ValueError("params_json must be a JSON object")
+        except (ValueError, json.JSONDecodeError) as e:
+            flash(f"Invalid params JSON: {e}", "danger")
+            return redirect(url_for("batch.definition_detail", def_id=def_id))
 
     # Auto-generate label if blank
     if not label:
@@ -185,6 +198,7 @@ def add_task(def_id):
         task_type=task_type,
         ref_id=ref_id,
         label=label,
+        params_json=params_json,
     )
     db.session.add(task)
     db.session.commit()
@@ -260,3 +274,41 @@ def _auto_label(task_type: str, ref_id: str | None) -> str:
         "CUSTOM_SP": f"Custom SP: {ref_id}",
     }
     return labels.get(task_type, task_type)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SP Monitor — list and detail views for async stored-procedure runs
+# ─────────────────────────────────────────────────────────────────────────────
+
+@bp.route("/sp-runs")
+@login_required
+def sp_monitor():
+    sp_runs = SpRun.query.order_by(SpRun.started_at.desc()).limit(100).all()
+    running_count = SpRun.query.filter_by(status="RUNNING").count()
+    return render_template(
+        "batch/sp_monitor.html",
+        sp_runs=sp_runs,
+        running_count=running_count,
+    )
+
+
+@bp.route("/sp-runs/<run_id>")
+@login_required
+def sp_detail(run_id):
+    sp_run = SpRun.query.get_or_404(run_id)
+    return render_template("batch/sp_detail.html", sp_run=sp_run)
+
+
+@bp.route("/sp-runs/<run_id>/status")
+@login_required
+def sp_status(run_id):
+    """JSON endpoint for polling SP run status from the browser."""
+    from flask import jsonify
+    sp_run = SpRun.query.get_or_404(run_id)
+    return jsonify({
+        "id": sp_run.id,
+        "status": sp_run.status,
+        "completed_at": sp_run.completed_at.isoformat() if sp_run.completed_at else None,
+        "result_message": sp_run.result_message,
+        "error_message": sp_run.error_message,
+    })

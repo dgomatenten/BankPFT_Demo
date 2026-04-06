@@ -1,0 +1,178 @@
+{% extends "layout/base.html" %}
+{% block title %}SP Run — {{ sp_run.sp_name }}{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4 gap-3">
+    <a href="{{ url_for('batch.sp_monitor') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h2 class="mb-0">{{ sp_run.sp_name }}</h2>
+        <p class="text-muted small mb-0 font-monospace">{{ sp_run.id }}</p>
+    </div>
+    <div class="ms-auto">
+        {% set sc = {'COMPLETED':'success','FAILED':'danger','RUNNING':'info'} %}
+        <span class="badge bg-{{ sc.get(sp_run.status,'secondary') }} fs-5 px-3 py-2" id="statusBadge">
+            {% if sp_run.status == 'RUNNING' %}
+            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            {% endif %}
+            {{ sp_run.status }}
+        </span>
+    </div>
+</div>
+
+<!-- Timing row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Started</div>
+                <div class="fw-semibold">
+                    {{ sp_run.started_at.strftime('%Y-%m-%d %H:%M:%S') if sp_run.started_at else '—' }}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Completed</div>
+                <div class="fw-semibold" id="completedAt">
+                    {{ sp_run.completed_at.strftime('%Y-%m-%d %H:%M:%S') if sp_run.completed_at else '—' }}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Duration</div>
+                <div class="fw-semibold" id="duration">
+                    {% if sp_run.completed_at and sp_run.started_at %}
+                        {{ (sp_run.completed_at - sp_run.started_at).total_seconds() | int }}s
+                    {% elif sp_run.status == 'RUNNING' %}
+                        <span class="text-info">running…</span>
+                    {% else %}—{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="small text-muted">Run By</div>
+                <div class="fw-semibold">{{ sp_run.run_by or '—' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Parameters -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-braces"></i> Parameters</div>
+            <div class="card-body">
+                {% if sp_run.params_json %}
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Key</th><th>Value</th></tr></thead>
+                    <tbody>
+                    {% for k, v in sp_run.params_json.items() %}
+                    <tr>
+                        <td class="font-monospace small">{{ k }}</td>
+                        <td class="small">{{ v }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No parameters (SP called with no arguments)</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-chat-text"></i> Result / Error</div>
+            <div class="card-body" id="resultPanel">
+                {% if sp_run.error_message %}
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Error:</strong> {{ sp_run.error_message }}
+                </div>
+                {% elif sp_run.result_message %}
+                <div class="alert alert-success mb-0">
+                    <i class="bi bi-check-circle"></i> {{ sp_run.result_message }}
+                </div>
+                {% elif sp_run.status == 'RUNNING' %}
+                <p class="text-info mb-0">
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    Waiting for SP to complete…
+                </p>
+                {% else %}
+                <p class="text-muted mb-0">—</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Batch step link -->
+{% if sp_run.exec_step_id %}
+<div class="alert alert-secondary">
+    <i class="bi bi-link-45deg"></i>
+    Dispatched from batch execution step <strong>#{{ sp_run.exec_step_id }}</strong>
+</div>
+{% endif %}
+
+{% if sp_run.status == 'RUNNING' %}
+<script>
+// Poll the status endpoint every 5 seconds until the SP completes.
+(function () {
+    const runId   = {{ sp_run.id | tojson }};
+    const url     = '/batch/sp-runs/' + runId + '/status';
+    const badge   = document.getElementById('statusBadge');
+    const compEl  = document.getElementById('completedAt');
+    const durEl   = document.getElementById('duration');
+    const resPanel = document.getElementById('resultPanel');
+
+    const colors = { COMPLETED: 'success', FAILED: 'danger', RUNNING: 'info' };
+
+    const iv = setInterval(async () => {
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+
+            if (data.status !== 'RUNNING') {
+                clearInterval(iv);
+
+                // Update badge
+                badge.className = 'badge bg-' + (colors[data.status] || 'secondary') + ' fs-5 px-3 py-2';
+                badge.textContent = data.status;
+
+                // Update times
+                if (data.completed_at) {
+                    const dt = new Date(data.completed_at);
+                    compEl.textContent = dt.toISOString().replace('T', ' ').slice(0, 19);
+                }
+
+                // Update result panel
+                if (data.status === 'FAILED') {
+                    resPanel.innerHTML =
+                        '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle"></i> '
+                        + '<strong>Error:</strong> ' + (data.error_message || 'Unknown error') + '</div>';
+                } else {
+                    resPanel.innerHTML =
+                        '<div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> '
+                        + (data.result_message || 'Completed successfully.') + '</div>';
+                }
+            }
+        } catch (e) {
+            // Network error — keep polling
+        }
+    }, 5000);
+})();
+</script>
+{% endif %}
+
+{% endblock %}
