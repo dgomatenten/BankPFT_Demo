@@ -50,9 +50,7 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
 
         try:
             _run_step(step, as_of_date, run_by)
-            # DISPATCHED steps are async — don't set completed_at on the step itself
-            if step.status != "DISPATCHED":
-                step.completed_at = utc_now()
+            step.completed_at = utc_now()
             db.session.commit()
         except Exception as exc:
             step.status = "FAILED"
@@ -146,26 +144,23 @@ def _run_step(step: BatchExecutionStep, as_of_date: date, run_by: str) -> None:
             raise RuntimeError(result.error_message or "Data file export failed")
 
     elif t == "CUSTOM_SP":
-        from flask import current_app
-        from app.services.sp_runner import dispatch_sp, resolve_params
+        from app.services.sp_runner import run_sp, resolve_params
         params = resolve_params(
             step.params_json or {},
             as_of_date,
             run_by,
         )
-        sp_run = dispatch_sp(
+        sp_run = run_sp(
             sp_name=step.ref_id,
             params=params,
             run_by=run_by,
             exec_step_id=step.id,
-            app=current_app._get_current_object(),
         )
         step.ref_run_id = sp_run.id
-        step.status = "DISPATCHED"
-        step.summary = (
-            f"SP '{step.ref_id}' dispatched asynchronously. "
-            f"Monitor at /batch/sp-runs/{sp_run.id}"
-        )
+        step.status = sp_run.status  # COMPLETED or FAILED
+        step.summary = sp_run.result_message or sp_run.error_message or f"SP '{step.ref_id}' executed"
+        if sp_run.status == "FAILED":
+            raise RuntimeError(sp_run.error_message or f"Stored procedure '{step.ref_id}' failed")
 
     else:
         raise ValueError(f"Unknown task_type: {t!r}")

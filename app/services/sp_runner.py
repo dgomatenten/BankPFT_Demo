@@ -1,8 +1,8 @@
-"""Stored-procedure runner — fires CUSTOM_SP batch steps asynchronously.
+"""Stored-procedure runner — executes CUSTOM_SP batch steps synchronously.
 
-A background thread calls the PostgreSQL stored procedure via
-``CALL sp_name(:p1, :p2, ...)``, then updates the SpRun record when done.
-The batch executor does NOT wait; it marks the step DISPATCHED and moves on.
+The batch executor calls ``run_sp()`` which executes the stored procedure in
+the current thread (same as ALLOCATION / FTP / DATAFILE steps) and returns
+a completed SpRun record.
 
 Security:
   - SP names are validated against a strict identifier pattern before use.
@@ -15,7 +15,6 @@ Supported runtime substitution tokens in params_json values:
 from __future__ import annotations
 
 import re
-import threading
 import uuid
 from datetime import date
 
@@ -29,18 +28,17 @@ from app.models.workflow import SpRun
 _SP_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$")
 
 
-def dispatch_sp(
+def run_sp(
     sp_name: str,
     params: dict,
     run_by: str,
-    exec_step_id: int | None,
-    app,
+    exec_step_id: int | None = None,
 ) -> SpRun:
-    """Create a SpRun record and fire the SP in a background daemon thread.
+    """Execute a stored procedure synchronously and return the SpRun record.
 
-    Returns the SpRun immediately (status=RUNNING).  The caller should store
-    ``sp_run.id`` on the BatchExecutionStep so the monitoring screen can link
-    back to it.
+    Validates the SP name, creates a SpRun row (RUNNING), calls the SP,
+    then marks the SpRun COMPLETED or FAILED before returning.  The caller
+    (batch executor) inspects ``sp_run.status`` to decide the step outcome.
     """
     if not _SP_NAME_RE.match(sp_name):
         raise ValueError(
@@ -59,46 +57,31 @@ def dispatch_sp(
     db.session.add(sp_run)
     db.session.commit()
 
-    thread = threading.Thread(
-        target=_execute_sp,
-        args=(sp_run.id, sp_name, params, app),
-        daemon=True,
-    )
-    thread.start()
+    try:
+        # Build parameterised CALL statement
+        if params:
+            placeholders = ", ".join(f":{k}" for k in params)
+            sql = f"CALL {sp_name}({placeholders})"
+        else:
+            sql = f"CALL {sp_name}()"
+
+        db.session.execute(text(sql), params)
+        db.session.commit()
+
+        sp_run.status = "COMPLETED"
+        sp_run.result_message = "Stored procedure executed successfully."
+    except Exception as exc:
+        db.session.rollback()
+        sp_run.status = "FAILED"
+        sp_run.error_message = str(exc)
+    finally:
+        sp_run.completed_at = utc_now()
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
     return sp_run
-
-
-def _execute_sp(sp_run_id: str, sp_name: str, params: dict, app) -> None:
-    """Run inside a background thread — calls the SP and updates SpRun status."""
-    with app.app_context():
-        sp_run = db.session.get(SpRun, sp_run_id)
-        if sp_run is None:
-            return  # should never happen
-
-        try:
-            # Build parameterised CALL statement
-            if params:
-                placeholders = ", ".join(f":{k}" for k in params)
-                sql = f"CALL {sp_name}({placeholders})"
-            else:
-                sql = f"CALL {sp_name}()"
-
-            db.session.execute(text(sql), params)
-            db.session.commit()
-
-            sp_run.status = "COMPLETED"
-            sp_run.result_message = "Stored procedure executed successfully."
-        except Exception as exc:
-            db.session.rollback()
-            sp_run.status = "FAILED"
-            sp_run.error_message = str(exc)
-        finally:
-            sp_run.completed_at = utc_now()
-            try:
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
 
 
 def resolve_params(params: dict, as_of_date: date, run_by: str) -> dict:
@@ -110,3 +93,4 @@ def resolve_params(params: dict, as_of_date: date, run_by: str) -> dict:
             v = v.replace("{run_by}", run_by)
         resolved[k] = v
     return resolved
+

@@ -3,19 +3,23 @@
 {% block content %}
 
 <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="{{ url_for('batch.sp_monitor') }}" class="btn btn-outline-secondary">
+    {% if parent_execution_id %}
+    <a href="{{ url_for('batch.execution_detail', execution_id=parent_execution_id) }}"
+       class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left"></i>
     </a>
+    {% else %}
+    <a href="{{ url_for('batch.list_batches') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    {% endif %}
     <div>
         <h2 class="mb-0">{{ sp_run.sp_name }}</h2>
         <p class="text-muted small mb-0 font-monospace">{{ sp_run.id }}</p>
     </div>
     <div class="ms-auto">
         {% set sc = {'COMPLETED':'success','FAILED':'danger','RUNNING':'info'} %}
-        <span class="badge bg-{{ sc.get(sp_run.status,'secondary') }} fs-5 px-3 py-2" id="statusBadge">
-            {% if sp_run.status == 'RUNNING' %}
-            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-            {% endif %}
+        <span class="badge bg-{{ sc.get(sp_run.status,'secondary') }} fs-5 px-3 py-2">
             {{ sp_run.status }}
         </span>
     </div>
@@ -37,7 +41,7 @@
         <div class="card text-center">
             <div class="card-body py-3">
                 <div class="small text-muted">Completed</div>
-                <div class="fw-semibold" id="completedAt">
+                <div class="fw-semibold">
                     {{ sp_run.completed_at.strftime('%Y-%m-%d %H:%M:%S') if sp_run.completed_at else '—' }}
                 </div>
             </div>
@@ -47,11 +51,9 @@
         <div class="card text-center">
             <div class="card-body py-3">
                 <div class="small text-muted">Duration</div>
-                <div class="fw-semibold" id="duration">
+                <div class="fw-semibold">
                     {% if sp_run.completed_at and sp_run.started_at %}
                         {{ (sp_run.completed_at - sp_run.started_at).total_seconds() | int }}s
-                    {% elif sp_run.status == 'RUNNING' %}
-                        <span class="text-info">running…</span>
                     {% else %}—{% endif %}
                 </div>
             </div>
@@ -104,11 +106,6 @@
                 <div class="alert alert-success mb-0">
                     <i class="bi bi-check-circle"></i> {{ sp_run.result_message }}
                 </div>
-                {% elif sp_run.status == 'RUNNING' %}
-                <p class="text-info mb-0">
-                    <span class="spinner-border spinner-border-sm me-1"></span>
-                    Waiting for SP to complete…
-                </p>
                 {% else %}
                 <p class="text-muted mb-0">—</p>
                 {% endif %}
@@ -118,61 +115,18 @@
 </div>
 
 <!-- Batch step link -->
-{% if sp_run.exec_step_id %}
-<div class="alert alert-secondary">
+{% if sp_run.exec_step_id and parent_execution_id %}
+<div class="alert alert-secondary mt-3">
     <i class="bi bi-link-45deg"></i>
-    Dispatched from batch execution step <strong>#{{ sp_run.exec_step_id }}</strong>
+    Executed as part of
+    <a href="{{ url_for('batch.execution_detail', execution_id=parent_execution_id) }}">batch execution</a>,
+    step <strong>#{{ sp_run.exec_step_id }}</strong>.
 </div>
-{% endif %}
-
-{% if sp_run.status == 'RUNNING' %}
-<script>
-// Poll the status endpoint every 5 seconds until the SP completes.
-(function () {
-    const runId   = {{ sp_run.id | tojson }};
-    const url     = '/batch/sp-runs/' + runId + '/status';
-    const badge   = document.getElementById('statusBadge');
-    const compEl  = document.getElementById('completedAt');
-    const durEl   = document.getElementById('duration');
-    const resPanel = document.getElementById('resultPanel');
-
-    const colors = { COMPLETED: 'success', FAILED: 'danger', RUNNING: 'info' };
-
-    const iv = setInterval(async () => {
-        try {
-            const resp = await fetch(url);
-            const data = await resp.json();
-
-            if (data.status !== 'RUNNING') {
-                clearInterval(iv);
-
-                // Update badge
-                badge.className = 'badge bg-' + (colors[data.status] || 'secondary') + ' fs-5 px-3 py-2';
-                badge.textContent = data.status;
-
-                // Update times
-                if (data.completed_at) {
-                    const dt = new Date(data.completed_at);
-                    compEl.textContent = dt.toISOString().replace('T', ' ').slice(0, 19);
-                }
-
-                // Update result panel
-                if (data.status === 'FAILED') {
-                    resPanel.innerHTML =
-                        '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle"></i> '
-                        + '<strong>Error:</strong> ' + (data.error_message || 'Unknown error') + '</div>';
-                } else {
-                    resPanel.innerHTML =
-                        '<div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> '
-                        + (data.result_message || 'Completed successfully.') + '</div>';
-                }
-            }
-        } catch (e) {
-            // Network error — keep polling
-        }
-    }, 5000);
-})();
-</script>
+{% elif sp_run.exec_step_id %}
+<div class="alert alert-secondary mt-3">
+    <i class="bi bi-link-45deg"></i>
+    Executed as part of batch execution step <strong>#{{ sp_run.exec_step_id }}</strong>.
+</div>
 {% endif %}
 
 {% endblock %}

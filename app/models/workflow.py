@@ -153,11 +153,11 @@ class PostApprovalLog(db.Model):
 
 
 class SpRun(db.Model):
-    """Tracks each asynchronous stored-procedure invocation fired from a batch step.
+    """Tracks each stored-procedure invocation executed from a CUSTOM_SP batch step.
 
+    Runs synchronously inside the batch executor (same thread as the other steps).
     status: RUNNING → COMPLETED | FAILED
-    The batch step that dispatched this SP is linked via exec_step_id so the
-    monitoring screen can cross-reference back to its parent execution.
+    The batch step that triggered this SP is linked via exec_step_id.
     """
     __tablename__ = "sp_run"
     id             = db.Column(db.String(36), primary_key=True,

@@ -277,26 +277,25 @@ def _auto_label(task_type: str, ref_id: str | None) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SP Monitor — list and detail views for async stored-procedure runs
+# SP Run detail — drill-down from a batch execution step
 # ─────────────────────────────────────────────────────────────────────────────
-
-@bp.route("/sp-runs")
-@login_required
-def sp_monitor():
-    sp_runs = SpRun.query.order_by(SpRun.started_at.desc()).limit(100).all()
-    running_count = SpRun.query.filter_by(status="RUNNING").count()
-    return render_template(
-        "batch/sp_monitor.html",
-        sp_runs=sp_runs,
-        running_count=running_count,
-    )
-
 
 @bp.route("/sp-runs/<run_id>")
 @login_required
 def sp_detail(run_id):
     sp_run = SpRun.query.get_or_404(run_id)
-    return render_template("batch/sp_detail.html", sp_run=sp_run)
+    # Resolve back link: if launched from a batch step, go to that execution
+    from app.models.workflow import BatchExecutionStep
+    parent_execution_id = None
+    if sp_run.exec_step_id:
+        step = db.session.get(BatchExecutionStep, sp_run.exec_step_id)
+        if step:
+            parent_execution_id = step.execution_id
+    return render_template(
+        "batch/sp_detail.html",
+        sp_run=sp_run,
+        parent_execution_id=parent_execution_id,
+    )
 
 
 @bp.route("/sp-runs/<run_id>/status")

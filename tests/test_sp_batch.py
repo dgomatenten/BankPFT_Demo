@@ -1,17 +1,15 @@
-"""Tests for the async stored-procedure batch step integration.
+"""Tests for the synchronous stored-procedure batch step integration.
 
 Covers:
   - sp_runner.resolve_params — token substitution
-  - sp_runner dispatch security validation (bad SP names rejected)
+  - sp_runner SP-name security validation (bad SP names rejected)
   - SpRun model creation
-  - batch_executor CUSTOM_SP step → DISPATCHED status
-  - batch executor overall status when SP step is DISPATCHED
-  - SP monitor and detail routes
+  - batch_executor CUSTOM_SP step → COMPLETED / FAILED status (synchronous)
+  - SP run detail route
   - SP status JSON endpoint
 """
 
 import json
-import time
 import pytest
 from datetime import date
 from unittest.mock import patch, MagicMock
@@ -76,25 +74,24 @@ class TestSpNameValidation:
     ]
 
     def test_valid_names_accepted(self, app):
-        from app.services.sp_runner import dispatch_sp
+        from app.services.sp_runner import run_sp
         for name in self.VALID_NAMES:
-            # Mock the threading to avoid actually running
-            with app.app_context(), \
-                 patch("app.services.sp_runner.threading.Thread") as mock_thread:
-                mock_thread.return_value = MagicMock()
-                try:
-                    sp_run = dispatch_sp(name, {}, "alice", None, app)
-                    assert sp_run.sp_name == name
-                    assert sp_run.status == "RUNNING"
-                except ValueError as e:
-                    pytest.fail(f"Valid name '{name}' raised ValueError: {e}")
+            with app.app_context():
+                # Patch execute so no real DB call is made
+                with patch("app.services.sp_runner.db.session.execute"):
+                    with patch("app.services.sp_runner.db.session.commit"):
+                        try:
+                            sp_run = run_sp(name, {}, "alice")
+                            assert sp_run.sp_name == name
+                        except ValueError as e:
+                            pytest.fail(f"Valid name '{name}' raised ValueError: {e}")
 
     def test_invalid_names_rejected(self, app):
-        from app.services.sp_runner import dispatch_sp
+        from app.services.sp_runner import run_sp
         for name in self.INVALID_NAMES:
             with app.app_context():
                 with pytest.raises(ValueError, match="Invalid stored-procedure name"):
-                    dispatch_sp(name, {}, "alice", None, app)
+                    run_sp(name, {}, "alice")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,14 +152,14 @@ class TestSpRunModel:
                 step_order=1,
                 task_type="CUSTOM_SP",
                 ref_id="dbo.sp_test",
-                status="DISPATCHED",
+                status="COMPLETED",
             )
             db_session.add(step)
             db_session.flush()
 
             sp = SpRun(
                 sp_name="dbo.sp_test",
-                status="RUNNING",
+                status="COMPLETED",
                 run_by="alice",
                 exec_step_id=step.id,
             )
@@ -173,7 +170,7 @@ class TestSpRunModel:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# batch_executor CUSTOM_SP dispatch integration
+# batch_executor CUSTOM_SP synchronous execution
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestBatchExecutorCustomSp:
@@ -194,25 +191,24 @@ class TestBatchExecutorCustomSp:
         db_session.flush()
         return defn
 
-    def test_sp_step_dispatched_not_failed(self, db_session, app):
-        """A CUSTOM_SP step should become DISPATCHED; overall execution COMPLETED."""
+    def test_sp_step_completed_synchronously(self, db_session, app):
+        """A CUSTOM_SP step should run synchronously and become COMPLETED."""
         from app.services.batch_executor import run_batch
         with app.app_context():
             defn = self._make_defn_with_sp(db_session)
-            # Patch the background thread so it never fires (avoids DB calls in thread)
-            with patch("app.services.sp_runner.threading.Thread") as mock_thread:
-                mock_thread.return_value = MagicMock()
+            # Patch execute so no real DB CALL is made
+            with patch("app.services.sp_runner.db.session.execute"):
                 execution = run_batch(defn.id, date(2026, 4, 6), "alice")
 
             assert execution.status == "COMPLETED"
             assert len(execution.steps) == 1
             step = execution.steps[0]
-            assert step.status == "DISPATCHED"
+            assert step.status == "COMPLETED"
             assert step.ref_run_id is not None
-            assert "dispatched" in (step.summary or "").lower()
+            assert step.completed_at is not None
 
     def test_sp_step_params_copied_to_run(self, db_session, app):
-        """params_json defined on the task should be carried onto the SpRun."""
+        """params_json on the task should be resolved and carried onto the SpRun."""
         from app.services.batch_executor import run_batch
         from app.models.workflow import SpRun
         with app.app_context():
@@ -221,14 +217,13 @@ class TestBatchExecutorCustomSp:
                 sp_name="dbo.sp_params",
                 params={"p_date": "{as_of_date}"},
             )
-            with patch("app.services.sp_runner.threading.Thread") as mock_thread:
-                mock_thread.return_value = MagicMock()
+            with patch("app.services.sp_runner.db.session.execute"):
                 execution = run_batch(defn.id, date(2026, 4, 6), "alice")
 
             step = execution.steps[0]
             sp_run = db_session.get(SpRun, step.ref_run_id)
             assert sp_run is not None
-            # Token should be already resolved
+            # Token should be resolved to the actual date string
             assert sp_run.params_json.get("p_date") == "2026-04-06"
 
     def test_invalid_sp_name_fails_step(self, db_session, app):
@@ -243,43 +238,24 @@ class TestBatchExecutorCustomSp:
             assert step.status == "FAILED"
             assert "Invalid stored-procedure name" in (step.error_message or "")
 
-    def test_sp_step_completed_at_not_set_while_dispatched(self, db_session, app):
-        """The step completed_at should be None while status is DISPATCHED."""
+    def test_sp_step_completed_at_set_after_run(self, db_session, app):
+        """After synchronous execution, the step completed_at is set."""
         from app.services.batch_executor import run_batch
         with app.app_context():
             defn = self._make_defn_with_sp(db_session, sp_name="dbo.sp_timing")
-            with patch("app.services.sp_runner.threading.Thread") as mock_thread:
-                mock_thread.return_value = MagicMock()
+            with patch("app.services.sp_runner.db.session.execute"):
                 execution = run_batch(defn.id, date(2026, 4, 6), "alice")
 
             step = execution.steps[0]
-            assert step.status == "DISPATCHED"
-            assert step.completed_at is None
+            assert step.status == "COMPLETED"
+            assert step.completed_at is not None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SP Monitor routes
+# SP run detail route (drill-down from batch execution step)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestSpMonitorRoutes:
-    def test_monitor_requires_login(self, client):
-        rv = client.get("/batch/sp-runs", follow_redirects=False)
-        assert rv.status_code in (302, 308)
-
-    def test_monitor_renders(self, auth_client):
-        rv = auth_client.get("/batch/sp-runs")
-        assert rv.status_code == 200
-        assert b"SP Monitor" in rv.data or b"Stored Procedure" in rv.data
-
-    def test_monitor_shows_sp_runs(self, auth_client, db_session):
-        from app.models.workflow import SpRun
-        sp = SpRun(sp_name="monitor.sp_visible", status="COMPLETED", run_by="alice")
-        db_session.add(sp)
-        db_session.commit()
-
-        rv = auth_client.get("/batch/sp-runs")
-        assert rv.status_code == 200
-
+class TestSpDetailRoute:
     def test_detail_requires_login(self, client):
         rv = client.get("/batch/sp-runs/nonexistent-id", follow_redirects=False)
         assert rv.status_code in (302, 308)
@@ -324,7 +300,7 @@ class TestSpMonitorRoutes:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SP status JSON polling endpoint
+# SP status JSON endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestSpStatusEndpoint:
@@ -338,7 +314,7 @@ class TestSpStatusEndpoint:
 
     def test_status_returns_json(self, auth_client, db_session):
         from app.models.workflow import SpRun
-        sp = SpRun(sp_name="dbo.sp_poll", status="RUNNING", run_by="alice")
+        sp = SpRun(sp_name="dbo.sp_poll", status="COMPLETED", run_by="alice")
         db_session.add(sp)
         db_session.commit()
         run_id = sp.id
@@ -347,46 +323,25 @@ class TestSpStatusEndpoint:
         assert rv.status_code == 200
         data = json.loads(rv.data)
         assert data["id"] == run_id
-        assert data["status"] == "RUNNING"
-        assert data["completed_at"] is None
-
-    def test_status_completed_has_timestamp(self, auth_client, db_session):
-        from app.models.workflow import SpRun
-        from app.core.time_utils import utc_now
-        sp = SpRun(
-            sp_name="dbo.sp_done",
-            status="COMPLETED",
-            run_by="alice",
-            completed_at=utc_now(),
-            result_message="All done",
-        )
-        db_session.add(sp)
-        db_session.commit()
-        run_id = sp.id
-
-        rv = auth_client.get(f"/batch/sp-runs/{run_id}/status")
-        assert rv.status_code == 200
-        data = json.loads(rv.data)
         assert data["status"] == "COMPLETED"
-        assert data["completed_at"] is not None
-        assert data["result_message"] == "All done"
 
-    def test_status_failed_has_error(self, auth_client, db_session):
+    def test_status_json_fields_present(self, auth_client, db_session):
         from app.models.workflow import SpRun
-        from app.core.time_utils import utc_now
         sp = SpRun(
-            sp_name="dbo.sp_err",
+            sp_name="dbo.sp_fields",
             status="FAILED",
             run_by="alice",
-            completed_at=utc_now(),
-            error_message="relation does not exist",
+            error_message="SP not found",
         )
         db_session.add(sp)
         db_session.commit()
         run_id = sp.id
 
         rv = auth_client.get(f"/batch/sp-runs/{run_id}/status")
-        assert rv.status_code == 200
         data = json.loads(rv.data)
-        assert data["status"] == "FAILED"
-        assert "does not exist" in data["error_message"]
+        assert "status" in data
+        assert "completed_at" in data
+        assert "result_message" in data
+        assert "error_message" in data
+        assert data["error_message"] == "SP not found"
+

@@ -1,4 +1,4 @@
-"""PostgreSQL integration tests for stored-procedure dispatch.
+"""PostgreSQL integration tests for stored-procedure execution.
 
 These tests require a live PostgreSQL instance and are skipped automatically
 when DATABASE_URL is unset or does not point to a postgresql:// server.
@@ -16,7 +16,6 @@ Both objects are dropped at the end of the test session.
 """
 
 import os
-import time
 import pytest
 from datetime import date
 from pathlib import Path
@@ -33,27 +32,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 def _pg_url() -> str | None:
     url = os.getenv("DATABASE_URL", "")
     return url if url.startswith("postgresql") else None
-
-
-def _wait_for_sp_run(engine, run_id: str, timeout: int = 10):
-    """Poll sp_run until status leaves RUNNING or timeout expires.
-
-    Returns a (status, result_message, error_message) row, or None on timeout.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        with engine.connect() as conn:
-            row = conn.execute(
-                text(
-                    "SELECT status, result_message, error_message "
-                    "FROM sp_run WHERE id = :id"
-                ),
-                {"id": run_id},
-            ).fetchone()
-        if row and row[0] != "RUNNING":
-            return row
-        time.sleep(0.25)
-    return None  # timed out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,26 +197,29 @@ class TestSpTestEchoProcedure:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tests: full end-to-end via dispatch_sp (Flask app + background thread)
+# Tests: full end-to-end via run_sp (Flask app, synchronous)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.integration
-class TestDispatchSpEndToEnd:
-    """Verify the full async dispatch pipeline against real PostgreSQL."""
+class TestRunSpEndToEnd:
+    """Verify the synchronous run_sp pipeline against real PostgreSQL."""
 
-    def test_dispatch_creates_sp_run_record(self, pg_app, pg_engine, pg_db_objects):
-        """dispatch_sp should commit a SpRun row with status RUNNING before returning."""
-        from app.services.sp_runner import dispatch_sp
+    def test_run_sp_creates_sp_run_record_completed(self, pg_app, pg_engine, pg_db_objects):
+        """run_sp should create a SpRun row and return it with status COMPLETED."""
+        from app.services.sp_runner import run_sp
 
         with pg_app.app_context():
-            sp_run = dispatch_sp(
+            sp_run = run_sp(
                 sp_name="sp_test_echo",
-                params={"p_as_of_date": "2026-04-06", "p_run_by": "dispatch_create"},
-                run_by="dispatch_create",
+                params={"p_as_of_date": "2026-04-06", "p_run_by": "run_sp_create"},
+                run_by="run_sp_create",
                 exec_step_id=None,
-                app=pg_app,
+                app_or_session=None,
             )
             run_id = sp_run.id
+            final_status = sp_run.status
+
+        assert final_status == "COMPLETED", f"Expected COMPLETED, got {final_status}"
 
         with pg_engine.connect() as conn:
             row = conn.execute(
@@ -246,60 +227,50 @@ class TestDispatchSpEndToEnd:
                 {"id": run_id},
             ).fetchone()
 
-        assert row is not None, "SpRun row not found after dispatch"
-        assert row[0] in ("RUNNING", "COMPLETED")
+        assert row is not None, "SpRun row not found after run_sp"
+        assert row[0] == "COMPLETED"
 
-    def test_dispatch_completes_with_status_completed(self, pg_app, pg_engine, pg_db_objects):
-        """Background thread should update SpRun status to COMPLETED."""
-        from app.services.sp_runner import dispatch_sp
+    def test_run_sp_completes_with_status_completed(self, pg_app, pg_engine, pg_db_objects):
+        """run_sp should return COMPLETED synchronously."""
+        from app.services.sp_runner import run_sp
 
         with pg_app.app_context():
-            sp_run = dispatch_sp(
+            sp_run = run_sp(
                 sp_name="sp_test_echo",
                 params={"p_as_of_date": "2026-04-06", "p_run_by": "e2e_completed"},
                 run_by="e2e_completed",
                 exec_step_id=None,
-                app=pg_app,
+                app_or_session=None,
             )
-            run_id = sp_run.id
 
-        row = _wait_for_sp_run(pg_engine, run_id, timeout=10)
-        assert row is not None, "Timed out waiting for SpRun to complete"
-        assert row[0] == "COMPLETED", (
-            f"Expected COMPLETED, got {row[0]}. Error: {row[2]}"
+        assert sp_run.status == "COMPLETED", (
+            f"Expected COMPLETED, got {sp_run.status}. Error: {sp_run.error_message}"
         )
 
-    def test_dispatch_sp_writes_audit_row(self, pg_app, pg_engine, pg_db_objects):
-        """The SP called via dispatch_sp should write a row into sp_call_log."""
-        from app.services.sp_runner import dispatch_sp
+    def test_run_sp_writes_audit_row(self, pg_app, pg_engine, pg_db_objects):
+        """The SP called via run_sp should write a row into sp_call_log."""
+        from app.services.sp_runner import run_sp
 
         run_by_marker = "e2e_audit_check"
 
         with pg_engine.connect() as conn:
             before = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM sp_call_log WHERE called_by = :u"
-                ),
+                text("SELECT COUNT(*) FROM sp_call_log WHERE called_by = :u"),
                 {"u": run_by_marker},
             ).scalar()
 
         with pg_app.app_context():
-            sp_run = dispatch_sp(
+            run_sp(
                 sp_name="sp_test_echo",
                 params={"p_as_of_date": "2026-04-06", "p_run_by": run_by_marker},
                 run_by=run_by_marker,
                 exec_step_id=None,
-                app=pg_app,
+                app_or_session=None,
             )
-            run_id = sp_run.id
-
-        _wait_for_sp_run(pg_engine, run_id, timeout=10)
 
         with pg_engine.connect() as conn:
             after = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM sp_call_log WHERE called_by = :u"
-                ),
+                text("SELECT COUNT(*) FROM sp_call_log WHERE called_by = :u"),
                 {"u": run_by_marker},
             ).scalar()
 
@@ -307,21 +278,19 @@ class TestDispatchSpEndToEnd:
             f"Expected sp_call_log to gain 1 row, was {before} now {after}"
         )
 
-    def test_dispatch_completed_at_is_set(self, pg_app, pg_engine, pg_db_objects):
-        """SpRun.completed_at should be set when the thread finishes."""
-        from app.services.sp_runner import dispatch_sp
+    def test_run_sp_completed_at_is_set(self, pg_app, pg_engine, pg_db_objects):
+        """SpRun.completed_at should be set when run_sp returns."""
+        from app.services.sp_runner import run_sp
 
         with pg_app.app_context():
-            sp_run = dispatch_sp(
+            sp_run = run_sp(
                 sp_name="sp_test_echo",
                 params={"p_as_of_date": "2026-04-06", "p_run_by": "e2e_timing"},
                 run_by="e2e_timing",
                 exec_step_id=None,
-                app=pg_app,
+                app_or_session=None,
             )
             run_id = sp_run.id
-
-        _wait_for_sp_run(pg_engine, run_id, timeout=10)
 
         with pg_engine.connect() as conn:
             row = conn.execute(
@@ -332,44 +301,51 @@ class TestDispatchSpEndToEnd:
         assert row is not None
         assert row[0] is not None, "completed_at should not be NULL after COMPLETED"
 
-    def test_dispatch_invalid_sp_name_raises_value_error(self, pg_app, pg_db_objects):
-        """dispatch_sp with a bad name must raise ValueError before touching the DB."""
-        from app.services.sp_runner import dispatch_sp
+    def test_run_sp_invalid_name_raises_value_error(self, pg_app, pg_db_objects):
+        """run_sp with a bad name must raise ValueError before touching the DB."""
+        from app.services.sp_runner import run_sp
 
         with pg_app.app_context():
             with pytest.raises(ValueError, match="Invalid stored-procedure name"):
-                dispatch_sp(
+                run_sp(
                     sp_name="bad sp name; DROP TABLE sp_run",
                     params={},
                     run_by="security_test",
                     exec_step_id=None,
-                    app=pg_app,
+                    app_or_session=None,
                 )
 
-    def test_dispatch_nonexistent_sp_sets_failed(self, pg_app, pg_engine, pg_db_objects):
+    def test_run_sp_nonexistent_sp_sets_failed(self, pg_app, pg_engine, pg_db_objects):
         """Calling a non-existent procedure should result in SpRun status=FAILED."""
-        from app.services.sp_runner import dispatch_sp
+        from app.services.sp_runner import run_sp
 
         with pg_app.app_context():
-            sp_run = dispatch_sp(
+            sp_run = run_sp(
                 sp_name="sp_does_not_exist_bankpft_xyz",
                 params={},
                 run_by="e2e_fail_test",
                 exec_step_id=None,
-                app=pg_app,
+                app_or_session=None,
             )
-            run_id = sp_run.id
 
-        row = _wait_for_sp_run(pg_engine, run_id, timeout=10)
-        assert row is not None, "Timed out waiting for SpRun to update"
-        assert row[0] == "FAILED", f"Expected FAILED, got {row[0]}"
-        assert row[2], "error_message should be set for a FAILED SpRun"
+        assert sp_run.status == "FAILED", f"Expected FAILED, got {sp_run.status}"
+        assert sp_run.error_message, "error_message should be set for a FAILED SpRun"
 
-    def test_dispatch_token_resolution_visible_in_call_log(
+        with pg_engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT status, error_message FROM sp_run WHERE id = :id"),
+                {"id": sp_run.id},
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == "FAILED"
+        assert row[1]
+
+    def test_run_sp_token_resolution_visible_in_call_log(
         self, pg_app, pg_engine, pg_db_objects
     ):
         """Token {as_of_date} resolved by batch_executor should appear correctly."""
-        from app.services.sp_runner import dispatch_sp, resolve_params
+        from app.services.sp_runner import run_sp, resolve_params
 
         as_of = date(2026, 3, 31)
         resolved = resolve_params(
@@ -379,16 +355,15 @@ class TestDispatchSpEndToEnd:
         )
 
         with pg_app.app_context():
-            sp_run = dispatch_sp(
+            sp_run = run_sp(
                 sp_name="sp_test_echo",
                 params=resolved,
                 run_by="token_tester",
                 exec_step_id=None,
-                app=pg_app,
+                app_or_session=None,
             )
-            run_id = sp_run.id
 
-        _wait_for_sp_run(pg_engine, run_id, timeout=10)
+        assert sp_run.status == "COMPLETED"
 
         with pg_engine.connect() as conn:
             row = conn.execute(
