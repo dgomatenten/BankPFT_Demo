@@ -33,6 +33,7 @@ class AllocationRule(TimestampMixin, db.Model):
     credit_dim_json = db.Column(db.Text, nullable=True)  # per-dimension output mapping for CREDIT
     allocation_method = db.Column(db.String(20), default="RATIO")  # RATIO | DISTRIBUTION | STATIC
     distribution_driver = db.Column(db.String(100), nullable=True)  # driver_name for DISTRIBUTION method
+    balance_column = db.Column(db.String(50), nullable=True)  # specific balance column to allocate; None = all
     entry_mode = db.Column(db.String(20), default="BOTH")   # BOTH | DEBIT_ONLY | CREDIT_ONLY
     generate_offset = db.Column(db.Boolean, default=True)   # legacy
     offset_account = db.Column(db.String(50), nullable=True)  # legacy

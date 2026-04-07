@@ -93,7 +93,19 @@
                 </div>
             </div>{# end #lookup-join-section #}
 
-            {# ── Entry Mode ── #}
+            {# ── Balance Column ── #}
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Balance Column to Allocate</label>
+                    <select name="balance_column" id="balance_column" class="form-select">
+                        <option value="">— All balance columns (default) —</option>
+                        {% for opt in rule_config.balance_columns[rule.source_table] %}
+                        <option value="{{ opt.value }}" {{ 'selected' if opt.value == rule.balance_column }}>{{ opt.label }} ({{ opt.value }})</option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Leave blank to allocate all balance columns defined for this source.</small>
+                </div>
+            </div>
             {% set cur_mode = rule.entry_mode or ('BOTH' if rule.generate_offset else 'DEBIT_ONLY') %}
             <div class="card mb-3 border-primary">
                 <div class="card-header bg-primary text-white"><i class="bi bi-arrow-left-right"></i> Entry Mode</div>
@@ -167,13 +179,16 @@
 (function() {
     const RULE_CFG  = {{ rule_config | tojson }};
     const RULE_INIT = {
-        source_dim: {{ rule.source_dim_json | from_json | tojson }},
-        output_dim: {{ rule.output_dim_json | from_json | tojson }},
-        credit_dim: {{ rule.credit_dim_json | from_json | tojson }},
+        source_dim:     {{ rule.source_dim_json | from_json | tojson }},
+        output_dim:     {{ rule.output_dim_json | from_json | tojson }},
+        credit_dim:     {{ rule.credit_dim_json | from_json | tojson }},
+        balance_column: {{ (rule.balance_column or '') | tojson }},
     };
 
+    const BAL_COLS  = RULE_CFG.balance_columns || {};
     const srcSelect = document.getElementById('source_table');
     const lkpSelect = document.getElementById('lookup_table');
+    const balSelect = document.getElementById('balance_column');
     const srcBody   = document.getElementById('src-dim-body');
     const outBody   = document.getElementById('out-dim-body');
     const crdBody   = document.getElementById('crd-dim-body');
@@ -330,6 +345,19 @@
         });
     }
 
+    function syncBalanceCols(selectedVal) {
+        const opts = BAL_COLS[srcSelect.value] || [];
+        const prev = selectedVal !== undefined ? selectedVal : balSelect.value;
+        balSelect.innerHTML = '<option value="">\u2014 All balance columns (default) \u2014</option>';
+        opts.forEach(o => {
+            const opt = document.createElement('option');
+            opt.value = o.value;
+            opt.textContent = `${o.label} (${o.value})`;
+            if (o.value === prev) opt.selected = true;
+            balSelect.appendChild(opt);
+        });
+    }
+
     function getCheckedMethod() {
         const sel = document.querySelector('input[name="allocation_method_radio"]:checked');
         return sel ? sel.value : 'RATIO';
@@ -346,6 +374,9 @@
             restoreSrcBody(RULE_INIT.source_dim);
             restoreOutBody(outBody, RULE_INIT.output_dim);
             restoreOutBody(crdBody, RULE_INIT.credit_dim);
+            syncBalanceCols(RULE_INIT.balance_column);
+        } else {
+            syncBalanceCols();
         }
         syncEntryCards();
         syncJoinKeys();

@@ -89,7 +89,19 @@
                 </div>
             </div>{# end #lookup-join-section #}
 
-            {# ── Entry Mode ── #}
+            {# ── Balance Column ── #}
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Balance Column to Allocate</label>
+                    <select name="balance_column" id="balance_column" class="form-select">
+                        <option value="">— All balance columns (default) —</option>
+                        {% for opt in rule_config.balance_columns[rule_config.defaults.source_table] %}
+                        <option value="{{ opt.value }}">{{ opt.label }} ({{ opt.value }})</option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Leave blank to allocate all balance columns defined for this source.</small>
+                </div>
+            </div>
             <div class="card mb-3 border-primary">
                 <div class="card-header bg-primary text-white"><i class="bi bi-arrow-left-right"></i> Entry Mode</div>
                 <div class="card-body">
@@ -159,7 +171,9 @@
 <script>
 (function() {
     const RULE_CFG   = {{ rule_config | tojson }};
+    const BAL_COLS   = RULE_CFG.balance_columns || {};
     const srcSelect  = document.getElementById('source_table');
+    const balSelect  = document.getElementById('balance_column');
     const lkpSelect  = document.getElementById('lookup_table');
     const srcBody    = document.getElementById('src-dim-body');
     const outBody    = document.getElementById('out-dim-body');
@@ -293,6 +307,19 @@
         });
     }
 
+    function syncBalanceCols(selectedVal) {
+        const opts = BAL_COLS[srcSelect.value] || [];
+        const prev = selectedVal !== undefined ? selectedVal : balSelect.value;
+        balSelect.innerHTML = '<option value="">— All balance columns (default) —</option>';
+        opts.forEach(o => {
+            const opt = document.createElement('option');
+            opt.value = o.value;
+            opt.textContent = `${o.label} (${o.value})`;
+            if (o.value === prev) opt.selected = true;
+            balSelect.appendChild(opt);
+        });
+    }
+
     function getCheckedMethod() {
         const sel = document.querySelector('input[name="allocation_method_radio"]:checked');
         return sel ? sel.value : 'RATIO';
@@ -305,6 +332,7 @@
         buildSrcRows(src);
         buildDimMapRows(outBody, src, lkp, isLookup);
         buildDimMapRows(crdBody, src, lkp, isLookup);
+        syncBalanceCols();
         syncEntryCards();
         syncJoinKeys();
     }

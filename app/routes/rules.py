@@ -27,6 +27,7 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
     out_dim_raw = request.form.get("output_dim_json", "").strip()
     crd_dim_raw = request.form.get("credit_dim_json", "").strip()
     distribution_driver = request.form.get("distribution_driver", "").strip() or None
+    balance_column = request.form.get("balance_column", "").strip() or None
     return {
         "allocation_method": alloc_method,
         "entry_mode": entry_mode,
@@ -37,6 +38,7 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
         "output_dim_json": out_dim_raw or None,
         "credit_dim_json": crd_dim_raw or None,
         "distribution_driver": distribution_driver,
+        "balance_column": balance_column,
     }
 
 
@@ -69,6 +71,7 @@ def new_rule():
             credit_dim_json=form["credit_dim_json"],
             allocation_method=form["allocation_method"],
             distribution_driver=form["distribution_driver"],
+            balance_column=form["balance_column"],
             entry_mode=form["entry_mode"],
             generate_offset=form["generate_offset"],
             created_by=current_user.username,
@@ -190,6 +193,7 @@ def edit_rule(rule_id):
         rule.credit_dim_json = form["credit_dim_json"]
         rule.allocation_method = form["allocation_method"]
         rule.distribution_driver = form["distribution_driver"]
+        rule.balance_column  = form["balance_column"]
         rule.entry_mode     = form["entry_mode"]
         rule.generate_offset = form["generate_offset"]
         db.session.commit()

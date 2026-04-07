@@ -234,6 +234,9 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
         # ── 4. Load lookup ratios (RATIO / DISTRIBUTION) or skip (STATIC) ──
         balance_cols = src_cfg["balance_columns"]
+        # If the rule specifies a single balance column, restrict to that column only
+        if getattr(rule, "balance_column", None) and rule.balance_column in balance_cols:
+            balance_cols = [rule.balance_column]
         acct_col     = src_cfg["account_id_column"]
         results       = []
         _debit_count  = 0

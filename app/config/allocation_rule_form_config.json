@@ -52,13 +52,35 @@
             {"column": "source_account_id",  "label": "Source Account ID"},
             {"column": "customer_id",        "label": "Customer ID"},
             {"column": "product_code",       "label": "Product Code"},
-            {"column": "org_unit_id",  "label": "Org Unit"}
+            {"column": "source_org_unit_id", "label": "Source Org Unit"},
+            {"column": "target_org_unit_id", "label": "Target Org Unit"}
         ],
         "fct_mgmt_instrument": [
             {"column": "source_account_id",  "label": "Source Account ID"},
             {"column": "customer_id",        "label": "Customer ID"},
             {"column": "product_code",       "label": "Product Code"},
-            {"column": "org_unit_id",  "label": "Org Unit"}
+            {"column": "source_org_unit_id", "label": "Source Org Unit"},
+            {"column": "target_org_unit_id", "label": "Target Org Unit"}
+        ]
+    },
+
+    "balance_columns": {
+        "proc_inst_data": [
+            {"value": "balance",         "label": "Balance"},
+            {"value": "interest_income", "label": "Interest Income"}
+        ],
+        "proc_gl_data": [
+            {"value": "balance", "label": "Balance"},
+            {"value": "debit",   "label": "Debit"},
+            {"value": "credit",  "label": "Credit"}
+        ],
+        "fct_mgmt_ledger": [
+            {"value": "allocated_balance", "label": "Allocated Balance"},
+            {"value": "allocated_income",  "label": "Allocated Income"}
+        ],
+        "fct_mgmt_instrument": [
+            {"value": "allocated_balance", "label": "Allocated Balance"},
+            {"value": "allocated_income",  "label": "Allocated Income"}
         ]
     },
 
