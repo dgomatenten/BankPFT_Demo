@@ -66,7 +66,7 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
         db.session.commit()
 
         try:
-            _run_step(step, processing_date, run_by)
+            _run_step(step, processing_date, as_of_date, run_by)
             step.completed_at = utc_now()
             db.session.commit()
         except Exception as exc:
@@ -97,8 +97,20 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
 
 # ── Per-task dispatch ─────────────────────────────────────────────────────────
 
-def _run_step(step: BatchExecutionStep, as_of_date: date, run_by: str) -> None:
-    """Call the appropriate engine for a single task step."""
+def _run_step(
+    step: BatchExecutionStep,
+    processing_date: date,
+    original_date: date,
+    run_by: str,
+) -> None:
+    """Call the appropriate engine for a single task step.
+
+    processing_date — effective date used by allocation/FTP/datafile engines
+                      (= processing_date op var, or batch form date as fallback)
+    original_date   — the date the user typed on the batch run form; used as
+                      the ``{as_of_date}`` token in CUSTOM_SP params_json
+    """
+    as_of_date = processing_date  # engines always receive the resolved processing date
     t = step.task_type
 
     if t == "ALLOCATION":
@@ -162,9 +174,11 @@ def _run_step(step: BatchExecutionStep, as_of_date: date, run_by: str) -> None:
 
     elif t == "CUSTOM_SP":
         from app.services.sp_runner import run_sp, resolve_params
+        # Pass original_date so {as_of_date} = form input date;
+        # {processing_date} is loaded from DB op vars inside resolve_params.
         params = resolve_params(
             step.params_json or {},
-            as_of_date,
+            original_date,
             run_by,
         )
         sp_run = run_sp(

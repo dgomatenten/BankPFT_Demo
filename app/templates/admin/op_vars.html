@@ -89,7 +89,15 @@
   "p_run_by":          "{run_by}",
   "p_as_of_date":      "{as_of_date}"
 }</code></pre>
-        <p class="mb-0 text-muted small">Built-in tokens: <code>{as_of_date}</code> (batch run date) · <code>{run_by}</code> (username). All active operation variables are also available as tokens using their key name.</p>
+        <p class="mb-0 text-muted small">
+          Built-in tokens:
+          <code>{as_of_date}</code> — date entered on the batch run form &nbsp;·&nbsp;
+          <code>{run_by}</code> — username of the person running the batch.<br>
+          All active operation variables are also available as tokens. For example,
+          <code>{processing_date}</code> resolves to the <em>processing_date</em> variable set here.
+          Note: all engines (Allocation, FTP, Data File) use <code>processing_date</code> as the
+          effective date; <code>{as_of_date}</code> gives the raw form input if you need it separately.
+        </p>
     </div>
 </div>
 {% endblock %}
