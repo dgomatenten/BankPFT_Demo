@@ -1,4 +1,5 @@
 import json
+import copy
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app.models import db
@@ -6,8 +7,34 @@ from app.models.workflow import AllocationRule
 from app.models.allocation import RefStaticAllocation
 from app.core.config_loader import load_config
 
-RULE_CONFIG = load_config("allocation_rule_form_config")
-FILTER_CONFIG = load_config("filter_config")
+_RULE_CONFIG_BASE  = load_config("allocation_rule_form_config")
+_ENGINE_CONFIG     = load_config("allocation_engine_config")
+FILTER_CONFIG      = load_config("filter_config")
+
+
+def _build_rule_config():
+    """Return a copy of the form config with balance_columns injected from engine config.
+
+    For each source table, keys in ``balance_columns`` are the column names;
+    we make them into ``{value, label}`` pairs using ``financial_element_columns``
+    (which maps column → financial-element code) as a label hint when available.
+    """
+    cfg = copy.deepcopy(_RULE_CONFIG_BASE)
+    bal_cols = {}
+    for tbl, src in _ENGINE_CONFIG.get("source_tables", {}).items():
+        fe_map = src.get("financial_element_columns", {})
+        opts = []
+        for col in src.get("balance_columns", []):
+            code  = fe_map.get(col)
+            label = f"{col.replace('_', ' ').title()} ({code})" if code else col.replace('_', ' ').title()
+            opts.append({"value": col, "label": label})
+        if opts:
+            bal_cols[tbl] = opts
+    cfg["balance_columns"] = bal_cols
+    return cfg
+
+
+RULE_CONFIG = _build_rule_config()
 
 bp = Blueprint("rules", __name__)
 

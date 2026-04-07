@@ -64,26 +64,6 @@
         ]
     },
 
-    "balance_columns": {
-        "proc_inst_data": [
-            {"value": "balance",         "label": "Balance"},
-            {"value": "interest_income", "label": "Interest Income"}
-        ],
-        "proc_gl_data": [
-            {"value": "balance", "label": "Balance"},
-            {"value": "debit",   "label": "Debit"},
-            {"value": "credit",  "label": "Credit"}
-        ],
-        "fct_mgmt_ledger": [
-            {"value": "allocated_balance", "label": "Allocated Balance"},
-            {"value": "allocated_income",  "label": "Allocated Income"}
-        ],
-        "fct_mgmt_instrument": [
-            {"value": "allocated_balance", "label": "Allocated Balance"},
-            {"value": "allocated_income",  "label": "Allocated Income"}
-        ]
-    },
-
     "lookup_output_columns": {
         "ref_static_allocation": [
             {"column": "target_org_unit_id", "label": "Target Org Unit"},
