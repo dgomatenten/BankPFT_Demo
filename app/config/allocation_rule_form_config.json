@@ -21,11 +21,13 @@
     ],
 
     "join_keys": [
-        {"value": "customer_id",  "label": "customer_id",  "available_in": ["proc_inst_data"]},
-        {"value": "org_unit_id",  "label": "org_unit_id",  "available_in": ["proc_inst_data", "proc_gl_data"]},
-        {"value": "product_code", "label": "product_code", "available_in": ["proc_inst_data"]},
-        {"value": "account_id",   "label": "account_id",   "available_in": ["proc_inst_data"]},
-        {"value": "gl_account",   "label": "gl_account",   "available_in": ["proc_gl_data"]}
+        {"value": "customer_id",        "label": "customer_id",        "available_in": ["proc_inst_data", "fct_mgmt_ledger", "fct_mgmt_instrument"]},
+        {"value": "org_unit_id",        "label": "org_unit_id",        "available_in": ["proc_inst_data", "proc_gl_data"]},
+        {"value": "source_org_unit_id", "label": "source_org_unit_id", "available_in": ["fct_mgmt_ledger", "fct_mgmt_instrument"]},
+        {"value": "source_account_id",  "label": "source_account_id",  "available_in": ["fct_mgmt_ledger", "fct_mgmt_instrument"]},
+        {"value": "product_code",       "label": "product_code",       "available_in": ["proc_inst_data", "fct_mgmt_ledger", "fct_mgmt_instrument"]},
+        {"value": "account_id",         "label": "account_id",         "available_in": ["proc_inst_data"]},
+        {"value": "gl_account",         "label": "gl_account",         "available_in": ["proc_gl_data"]}
     ],
 
     "defaults": {
@@ -50,15 +52,13 @@
             {"column": "source_account_id",  "label": "Source Account ID"},
             {"column": "customer_id",        "label": "Customer ID"},
             {"column": "product_code",       "label": "Product Code"},
-            {"column": "source_org_unit_id", "label": "Source Org Unit"},
-            {"column": "target_org_unit_id", "label": "Target Org Unit"}
+            {"column": "org_unit_id",  "label": "Org Unit"}
         ],
         "fct_mgmt_instrument": [
             {"column": "source_account_id",  "label": "Source Account ID"},
             {"column": "customer_id",        "label": "Customer ID"},
             {"column": "product_code",       "label": "Product Code"},
-            {"column": "source_org_unit_id", "label": "Source Org Unit"},
-            {"column": "target_org_unit_id", "label": "Target Org Unit"}
+            {"column": "org_unit_id",  "label": "Org Unit"}
         ]
     },
 
