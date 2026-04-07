@@ -43,7 +43,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission. On approval, configurable **post-approval actions** run automatically (execute allocation rule IDs or dispatch a stored procedure via `sp_runner`) |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), **distribution driver** (named sub-table within `ref_static_distribution`), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
-| **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. `CUSTOM_SP` steps execute synchronously — the SP runs inline and the step becomes `COMPLETED` or `FAILED` like any other step type. The SP Run detail page (linked from the Run ID in the execution step table) shows timing, resolved parameters, and any error messages |
+| **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. Allocation runs are **idempotent** — re-running a rule for the same as-of date deletes the previous output before inserting new rows (delete + insert). `CUSTOM_SP` steps execute synchronously — the SP runs inline and the step becomes `COMPLETED` or `FAILED` like any other step type. The SP Run detail page (linked from the Run ID in the execution step table) shows timing, resolved parameters, and any error messages |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
 | **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default). Accessible under the **Data Management** sidebar group |
@@ -289,7 +289,15 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 5. Resolve DEBIT dims per output_dim_json (same-as-source / fixed)
 6. If BOTH or DEBIT_ONLY: write DEBIT; if BOTH or CREDIT_ONLY: write CREDIT (negative)
    No orphan rows possible with STATIC method
+
+── Idempotent write (all methods) ──
+7. DELETE existing output rows WHERE allocation_id = rule_id AND as_of_date = run date
+8. INSERT new output rows — every output row carries allocation_id = rule_id for traceability
 ```
+
+**Traceability:** Every output row stores the generating rule's `allocation_id` (= `AllocationRule.id`). This allows downstream reports and audits to trace any `fct_mgmt_*` record back to the rule that produced it.
+
+**Idempotent re-runs:** Re-running the same rule for the same as-of date replaces (deletes then inserts) the previous output. This guarantees no duplicate records and ensures the output always reflects the latest rule configuration.
 
 **To add a new source table:** add its column config to `allocation_config.json` and its option to `rule_config.json`.
 
@@ -524,6 +532,18 @@ To add a new validation rule: define it in `validation_rules.json` and implement
 | `fct_mgmt_ledger` | Legacy ledger output — retains backward compatibility |
 
 Both tables share the same schema, with `entry_type` column indicating `DEBIT` or `CREDIT`.
+
+**Key columns:**
+
+| Column | Description |
+|---|---|
+| `allocation_id` | The ID of the `AllocationRule` that generated this row — enables traceability from output back to rule |
+| `as_of_date` | The calculation date passed at batch execution time |
+| `entry_type` | `DEBIT` or `CREDIT` |
+| `financial_element` | Balance column label when financial-element unpivot is active (e.g. `BAL`, `NII`) |
+| `batch_run_id` | UUID of the `BatchRun` record for this execution |
+
+Re-running a rule for the same `as_of_date` deletes all prior output rows with that `allocation_id` + `as_of_date` combination before inserting new rows, ensuring idempotent results.
 
 ## Allocation Rule JSON Import
 

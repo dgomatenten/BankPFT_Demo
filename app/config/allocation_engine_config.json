@@ -7,7 +7,7 @@
             "date_filter_column": "as_of_date",
             "account_id_column": "account_id",
             "org_unit_column": "org_unit_id",
-            "balance_columns": ["balance", "interest_income"],
+            "balance_columns": ["balance", "interest_income", "cost_of_fund"],
             "dimension_columns": ["account_id", "customer_id", "product_code", "org_unit_id"],
             "financial_element_columns": {
                 "balance": "BAL",

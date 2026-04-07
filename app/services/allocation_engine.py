@@ -350,7 +350,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 as_of_date=as_of_date,
                                 entry_type="DEBIT",
                                 financial_element=fe_label,
-                                allocation_id=str(row[id_col]),
+                                allocation_id=str(rule_id),
                                 source_account_id=out_acct,
                                 customer_id=out_cust,
                                 product_code=out_prod,
@@ -369,7 +369,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 as_of_date=as_of_date,
                                 entry_type="CREDIT",
                                 financial_element=fe_label,
-                                allocation_id=str(row[id_col]),
+                                allocation_id=str(rule_id),
                                 source_account_id=crd_acct,
                                 customer_id=crd_cust,
                                 product_code=crd_prod,
@@ -391,7 +391,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             batch_run_id=batch_id,
                             as_of_date=as_of_date,
                             entry_type="DEBIT",
-                            allocation_id=str(row[id_col]),
+                            allocation_id=str(rule_id),
                             source_account_id=out_acct,
                             customer_id=out_cust,
                             product_code=out_prod,
@@ -415,7 +415,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             batch_run_id=batch_id,
                             as_of_date=as_of_date,
                             entry_type="CREDIT",
-                            allocation_id=str(row[id_col]),
+                            allocation_id=str(rule_id),
                             source_account_id=crd_acct,
                             customer_id=crd_cust,
                             product_code=crd_prod,
@@ -445,7 +445,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 as_of_date=as_of_date,
                                 entry_type="DEBIT",
                                 financial_element=fe_label,
-                                allocation_id=None,
+                                allocation_id=str(rule_id),
                                 source_account_id=str(row.get(acct_col, "")),
                                 customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
                                 product_code=str(row.get("product_code", "")),
@@ -464,7 +464,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             batch_run_id=batch_id,
                             as_of_date=as_of_date,
                             entry_type="DEBIT",
-                            allocation_id=None,
+                            allocation_id=str(rule_id),
                             source_account_id=str(row.get(acct_col, "")),
                             customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
                             product_code=str(row.get("product_code", "")),
@@ -509,7 +509,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 as_of_date=as_of_date,
                                 entry_type="DEBIT",
                                 financial_element=fe_label,
-                                allocation_id=None,
+                                allocation_id=str(rule_id),
                                 source_account_id=out_acct,
                                 customer_id=out_cust,
                                 product_code=out_prod,
@@ -528,7 +528,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 as_of_date=as_of_date,
                                 entry_type="CREDIT",
                                 financial_element=fe_label,
-                                allocation_id=None,
+                                allocation_id=str(rule_id),
                                 source_account_id=crd_acct,
                                 customer_id=crd_cust,
                                 product_code=crd_prod,
@@ -549,7 +549,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             batch_run_id=batch_id,
                             as_of_date=as_of_date,
                             entry_type="DEBIT",
-                            allocation_id=None,
+                            allocation_id=str(rule_id),
                             source_account_id=out_acct,
                             customer_id=out_cust,
                             product_code=out_prod,
@@ -572,7 +572,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             batch_run_id=batch_id,
                             as_of_date=as_of_date,
                             entry_type="CREDIT",
-                            allocation_id=None,
+                            allocation_id=str(rule_id),
                             source_account_id=crd_acct,
                             customer_id=crd_cust,
                             product_code=crd_prod,
@@ -587,7 +587,13 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
             logger.log("PROCESS", f"  → DEBIT entries: {_debit_count:,} | CREDIT entries: {_credit_count:,}")
 
-        # ── 8. Write results ──
+        # ── 8. Delete existing output for same rule + as_of_date, then insert ──
+        del_count = OutputModel.query.filter(
+            OutputModel.allocation_id == str(rule_id),
+            OutputModel.as_of_date == as_of_date,
+        ).delete(synchronize_session=False)
+        if del_count:
+            logger.log("DB", f"Deleted {del_count:,} prior rows for rule_id={rule_id}, as_of_date={as_of_date}")
         db.session.add_all(results)
         logger.log("DB",      f"Writing {len(results):,} output rows to '{rule.output_table}'")
 

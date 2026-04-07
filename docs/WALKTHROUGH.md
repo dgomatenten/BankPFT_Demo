@@ -503,6 +503,10 @@ The page has three sections:
 3. **Step Preview panel** — dynamically shows the steps in the selected definition as colored badges (Allocation/FTP/Import/Export/Custom SP), the continue-on-error setting, and the description
 4. **Execute** — submits the run; the engine executes each step sequentially and redirects to the Execution Detail page
 
+**Idempotent allocation runs:** Re-running the same allocation rule for the same as-of date is safe — the engine deletes all prior output rows for that rule + date before inserting new results. This means you can re-execute a batch after correcting data or rule settings without creating duplicate records.
+
+**Traceability:** Every output row carries an `allocation_id` equal to the generating `AllocationRule.id`, so you can always trace a `fct_mgmt_*` record back to the rule that produced it.
+
 ### Batch Definitions table
 
 Lists all active batch definitions with their step types shown as inline colored badges. Use the **Edit** link to open the definition for reconfiguring steps.
@@ -567,7 +571,7 @@ Every engine run writes a timestamped log file to `instance/batch_logs/batch_<id
 | `JOIN` | Join key and type, plus matched vs orphan counts after the merge |
 | `PROCESS` | Matched row count, emit flags, and final DEBIT / CREDIT entry counts |
 | `ORPHAN` | Orphan row count and the default ratio applied |
-| `DB` | Number of rows written to the output table |
+| `DB` | Number of rows written to the output table (including count of prior rows deleted for same rule + date) |
 | `SUMMARY` | Source rows, output rows, orphans, source total, output total, variance |
 | `COMPLETE` | Total wall-clock time for the batch in seconds |
 | `ERROR` / `FAILED` | Exception message if the run fails at any point |

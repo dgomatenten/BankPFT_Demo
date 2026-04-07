@@ -52,15 +52,13 @@
             {"column": "source_account_id",  "label": "Source Account ID"},
             {"column": "customer_id",        "label": "Customer ID"},
             {"column": "product_code",       "label": "Product Code"},
-            {"column": "source_org_unit_id", "label": "Source Org Unit"},
-            {"column": "target_org_unit_id", "label": "Target Org Unit"}
+             {"column": "org_unit_id",  "label": "Org Unit"}
         ],
         "fct_mgmt_instrument": [
             {"column": "source_account_id",  "label": "Source Account ID"},
             {"column": "customer_id",        "label": "Customer ID"},
             {"column": "product_code",       "label": "Product Code"},
-            {"column": "source_org_unit_id", "label": "Source Org Unit"},
-            {"column": "target_org_unit_id", "label": "Target Org Unit"}
+             {"column": "org_unit_id",  "label": "Org Unit"}
         ]
     },
 
