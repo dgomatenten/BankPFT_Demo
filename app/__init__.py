@@ -134,11 +134,36 @@ def _apply_schema_migrations():
         _add_col_if_missing("proc_inst_data", "base_rate FLOAT")
         _add_col_if_missing("proc_inst_data", "cost_of_fund FLOAT")
 
+    # operation_variable is created by db.create_all() when the model is present.
+    # For existing deployments that already have the column-migration pattern,
+    # there is nothing extra to do — db.create_all() is idempotent for new tables.
+
 
 def _seed_defaults():
-    """Create default groups and admin user if they don't exist."""
+    """Create default groups, admin user, and system operation variables if they don't exist."""
     from app.models.auth import User, Group
+    from app.models.workflow import OperationVariable
+    import datetime as _dt
 
+    # ── System operation variables ──────────────────────────────────────────
+    if not OperationVariable.query.filter_by(key="processing_date").first():
+        today_str = _dt.date.today().isoformat()
+        db.session.add(OperationVariable(
+            key="processing_date",
+            value=today_str,
+            description=(
+                "The current processing date used by batch engines. "
+                "Update this to control which date is treated as 'today' "
+                "for all batch runs. Defaults to today's date at first startup."
+            ),
+            data_type="date",
+            is_system=True,
+            is_active=True,
+            updated_by="system",
+        ))
+        db.session.commit()
+
+    # ── Auth defaults ────────────────────────────────────────────────────────
     if Group.query.first() is not None:
         return
 

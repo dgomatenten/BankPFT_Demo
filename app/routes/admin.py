@@ -1,8 +1,10 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from functools import wraps
+from datetime import datetime
 from app.models import db
 from app.models.auth import User, Group
+from app.models.workflow import OperationVariable
 
 bp = Blueprint("admin", __name__)
 
@@ -147,3 +149,119 @@ def edit_user(user_id):
         return redirect(url_for("admin.list_users"))
 
     return render_template("admin/user_form.html", user=user, groups=groups)
+
+
+# ── Operation Variables ────────────────────────────────────
+
+_VALID_TYPES = {"date", "string", "number"}
+
+
+@bp.route("/op-vars")
+@admin_required
+def list_op_vars():
+    variables = OperationVariable.query.order_by(
+        OperationVariable.is_system.desc(), OperationVariable.key
+    ).all()
+    return render_template("admin/op_vars.html", variables=variables)
+
+
+@bp.route("/op-vars/new", methods=["GET", "POST"])
+@admin_required
+def new_op_var():
+    if request.method == "POST":
+        key = request.form.get("key", "").strip()
+        value = request.form.get("value", "").strip()
+        description = request.form.get("description", "").strip() or None
+        data_type = request.form.get("data_type", "string").strip()
+
+        error = _validate_op_var(key, value, data_type, existing_id=None)
+        if error:
+            flash(error, "danger")
+            return render_template("admin/op_var_form.html", var=None,
+                                   valid_types=sorted(_VALID_TYPES))
+
+        var = OperationVariable(
+            key=key, value=value, description=description,
+            data_type=data_type, is_system=False,
+            updated_by=current_user.username,
+        )
+        db.session.add(var)
+        db.session.commit()
+        flash(f"Variable '{key}' created.", "success")
+        return redirect(url_for("admin.list_op_vars"))
+
+    return render_template("admin/op_var_form.html", var=None,
+                           valid_types=sorted(_VALID_TYPES))
+
+
+@bp.route("/op-vars/<int:var_id>/edit", methods=["GET", "POST"])
+@admin_required
+def edit_op_var(var_id):
+    var = OperationVariable.query.get_or_404(var_id)
+    if request.method == "POST":
+        key = request.form.get("key", "").strip()
+        value = request.form.get("value", "").strip()
+        description = request.form.get("description", "").strip() or None
+        data_type = request.form.get("data_type", "string").strip()
+        is_active = request.form.get("is_active") == "1"
+
+        error = _validate_op_var(key, value, data_type, existing_id=var_id)
+        if error:
+            flash(error, "danger")
+            return render_template("admin/op_var_form.html", var=var,
+                                   valid_types=sorted(_VALID_TYPES))
+
+        var.key = key
+        var.value = value
+        var.description = description
+        var.data_type = data_type
+        var.is_active = is_active
+        var.updated_by = current_user.username
+        db.session.commit()
+        flash(f"Variable '{key}' updated.", "success")
+        return redirect(url_for("admin.list_op_vars"))
+
+    return render_template("admin/op_var_form.html", var=var,
+                           valid_types=sorted(_VALID_TYPES))
+
+
+@bp.route("/op-vars/<int:var_id>/delete", methods=["POST"])
+@admin_required
+def delete_op_var(var_id):
+    var = OperationVariable.query.get_or_404(var_id)
+    if var.is_system:
+        flash(f"System variable '{var.key}' cannot be deleted.", "danger")
+        return redirect(url_for("admin.list_op_vars"))
+    key = var.key
+    db.session.delete(var)
+    db.session.commit()
+    flash(f"Variable '{key}' deleted.", "success")
+    return redirect(url_for("admin.list_op_vars"))
+
+
+def _validate_op_var(key: str, value: str, data_type: str, existing_id) -> str | None:
+    """Return error message string or None if valid."""
+    if not key:
+        return "Key is required."
+    import re
+    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", key):
+        return "Key must start with a letter or underscore and contain only letters, digits, and underscores."
+    if data_type not in _VALID_TYPES:
+        return f"Data type must be one of: {', '.join(sorted(_VALID_TYPES))}."
+    # Check uniqueness
+    conflict = OperationVariable.query.filter_by(key=key).first()
+    if conflict and conflict.id != existing_id:
+        return f"A variable with key '{key}' already exists."
+    # Type validation on value
+    if value:
+        if data_type == "date":
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except ValueError:
+                return "Date value must be in YYYY-MM-DD format."
+        elif data_type == "number":
+            try:
+                float(value)
+            except ValueError:
+                return "Number value must be a valid numeric string."
+    return None

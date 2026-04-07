@@ -1,0 +1,95 @@
+{% extends "layout/base.html" %}
+{% block title %}Operation Variables — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2><i class="bi bi-sliders"></i> Operation Variables</h2>
+        <p class="text-muted mb-0">Named variables available to all batch engines at run time. Reference them as <code>{variable_key}</code> in batch task parameters.</p>
+    </div>
+    <a href="{{ url_for('admin.new_op_var') }}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> New Variable</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for cat, msg in messages %}
+<div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">{{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+{% endfor %}{% endif %}{% endwith %}
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Key</th>
+                    <th>Current Value</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th class="text-center">System</th>
+                    <th class="text-center">Active</th>
+                    <th>Last Updated</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in variables %}
+                <tr class="{% if not v.is_active %}text-muted{% endif %}">
+                    <td>
+                        <code class="fw-semibold">{{ v.key }}</code>
+                        {% if v.is_system %}<span class="badge bg-secondary ms-1">system</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if v.value %}
+                            <span class="font-monospace">{{ v.value }}</span>
+                        {% else %}
+                            <span class="text-muted fst-italic">not set</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if v.data_type == 'date' %}
+                            <span class="badge bg-info text-dark">date</span>
+                        {% elif v.data_type == 'number' %}
+                            <span class="badge bg-warning text-dark">number</span>
+                        {% else %}
+                            <span class="badge bg-light text-dark border">string</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ v.description or '—' }}</td>
+                    <td class="text-center">
+                        {% if v.is_system %}<i class="bi bi-lock-fill text-secondary"></i>{% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if v.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                    </td>
+                    <td class="small text-muted">
+                        {% if v.updated_at %}{{ v.updated_at.strftime('%Y-%m-%d %H:%M') }}{% if v.updated_by %} · {{ v.updated_by }}{% endif %}{% else %}—{% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.edit_op_var', var_id=v.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+                        {% if not v.is_system %}
+                        <form method="post" action="{{ url_for('admin.delete_op_var', var_id=v.id) }}" class="d-inline"
+                              onsubmit="return confirm('Delete variable \'{{ v.key }}\'?')">
+                            <button class="btn btn-sm btn-outline-danger">Delete</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-4">No operation variables defined.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header"><i class="bi bi-info-circle"></i> How to use in batch tasks</div>
+    <div class="card-body">
+        <p class="mb-2">Reference any active variable in a batch task's <strong>params JSON</strong> using curly-brace tokens:</p>
+        <pre class="bg-light p-3 rounded"><code>{
+  "p_processing_date": "{processing_date}",
+  "p_run_by":          "{run_by}",
+  "p_as_of_date":      "{as_of_date}"
+}</code></pre>
+        <p class="mb-0 text-muted small">Built-in tokens: <code>{as_of_date}</code> (batch run date) · <code>{run_by}</code> (username). All active operation variables are also available as tokens using their key name.</p>
+    </div>
+</div>
+{% endblock %}

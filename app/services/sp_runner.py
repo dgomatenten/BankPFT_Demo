@@ -85,12 +85,33 @@ def run_sp(
 
 
 def resolve_params(params: dict, as_of_date: date, run_by: str) -> dict:
-    """Replace ``{as_of_date}`` and ``{run_by}`` tokens in parameter values."""
+    """Replace ``{as_of_date}``, ``{run_by}``, and any ``{op_var_key}`` tokens
+    in parameter values.
+
+    Operation variables are loaded from the database (active rows only). The
+    built-in tokens ``{as_of_date}`` and ``{run_by}`` take precedence over any
+    operation variable with the same key.
+    """
+    from app.models.workflow import OperationVariable
+
+    # Build substitution map from DB operation variables (active only)
+    token_map: dict[str, str] = {}
+    try:
+        for v in OperationVariable.query.filter_by(is_active=True).all():
+            if v.value is not None:
+                token_map[v.key] = v.value
+    except Exception:
+        pass  # Fail open — DB may not be ready during tests
+
+    # Built-in tokens always override
+    token_map["as_of_date"] = as_of_date.isoformat()
+    token_map["run_by"] = run_by
+
     resolved = {}
     for k, v in params.items():
         if isinstance(v, str):
-            v = v.replace("{as_of_date}", as_of_date.isoformat())
-            v = v.replace("{run_by}", run_by)
+            for token_key, token_val in token_map.items():
+                v = v.replace(f"{{{token_key}}}", token_val)
         resolved[k] = v
     return resolved
 

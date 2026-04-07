@@ -1,0 +1,100 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ 'Edit Variable' if var else 'New Variable' }} — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4">
+    <i class="bi bi-sliders"></i>
+    {{ 'Edit Variable: ' + var.key if var else 'New Operation Variable' }}
+</h2>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for cat, msg in messages %}
+<div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">{{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+{% endfor %}{% endif %}{% endwith %}
+
+<div class="card" style="max-width: 640px;">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Key <span class="text-danger">*</span></label>
+                <input type="text" name="key" class="form-control font-monospace"
+                       value="{{ var.key if var else '' }}"
+                       placeholder="processing_date"
+                       pattern="[a-zA-Z_][a-zA-Z0-9_]*"
+                       title="Letters, digits and underscores only. Must start with a letter or underscore."
+                       {% if var and var.is_system %}readonly{% endif %}
+                       required>
+                <div class="form-text">Used as <code>{key}</code> token in batch task parameters. Letters, digits, underscores only.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Data Type <span class="text-danger">*</span></label>
+                <select name="data_type" id="data_type" class="form-select" {% if var and var.is_system %}disabled{% endif %}>
+                    {% for t in valid_types %}
+                    <option value="{{ t }}" {{ 'selected' if var and var.data_type == t }}>{{ t | capitalize }}</option>
+                    {% endfor %}
+                </select>
+                {% if var and var.is_system %}
+                <input type="hidden" name="data_type" value="{{ var.data_type }}">
+                {% endif %}
+                <div class="form-text">
+                    <strong>date</strong> — YYYY-MM-DD format &nbsp;·&nbsp;
+                    <strong>number</strong> — numeric value &nbsp;·&nbsp;
+                    <strong>string</strong> — free text
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Value</label>
+                <input type="text" name="value" id="value_input" class="form-control font-monospace"
+                       value="{{ var.value if var else '' }}"
+                       placeholder="{{ 'YYYY-MM-DD' if (not var or var.data_type == 'date') else '' }}">
+                <div class="form-text" id="value_hint">
+                    {% if not var or var.data_type == 'date' %}Enter a date in YYYY-MM-DD format.{% endif %}
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Description</label>
+                <textarea name="description" class="form-control" rows="2"
+                          placeholder="Brief description of what this variable controls">{{ var.description if var else '' }}</textarea>
+            </div>
+
+            {% if var %}
+            <div class="mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="is_active" value="1" {{ 'checked' if var.is_active }}>
+                    <label class="form-check-label" for="is_active">Active</label>
+                </div>
+                <div class="form-text">Inactive variables are not resolved in batch tokens.</div>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg"></i> {{ 'Update' if var else 'Create' }} Variable
+                </button>
+                <a href="{{ url_for('admin.list_op_vars') }}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const typeSelect = document.getElementById("data_type");
+const valueInput = document.getElementById("value_input");
+const valueHint  = document.getElementById("value_hint");
+const hints = {
+    date:   "Enter a date in YYYY-MM-DD format.",
+    number: "Enter a numeric value (integers or decimals).",
+    string: "Enter any text value."
+};
+function updateHint() {
+    const t = typeSelect ? typeSelect.value : "{{ var.data_type if var else 'date' }}";
+    if (valueHint) valueHint.textContent = hints[t] || "";
+    if (valueInput && t === "date")   valueInput.placeholder = "YYYY-MM-DD";
+    else if (valueInput && t === "number") valueInput.placeholder = "e.g. 1.5";
+    else if (valueInput)              valueInput.placeholder = "";
+}
+if (typeSelect) { typeSelect.addEventListener("change", updateHint); updateHint(); }
+</script>
+{% endblock %}

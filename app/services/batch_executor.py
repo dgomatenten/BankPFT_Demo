@@ -14,11 +14,28 @@ from app.models import db
 from app.models.workflow import BatchDefinition, BatchExecution, BatchExecutionStep
 
 
+def _get_processing_date(as_of_date: date) -> date:
+    """Return the active 'processing_date' operation variable value, or fall
+    back to the batch as_of_date if the variable is unset or inactive."""
+    try:
+        from app.models.workflow import OperationVariable
+        var = OperationVariable.query.filter_by(key="processing_date", is_active=True).first()
+        if var and var.value:
+            from datetime import datetime
+            return datetime.strptime(var.value, "%Y-%m-%d").date()
+    except Exception:
+        pass
+    return as_of_date
+
+
 def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecution:
     """Execute all tasks in a BatchDefinition and return the BatchExecution record."""
     defn = db.session.get(BatchDefinition, definition_id)
     if not defn or not defn.is_active:
         raise ValueError(f"BatchDefinition {definition_id} not found or inactive")
+
+    # Resolve processing_date from operation variables (falls back to as_of_date)
+    processing_date = _get_processing_date(as_of_date)
 
     exec_id = str(uuid.uuid4())
     execution = BatchExecution(
@@ -49,7 +66,7 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
         db.session.commit()
 
         try:
-            _run_step(step, as_of_date, run_by)
+            _run_step(step, processing_date, run_by)
             step.completed_at = utc_now()
             db.session.commit()
         except Exception as exc:

@@ -152,6 +152,30 @@ class PostApprovalLog(db.Model):
     executed_by     = db.Column(db.String(50), nullable=False)
 
 
+class OperationVariable(db.Model):
+    """Named variables available to all batch engines at run time.
+
+    System variables (is_system=True) are seeded automatically and cannot be
+    deleted via the UI.  Users may add their own variables and override the
+    value of system variables.
+
+    data_type: 'date' | 'string' | 'number'
+      date   → value must parse as YYYY-MM-DD; exposed as ISO string to engines
+      string → free text
+      number → numeric string; validated as float on save
+    """
+    __tablename__ = "operation_variable"
+    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    key         = db.Column(db.String(100), nullable=False, unique=True)
+    value       = db.Column(db.String(500), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    data_type   = db.Column(db.String(20), nullable=False, default="string")  # date|string|number
+    is_system   = db.Column(db.Boolean, nullable=False, default=False)
+    is_active   = db.Column(db.Boolean, nullable=False, default=True)
+    updated_at  = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    updated_by  = db.Column(db.String(50), nullable=True)
+
+
 class SpRun(db.Model):
     """Tracks each stored-procedure invocation executed from a CUSTOM_SP batch step.
 
