@@ -39,14 +39,14 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | Module | Description |
 |---|---|
 | **User & Group Management** | User login, group-based roles (Maker/Checker/Admin). Admin UI for creating users, groups, and assigning permissions |
-| **Data Upload** | Excel/CSV upload for Instrument, GL, Allocation Ratio, Org Reclassification, Static Distribution, and Static Allocation data with column-level validation |
+| **Manual Data Load** | Excel/CSV upload for Instrument, GL, Allocation Ratio, Org Reclassification, Static Distribution, and Static Allocation data with column-level validation. Accessible under the **Data Management** sidebar group |
 | **Maker/Checker (4-Eyes)** | Upload workflow: DRAFT → PENDING → APPROVED → PROCESSED. Group-based permissions enforce who can make vs check. Maker cannot approve their own submission. On approval, configurable **post-approval actions** run automatically (execute allocation rule IDs or dispatch a stored procedure via `sp_runner`) |
 | **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), **distribution driver** (named sub-table within `ref_static_distribution`), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
 | **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. `CUSTOM_SP` steps execute synchronously — the SP runs inline and the step becomes `COMPLETED` or `FAILED` like any other step type. The SP Run detail page (linked from the Run ID in the execution step table) shows timing, resolved parameters, and any error messages |
 | **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
-| **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default) |
+| **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default). Accessible under the **Data Management** sidebar group |
 | **REST API** | HTTP Basic Auth API at `/api/v1/` — trigger data file imports/exports, run allocation batches, run FTP batches, run multi-task batch definitions, import allocation rules and FTP configs from JSON, and poll status. All responses JSON |
 | **Security** | Login-required on all routes, admin guard on sensitive operations, no debug stack traces in production, friendly 404/500 error pages |
 | **PWA** | Installable as a standalone app (no browser address bar) via web app manifest |
@@ -492,7 +492,7 @@ All routes require login (`@login_required`). Admin routes additionally check gr
 
 1. **Login** — Sign in at `/auth/login` (default accounts: admin/maker1/checker1, password = username)
 2. **Generate test data** — Go to `/testdata` and generate master data, then instrument data and allocation ratios
-3. **Upload data** — Go to `/upload/new`, select data type, upload the Excel file. Validation runs automatically
+3. **Upload data** — Go to **Data Management → Manual Data Load** (or `/upload/new`), select data type, upload the Excel file. Validation runs automatically
 4. **Approve uploads** — Log in as a Checker user (different from maker) to approve (4-Eyes enforcement with group permission check)
 5. **Create a rule** — Go to `/rules/new`, configure source → lookup → output mapping, and optionally add data filters
 6. **Run batch** — Go to `/batch`, select a rule and as-of date, execute the allocation (filters are applied automatically)
@@ -608,6 +608,8 @@ FTP product configurations can be imported in bulk from a JSON file via `/ftp/co
 A reference file with five sample configs is at `sample_ftp_config.json` in the project root.
 
 ## Data File Management
+
+Accessible from **Data Management → Data Files** in the sidebar (`/datafile`).
 
 A JSON-configured batch file I/O engine that reads from an **inbox** folder and writes to an **outbox** folder, independent of the Excel upload workflow.
 

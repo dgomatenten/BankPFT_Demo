@@ -8,9 +8,9 @@ This guide walks through every screen in the Management Allocation System, expla
 
 1. [Login](#1-login)
 2. [Dashboard](#2-dashboard)
-3. [Data Upload — List](#3-data-upload--list)
-4. [Data Upload — New Upload](#4-data-upload--new-upload)
-5. [Data Upload — Detail & Maker/Checker](#5-data-upload--detail--makechecker)
+3. [Manual Data Load — List](#3-manual-data-load--list)
+4. [Manual Data Load — New Upload](#4-manual-data-load--new-upload)
+5. [Manual Data Load — Detail & Maker/Checker](#5-manual-data-load--detail--makechecker)
 6. [Allocation Rules — List](#6-allocation-rules--list)
 7. [Allocation Rules — New Rule](#7-allocation-rules--new-rule)
 8. [Allocation Rules — Entry Mode](#8-allocation-rules--entry-mode)
@@ -89,17 +89,19 @@ The dashboard is the landing page. It provides a quick overview of the system's 
 - **Recent Uploads** — last uploaded files with status badges (DRAFT, PENDING, APPROVED, PROCESSED)
 - **Recent Batch Runs** — latest allocation batch runs with row counts
 
-Use the sidebar navigation on the left to reach any module. Admin users will see additional **Users** and **Groups** links.
+Use the sidebar navigation on the left to reach any module. The **Data Management** group (database icon) expands to show **Manual Data Load** and **Data Files**; it opens automatically when you are on either of those pages. Admin users will see additional **Users**, **Groups**, and **Test Suite** links.
+
+![Sidebar — Data Management group](images/47_sidebar_data_management.png)
 
 ---
 
-## 3. Data Upload — List
+## 3. Manual Data Load — List
 
 **URL:** `/upload`
 
-Shows all upload batches sorted by date, with their current workflow status.
+Shows all upload batches sorted by date, with their current workflow status. Accessible from the **Data Management** → **Manual Data Load** sidebar menu item.
 
-![Upload List](images/02_upload_list.png)
+![Manual Data Load — List](images/48_manual_data_load_list.png)
 
 **Key elements:**
 - **File name** — links to the upload detail page
@@ -113,7 +115,7 @@ Click any file name to view details, or click **New Upload** to upload a file.
 
 ---
 
-## 4. Data Upload — New Upload
+## 4. Manual Data Load — New Upload
 
 **URL:** `/upload/new`
 
@@ -132,7 +134,7 @@ After upload, you are redirected to the detail page showing validation results.
 
 ---
 
-## 5. Data Upload — Detail & Maker/Checker
+## 5. Manual Data Load — Detail & Maker/Checker
 
 **URL:** `/upload/<batch_id>`
 
@@ -1007,7 +1009,11 @@ Open http://localhost:5000 after starting in any mode.
 
 ## 31. Data File Management — Overview
 
-**URL:** `/datafile/`
+**URL:** `/datafile`
+
+Accessible from **Data Management** → **Data Files** in the sidebar.
+
+![Data Files page](images/49_data_files_list.png)
 
 Data File Management provides a JSON-configured batch file I/O engine for loading files from an **inbox** folder and writing output to an **outbox** folder. It operates independently of the Excel upload workflow and does not use the Maker/Checker process.
 

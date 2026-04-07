@@ -19,6 +19,12 @@
         .stat-card.green { border-color: #34a853; }
         .stat-card.orange { border-color: #fbbc04; }
         .stat-card.red { border-color: #ea4335; }
+        /* Data Management collapsible group */
+        .sidebar .nav-group-header { color: rgba(255,255,255,.8); text-decoration: none; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+        .sidebar .nav-group-header:hover { background: rgba(255,255,255,.1); color: #fff; }
+        .sidebar .nav-sub-item { padding-left: 36px !important; font-size: .9rem; }
+        .sidebar .bi-chevron-down { transition: transform .2s; }
+        .sidebar .nav-group-header[aria-expanded="true"] .bi-chevron-down { transform: rotate(180deg); }
     </style>
 </head>
 <body>
@@ -27,8 +33,17 @@
         <nav class="col-md-2 sidebar p-0">
             <div class="brand"><i class="bi bi-bank"></i> BankPFT</div>
             <a href="/"><i class="bi bi-speedometer2"></i> Dashboard</a>
-            <a href="/upload"><i class="bi bi-cloud-upload"></i> Data Upload</a>
-            <a href="/datafile"><i class="bi bi-file-earmark-binary"></i> Data Files</a>
+            <!-- Data Management collapsible group -->
+            <a href="#DataMgmt" data-bs-toggle="collapse"
+               class="nav-group-header"
+               aria-expanded="{{ 'true' if request.path.startswith('/upload') or request.path.startswith('/datafile') else 'false' }}">
+                <span><i class="bi bi-database"></i> Data Management</span>
+                <i class="bi bi-chevron-down small"></i>
+            </a>
+            <div class="collapse {% if request.path.startswith('/upload') or request.path.startswith('/datafile') %}show{% endif %}" id="DataMgmt">
+                <a href="/upload"   class="nav-sub-item"><i class="bi bi-cloud-upload"></i> Manual Data Load</a>
+                <a href="/datafile" class="nav-sub-item"><i class="bi bi-file-earmark-binary"></i> Data Files</a>
+            </div>
             <a href="/rules"><i class="bi bi-gear"></i> Allocation Rules</a>
             <a href="/batch"><i class="bi bi-play-circle"></i> Batch Execution</a>
             <a href="/batch/definitions"><i class="bi bi-collection-play"></i> Batch Definitions</a>
