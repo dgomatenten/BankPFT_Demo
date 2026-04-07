@@ -267,14 +267,40 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                 raise ValueError(f"Rule '{rule.name}' has no join key configured.")
             primary_join_col = join_col_list[0]
             pandas_join = join_col_list[0] if len(join_col_list) == 1 else join_col_list
+
+            # Prefix all non-join-key lookup columns with "_lkp_" to prevent name
+            # collisions when the source table shares column names with the lookup
+            # table (e.g. fct_mgmt_instrument and ref_static_allocation both have
+            # source_org_unit_id / target_org_unit_id).
+            join_key_set = set(join_col_list)
+            lkp_prefix_map = {
+                c: f"_lkp_{c}" for c in alloc_data.columns if c not in join_key_set
+            }
+            if lkp_prefix_map:
+                alloc_data = alloc_data.rename(columns=lkp_prefix_map)
+
+            # Translate dim-config lookup_column references to the prefixed names
+            def _translate_lkp_dim_cfg(dim_cfg):
+                out = {}
+                for col, cfg in dim_cfg.items():
+                    if cfg.get("mode") == "lookup" and "lookup_column" in cfg:
+                        raw = cfg["lookup_column"]
+                        out[col] = {**cfg, "lookup_column": lkp_prefix_map.get(raw, raw)}
+                    else:
+                        out[col] = cfg
+                return out
+
+            output_dim_cfg = _translate_lkp_dim_cfg(output_dim_cfg)
+            credit_dim_cfg = _translate_lkp_dim_cfg(credit_dim_cfg)
+
             logger.log("JOIN",   f"Merging source ↔ lookup on {pandas_join!r} ({ALLOC_CONFIG.get('join_type', 'left')} join)")
             merged = source_data.merge(
                 alloc_data, on=pandas_join, how=ALLOC_CONFIG.get("join_type", "left")
             )
 
-            id_col         = lkp_cfg["id_column"]
-            ratio_col      = lkp_cfg["ratio_column"]
-            target_org_col = lkp_cfg["target_org_column"]
+            id_col         = lkp_prefix_map.get(lkp_cfg["id_column"],         lkp_cfg["id_column"])
+            ratio_col      = lkp_prefix_map.get(lkp_cfg["ratio_column"],      lkp_cfg["ratio_column"])
+            target_org_col = lkp_prefix_map.get(lkp_cfg["target_org_column"], lkp_cfg["target_org_column"])
 
             matched = merged[merged[id_col].notna()].copy()
             orphan  = merged[merged[id_col].isna()].copy()
@@ -293,9 +319,12 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
                 # For RATIO/DISTRIBUTION, target_org defaults to the lookup table's
                 # target org column (the allocated-to org).  The user can override via
-                # output_dim_json → ou_col → mode: fixed / same_as_source.
+                # output_dim_json.  When the source is a management table the form
+                # stores the config under "target_org_unit_id"; for proc tables it
+                # is stored under the source org column name (ou_col).
                 lkp_tgt_org = str(row.get(target_org_col, src_org))
-                tgt_org  = _resolve_dim_value(row, ou_col,           output_dim_cfg, lkp_tgt_org, target_org_col)
+                tgt_cfg_key = "target_org_unit_id" if "target_org_unit_id" in output_dim_cfg else ou_col
+                tgt_org  = _resolve_dim_value(row, tgt_cfg_key,      output_dim_cfg, lkp_tgt_org, target_org_col)
                 out_cust = _resolve_dim_value(row, "customer_id",    output_dim_cfg, src_cust,    target_org_col)
                 out_prod = _resolve_dim_value(row, "product_code",   output_dim_cfg, src_prod,    target_org_col)
                 out_acct = _resolve_dim_value(row, acct_col,         output_dim_cfg, src_acct,    target_org_col)
@@ -303,7 +332,8 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                 if supports_fe:
                     # Resolve credit dims once (same across all financial elements)
                     if emit_credit:
-                        crd_org  = _resolve_dim_value(row, ou_col,          credit_dim_cfg, src_org,  target_org_col)
+                        crd_cfg_key = "target_org_unit_id" if "target_org_unit_id" in credit_dim_cfg else ou_col
+                        crd_org  = _resolve_dim_value(row, crd_cfg_key,     credit_dim_cfg, src_org,  target_org_col)
                         crd_cust = _resolve_dim_value(row, "customer_id",   credit_dim_cfg, src_cust, target_org_col)
                         crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, target_org_col)
                         crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, target_org_col)
@@ -373,7 +403,8 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
                     if emit_credit:
                         _credit_count += 1
-                        crd_org  = _resolve_dim_value(row, ou_col,          credit_dim_cfg, src_org,  target_org_col)
+                        crd_cfg_key = "target_org_unit_id" if "target_org_unit_id" in credit_dim_cfg else ou_col
+                        crd_org  = _resolve_dim_value(row, crd_cfg_key,     credit_dim_cfg, src_org,  target_org_col)
                         crd_cust = _resolve_dim_value(row, "customer_id",   credit_dim_cfg, src_cust, target_org_col)
                         crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, target_org_col)
                         crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, target_org_col)

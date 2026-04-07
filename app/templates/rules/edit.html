@@ -217,7 +217,7 @@
         });
     }
 
-    function buildDimMapRows(targetBody, srcTable, lkpTable) {
+    function buildDimMapRows(targetBody, srcTable, lkpTable, isLookupMethod) {
         const dims    = getDims(srcTable);
         const lkpCols = getLkpCols(lkpTable);
         const lkpOpts = lkpCols.map(c => `<option value="${c.column}">${c.label}</option>`).join('');
@@ -225,23 +225,25 @@
         dims.forEach(d => {
             const tr = document.createElement('tr');
             tr.dataset.dim = d.column;
-            // org_unit_id controls target_org_unit_id in the output;
+            // org_unit_id / target_org_unit_id controls target_org_unit_id in output;
             // source_org_unit_id is always auto-filled from the source row.
-            const isOrgUnit = (d.column === 'org_unit_id');
+            const isOrgUnit = (d.column === 'org_unit_id' || d.column === 'target_org_unit_id');
             const labelSuffix = isOrgUnit
                 ? '<br><small class="text-info">→ target_org_unit_id (source_org_unit_id auto-filled)</small>'
                 : '';
+            const defaultMode = (isOrgUnit && isLookupMethod) ? 'lookup' : 'same_as_source';
+            const lkpDisplay  = defaultMode === 'lookup' ? '' : 'none';
             tr.innerHTML = `
                 <td><strong>${d.label}</strong><br><small class="text-muted">${d.column}</small>${labelSuffix}</td>
                 <td style="width:200px">
                     <select class="form-select form-select-sm out-mode-sel">
-                        <option value="same_as_source">Same as Source</option>
-                        <option value="lookup">From Lookup</option>
+                        <option value="same_as_source" ${defaultMode === 'same_as_source' ? 'selected' : ''}>Same as Source</option>
+                        <option value="lookup" ${defaultMode === 'lookup' ? 'selected' : ''}>From Lookup</option>
                         <option value="fixed">Fixed Value</option>
                     </select>
                 </td>
                 <td>
-                    <select class="form-select form-select-sm out-lkp-sel" style="display:none">${lkpOpts}</select>
+                    <select class="form-select form-select-sm out-lkp-sel" style="display:${lkpDisplay}">${lkpOpts}</select>
                     <input type="text" class="form-control form-control-sm out-fixed-inp" placeholder="fixed value" style="display:none">
                 </td>`;
             targetBody.appendChild(tr);
@@ -328,12 +330,18 @@
         });
     }
 
+    function getCheckedMethod() {
+        const sel = document.querySelector('input[name="allocation_method_radio"]:checked');
+        return sel ? sel.value : 'RATIO';
+    }
+
     function rebuild(restoreInit) {
         const src = srcSelect.value;
         const lkp = lkpSelect.value;
+        const isLookup = getCheckedMethod() !== 'STATIC';
         buildSrcRows(src);
-        buildDimMapRows(outBody, src, lkp);
-        buildDimMapRows(crdBody, src, lkp);
+        buildDimMapRows(outBody, src, lkp, isLookup);
+        buildDimMapRows(crdBody, src, lkp, isLookup);
         if (restoreInit) {
             restoreSrcBody(RULE_INIT.source_dim);
             restoreOutBody(outBody, RULE_INIT.output_dim);
@@ -345,8 +353,9 @@
 
     srcSelect.addEventListener('change', () => rebuild(false));
     lkpSelect.addEventListener('change', function() {
-        buildDimMapRows(outBody, srcSelect.value, this.value);
-        buildDimMapRows(crdBody, srcSelect.value, this.value);
+        const isLookup = getCheckedMethod() !== 'STATIC';
+        buildDimMapRows(outBody, srcSelect.value, this.value, isLookup);
+        buildDimMapRows(crdBody, srcSelect.value, this.value, isLookup);
     });
     document.querySelectorAll('input[name="entry_mode"]').forEach(r =>
         r.addEventListener('change', syncEntryCards));
@@ -369,16 +378,20 @@
             lookupTableCol.style.display     = 'none';
             joinKeysCol.style.display        = 'none';
             distributionDriverCard.style.display = 'none';
+            buildDimMapRows(outBody, srcSelect.value, lkpSelect.value, false);
+            buildDimMapRows(crdBody, srcSelect.value, lkpSelect.value, false);
         } else {
             lookupTableCol.style.display = '';
             joinKeysCol.style.display    = '';
             if (method === 'DISTRIBUTION') {
                 lkpSelect.value = DISTRIBUTION_TABLE;
                 distributionDriverCard.style.display = '';
-                buildDimMapRows(outBody, srcSelect.value, lkpSelect.value);
-                buildDimMapRows(crdBody, srcSelect.value, lkpSelect.value);
+                buildDimMapRows(outBody, srcSelect.value, lkpSelect.value, true);
+                buildDimMapRows(crdBody, srcSelect.value, lkpSelect.value, true);
             } else {
                 distributionDriverCard.style.display = 'none';
+                buildDimMapRows(outBody, srcSelect.value, lkpSelect.value, true);
+                buildDimMapRows(crdBody, srcSelect.value, lkpSelect.value, true);
             }
         }
     }
