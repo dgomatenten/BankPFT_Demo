@@ -176,6 +176,31 @@ class OperationVariable(db.Model):
     updated_by  = db.Column(db.String(50), nullable=True)
 
 
+class AlertConfig(db.Model):
+    """User-defined alert rules evaluated on every dashboard load.
+
+    check_type: 'table_row_check'
+        Checks whether the configured table has at least one row for the
+        current processing_date on the configured date_column.
+        Fires the alert when NO rows are found (i.e. data is missing).
+
+    severity: 'danger' | 'warning' | 'info'
+    """
+    __tablename__ = "alert_config"
+    id           = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name         = db.Column(db.String(100), nullable=False)
+    description  = db.Column(db.Text, nullable=True)
+    check_type   = db.Column(db.String(30), nullable=False, default="table_row_check")
+    # table_row_check fields
+    table_name   = db.Column(db.String(100), nullable=True)   # DB table to query
+    date_column  = db.Column(db.String(100), nullable=True)   # column to filter by processing_date
+    severity     = db.Column(db.String(20), nullable=False, default="warning")
+    is_active    = db.Column(db.Boolean, nullable=False, default=True)
+    created_at   = db.Column(db.DateTime(timezone=True), default=utc_now)
+    updated_at   = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    created_by   = db.Column(db.String(50), nullable=True)
+
+
 class SpRun(db.Model):
     """Tracks each stored-procedure invocation executed from a CUSTOM_SP batch step.
 

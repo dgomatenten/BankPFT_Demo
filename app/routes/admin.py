@@ -4,7 +4,7 @@ from functools import wraps
 from datetime import datetime
 from app.models import db
 from app.models.auth import User, Group
-from app.models.workflow import OperationVariable
+from app.models.workflow import OperationVariable, AlertConfig
 
 bp = Blueprint("admin", __name__)
 
@@ -264,4 +264,148 @@ def _validate_op_var(key: str, value: str, data_type: str, existing_id) -> str |
                 float(value)
             except ValueError:
                 return "Number value must be a valid numeric string."
+    return None
+
+
+# ── Alert Configurations ───────────────────────────────────────────────────
+
+_VALID_SEVERITIES = {"danger", "warning", "info"}
+_VALID_CHECK_TYPES = {"table_row_check"}
+
+
+def _available_tables() -> list[str]:
+    """Return sorted list of all table names known to the model registry."""
+    try:
+        from app.models.registry import MODEL_REGISTRY
+        return sorted(MODEL_REGISTRY.keys())
+    except Exception:
+        return []
+
+
+def _date_columns_for(table_name: str) -> list[str]:
+    """Return column names that look like date fields for the given table."""
+    try:
+        from app.models.registry import MODEL_REGISTRY
+        model = MODEL_REGISTRY.get(table_name)
+        if model is None:
+            return []
+        cols = []
+        for col in model.__table__.columns:
+            if str(col.type).upper().startswith(("DATE", "TIMESTAMP")):
+                cols.append(col.name)
+        return cols
+    except Exception:
+        return []
+
+
+@bp.route("/alert-configs")
+@admin_required
+def list_alert_configs():
+    configs = AlertConfig.query.order_by(AlertConfig.name).all()
+    return render_template("admin/alert_configs.html", configs=configs)
+
+
+@bp.route("/alert-configs/new", methods=["GET", "POST"])
+@admin_required
+def new_alert_config():
+    tables = _available_tables()
+    if request.method == "POST":
+        err = _validate_alert_config(
+            name=request.form.get("name", "").strip(),
+            check_type=request.form.get("check_type", "").strip(),
+            table_name=request.form.get("table_name", "").strip(),
+            date_column=request.form.get("date_column", "").strip(),
+            severity=request.form.get("severity", "warning"),
+            existing_id=None,
+        )
+        if err:
+            flash(err, "danger")
+            return render_template("admin/alert_config_form.html", config=None,
+                                   tables=tables, action="new")
+        cfg = AlertConfig(
+            name=request.form.get("name", "").strip(),
+            description=request.form.get("description", "").strip() or None,
+            check_type=request.form.get("check_type", "table_row_check"),
+            table_name=request.form.get("table_name", "").strip() or None,
+            date_column=request.form.get("date_column", "").strip() or None,
+            severity=request.form.get("severity", "warning"),
+            is_active="is_active" in request.form,
+            created_by=current_user.username,
+        )
+        db.session.add(cfg)
+        db.session.commit()
+        flash(f"Alert config '{cfg.name}' created.", "success")
+        return redirect(url_for("admin.list_alert_configs"))
+    return render_template("admin/alert_config_form.html", config=None,
+                           tables=tables, action="new")
+
+
+@bp.route("/alert-configs/<int:cfg_id>/edit", methods=["GET", "POST"])
+@admin_required
+def edit_alert_config(cfg_id):
+    cfg = AlertConfig.query.get_or_404(cfg_id)
+    tables = _available_tables()
+    if request.method == "POST":
+        new_name = request.form.get("name", "").strip()
+        err = _validate_alert_config(
+            name=new_name,
+            check_type=request.form.get("check_type", "").strip(),
+            table_name=request.form.get("table_name", "").strip(),
+            date_column=request.form.get("date_column", "").strip(),
+            severity=request.form.get("severity", "warning"),
+            existing_id=cfg_id,
+        )
+        if err:
+            flash(err, "danger")
+            return render_template("admin/alert_config_form.html", config=cfg,
+                                   tables=tables, action="edit")
+        cfg.name        = new_name
+        cfg.description = request.form.get("description", "").strip() or None
+        cfg.check_type  = request.form.get("check_type", "table_row_check")
+        cfg.table_name  = request.form.get("table_name", "").strip() or None
+        cfg.date_column = request.form.get("date_column", "").strip() or None
+        cfg.severity    = request.form.get("severity", "warning")
+        cfg.is_active   = "is_active" in request.form
+        db.session.commit()
+        flash(f"Alert config '{cfg.name}' updated.", "success")
+        return redirect(url_for("admin.list_alert_configs"))
+    return render_template("admin/alert_config_form.html", config=cfg,
+                           tables=tables, action="edit")
+
+
+@bp.route("/alert-configs/<int:cfg_id>/delete", methods=["POST"])
+@admin_required
+def delete_alert_config(cfg_id):
+    cfg = AlertConfig.query.get_or_404(cfg_id)
+    name = cfg.name
+    db.session.delete(cfg)
+    db.session.commit()
+    flash(f"Alert config '{name}' deleted.", "success")
+    return redirect(url_for("admin.list_alert_configs"))
+
+
+@bp.route("/alert-configs/date-columns")
+@admin_required
+def alert_config_date_columns():
+    """AJAX: return JSON list of date columns for a given table."""
+    from flask import jsonify
+    table = request.args.get("table", "")
+    return jsonify(_date_columns_for(table))
+
+
+def _validate_alert_config(name, check_type, table_name, date_column, severity, existing_id) -> str | None:
+    if not name:
+        return "Name is required."
+    conflict = AlertConfig.query.filter_by(name=name).first()
+    if conflict and conflict.id != existing_id:
+        return f"An alert config named '{name}' already exists."
+    if check_type not in _VALID_CHECK_TYPES:
+        return f"Check type must be one of: {', '.join(sorted(_VALID_CHECK_TYPES))}."
+    if check_type == "table_row_check":
+        if not table_name:
+            return "Table name is required for a row-check alert."
+        if not date_column:
+            return "Date column is required for a row-check alert."
+    if severity not in _VALID_SEVERITIES:
+        return f"Severity must be one of: {', '.join(sorted(_VALID_SEVERITIES))}."
     return None

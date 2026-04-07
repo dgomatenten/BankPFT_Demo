@@ -1,0 +1,152 @@
+{% extends "layout/base.html" %}
+{% block title %}{% if config %}Edit{% else %}New{% endif %} Alert Config — BankPFT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-bell"></i> {% if config %}Edit Alert Config{% else %}New Alert Config{% endif %}</h2>
+    <a href="{{ url_for('admin.list_alert_configs') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for cat, msg in messages %}
+<div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">{{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+{% endfor %}{% endif %}{% endwith %}
+
+<div class="row">
+<div class="col-md-7">
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+        <input type="text" name="name" class="form-control"
+               value="{{ config.name if config else '' }}" placeholder="e.g. Instrument data check" required>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Description</label>
+        <textarea name="description" class="form-control" rows="2"
+                  placeholder="Optional — shown in the alert list">{{ config.description if config else '' }}</textarea>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Check Type <span class="text-danger">*</span></label>
+        <select name="check_type" class="form-select" id="checkTypeSelect">
+          <option value="table_row_check" {% if not config or config.check_type == 'table_row_check' %}selected{% endif %}>
+            Table Row Check — alert when a table has no data for the processing date
+          </option>
+        </select>
+      </div>
+
+      <div id="tableRowSection">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Table <span class="text-danger">*</span></label>
+          <select name="table_name" class="form-select" id="tableSelect">
+            <option value="">— select table —</option>
+            {% for t in tables %}
+            <option value="{{ t }}" {% if config and config.table_name == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Query this table for rows where <code>date_column = processing_date</code>.</div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Date Column <span class="text-danger">*</span></label>
+          <select name="date_column" class="form-select" id="dateColumnSelect">
+            <option value="">— select table first —</option>
+            {% if config and config.date_column %}
+            <option value="{{ config.date_column }}" selected>{{ config.date_column }}</option>
+            {% endif %}
+          </select>
+          <div class="form-text">The column used to filter rows by processing date.</div>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Severity</label>
+        <div class="d-flex gap-3">
+          {% for sev, label, col in [('danger','Danger','danger'), ('warning','Warning','warning'), ('info','Info','info')] %}
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="severity" id="sev_{{ sev }}"
+                   value="{{ sev }}" {% if (config and config.severity == sev) or (not config and sev == 'warning') %}checked{% endif %}>
+            <label class="form-check-label" for="sev_{{ sev }}">
+              <span class="badge bg-{{ col }} {% if col == 'warning' %}text-dark{% endif %}">{{ label }}</span>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="is_active" id="isActiveSwitch"
+                 {% if not config or config.is_active %}checked{% endif %}>
+          <label class="form-check-label" for="isActiveSwitch">Active (evaluate on dashboard)</label>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {% if config %}Save Changes{% else %}Create Alert{% endif %}
+        </button>
+        <a href="{{ url_for('admin.list_alert_configs') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+</div>
+
+<div class="col-md-5">
+  <div class="alert alert-light border">
+    <h6 class="fw-semibold"><i class="bi bi-info-circle me-1"></i>Table Row Check</h6>
+    <p class="small mb-2">
+      Fires when the selected table contains <strong>zero rows</strong> for the current
+      <code>processing_date</code> operation variable on the chosen date column.
+    </p>
+    <p class="small mb-0">
+      Typical uses:
+    </p>
+    <ul class="small mb-0">
+      <li><code>stg_inst_data / as_of_date</code> — instrument data loaded?</li>
+      <li><code>stg_gl_data / as_of_date</code> — GL data loaded?</li>
+      <li><code>fct_mgmt_ledger / as_of_date</code> — allocation run?</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<script>
+(function () {
+  const tableSelect = document.getElementById("tableSelect");
+  const dateColSelect = document.getElementById("dateColumnSelect");
+  const preselectedCol = {{ ('"' + config.date_column + '"') if config and config.date_column else 'null' }};
+
+  function loadDateColumns(tableName, selectValue) {
+    if (!tableName) {
+      dateColSelect.innerHTML = '<option value="">— select table first —</option>';
+      return;
+    }
+    fetch('/admin/alert-configs/date-columns?table=' + encodeURIComponent(tableName))
+      .then(r => r.json())
+      .then(cols => {
+        dateColSelect.innerHTML = '<option value="">— select column —</option>';
+        cols.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          if (c === selectValue) opt.selected = true;
+          dateColSelect.appendChild(opt);
+        });
+      });
+  }
+
+  tableSelect.addEventListener('change', function () {
+    loadDateColumns(this.value, null);
+  });
+
+  // On page load populate columns for pre-selected table
+  if (tableSelect.value) {
+    loadDateColumns(tableSelect.value, preselectedCol);
+  }
+})();
+</script>
+{% endblock %}
