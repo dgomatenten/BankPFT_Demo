@@ -50,6 +50,9 @@ This guide walks through every screen in the Management Allocation System, expla
 41. [Batch Execution — Step-by-Step Detail](#41-batch-execution--step-by-step-detail)
 42. [Batch Execution — CUSTOM_SP Step Result](#42-batch-execution--custom_sp-step-result)
 43. [SP Run Detail](#43-sp-run-detail)
+44. [Operation Variables](#44-operation-variables)
+45. [Dashboard Alerts](#45-dashboard-alerts)
+46. [Alert Configurations](#46-alert-configurations)
 
 ---
 
@@ -82,16 +85,15 @@ After login, the sidebar shows your display name, role badges (Maker/Checker/Adm
 
 The dashboard is the landing page. It provides a quick overview of the system's current state.
 
-![Dashboard](images/01_dashboard.png)
+![Dashboard](images/50_dashboard_alerts.png)
 
 **Key elements:**
+- **Alerts panel** — appears at the top when there are active alerts (failed batches, pending approvals, inbox files, stale processing date, or any configured table row checks). Each alert row shows a severity icon, a message, and a **View** link
 - **Summary cards** — counts of Recent Uploads, Active Rules, Batch Runs, and Ledger Records
 - **Recent Uploads** — last uploaded files with status badges (DRAFT, PENDING, APPROVED, PROCESSED)
 - **Recent Batch Runs** — latest allocation batch runs with row counts
 
-Use the sidebar navigation on the left to reach any module. The **Data Management** group (database icon) expands to show **Manual Data Load** and **Data Files**; it opens automatically when you are on either of those pages. Admin users will see additional **Users**, **Groups**, and **Test Suite** links.
-
-![Sidebar — Data Management group](images/47_sidebar_data_management.png)
+Use the sidebar navigation on the left to reach any module. The **Data Management** group (database icon) expands to show **Manual Data Load** and **Data Files**; it opens automatically when you are on either of those pages. Admin users will see additional **Users**, **Groups**, **Operation Variables**, **Alert Configurations**, and **Test Suite** links.
 
 ---
 
@@ -2364,4 +2366,110 @@ If no parameters were configured, the panel shows "No parameters".
 ![SP Run Detail — Failed](images/46_sp_detail_failed.png)
 
 **Navigation:** Use the ← back arrow button to return to the parent batch execution detail page.
+
+---
+
+## 44. Operation Variables
+
+**URL:** `/admin/op-vars`  *(Admin only)*
+
+A key/value configuration store for named variables that are available to all batch engines at run time. Reference any variable as `{key}` in batch task `params_json`.
+
+**Key elements:**
+- **Key** — unique identifier (letters, digits, underscores; must start with a letter or underscore)
+- **Current Value** — the stored value; date variables display as `YYYY-MM-DD`
+- **Type** — `date` / `string` / `number` badge
+- **System** — lock icon for system-seeded variables (cannot be deleted)
+- **Active** — only active variables are resolved as tokens at batch run time
+- **Last Updated** — timestamp of the most recent change
+
+### System Variables
+
+| Key | Default | Purpose |
+|---|---|---|
+| `processing_date` | today's date | The effective date used by all batch engines (Allocation, FTP, Data File). Update before each processing cycle |
+
+### User-defined Variables
+
+Variables you add are available as `{key}` tokens alongside the built-in tokens. Example: add `fiscal_year` = `2026` and reference it as `{fiscal_year}` in a CUSTOM_SP `params_json`.
+
+### Built-in Tokens (always available in CUSTOM_SP)
+
+| Token | Value |
+|---|---|
+| `{as_of_date}` | Date entered on the batch run form |
+| `{processing_date}` | Value of the `processing_date` operation variable |
+| `{run_by}` | Username of the person running the batch |
+
+> **Note:** All engines (Allocation, FTP, Data File) use `processing_date` as the effective date. `{as_of_date}` gives the raw form input separately, for use in CUSTOM_SP parameters only.
+
+---
+
+## 45. Dashboard Alerts
+
+**URL:** `/` (evaluated on every dashboard load)
+
+The Alerts panel appears at the top of the Dashboard whenever there are active alerts. Each alert shows a severity-colored icon, a message, and a **View** link to the relevant page.
+
+![Dashboard Alerts](images/50_dashboard_alerts.png)
+
+### Built-in Alert Checks
+
+| Check | Severity | Condition | Link |
+|---|---|---|---|
+| Failed upload batches | danger | FAILED uploads in last 7 days | `/upload` |
+| Failed batch executions | danger | FAILED or PARTIAL `BatchExecution` in last 7 days | `/batch` |
+| Pending uploads | warning | Uploads awaiting checker approval | `/upload` |
+| Inbox files | info | Files in `datafile_inbox/` not yet imported | `/datafile` |
+| Stale processing date | warning | `processing_date` op var unset or > 3 days behind today | `/admin/op-vars` |
+
+### Configured Alerts
+
+Additional row-check alerts fire when no rows exist in a configured table for the current `processing_date`. These are managed under **Admin → Alert Configurations** (see [Section 46](#46-alert-configurations)).
+
+All checks are read-only and safe to run on every page load. A check that raises an exception is silently skipped so the dashboard always loads.
+
+---
+
+## 46. Alert Configurations
+
+**URL:** `/admin/alert-configs`  *(Admin only)*
+
+Define custom table row-check rules. Each active rule queries a database table for rows matching the current `processing_date` and fires an alert on the dashboard if none are found.
+
+![Alert Configurations — List](images/51_alert_configs_list.png)
+
+### Creating an Alert Config
+
+![Alert Configurations — New Form](images/52_alert_config_form.png)
+
+**Fields:**
+
+| Field | Description |
+|---|---|
+| **Name** | Short label shown in the alert message on the dashboard |
+| **Description** | Optional detail shown in the config list |
+| **Check Type** | `Table Row Check` — the only supported type |
+| **Table** | Database table to query. Dropdown populated from the model registry |
+| **Date Column** | Column to filter by `processing_date`. Loaded dynamically via AJAX when a table is selected — only DATE/TIMESTAMP columns are shown |
+| **Severity** | `danger` / `warning` / `info` — controls alert color and sort order on the dashboard |
+| **Active** | When disabled, the rule is skipped on dashboard load |
+
+### How It Fires
+
+At dashboard load, the engine runs:
+```sql
+SELECT COUNT(*) FROM <table_name> WHERE <date_column> = <processing_date>
+```
+If the count is **0**, an alert fires with the configured severity and message:  
+`"<Name>: no data found in '<table_name>' for processing date <date>."`
+
+### Typical Configurations
+
+| Name | Table | Date Column | Severity |
+|---|---|---|---|
+| Instrument data loaded | `stg_inst_data` | `as_of_date` | warning |
+| GL data loaded | `stg_gl_data` | `as_of_date` | warning |
+| Allocation run | `fct_mgmt_ledger` | `as_of_date` | info |
+| Processed instruments | `proc_inst_data` | `as_of_date` | warning |
 
