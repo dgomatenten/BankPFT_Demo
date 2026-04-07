@@ -2,6 +2,7 @@ from flask import Blueprint, render_template
 from flask_login import login_required
 from app.models.workflow import UploadBatch, AllocationRule, BatchRun
 from app.models.allocation import FctMgmtLedger
+from app.services.alerts_service import get_dashboard_alerts
 
 bp = Blueprint("dashboard", __name__)
 
@@ -13,10 +14,12 @@ def index():
     rules = AllocationRule.query.order_by(AllocationRule.created_at.desc()).limit(10).all()
     batches = BatchRun.query.order_by(BatchRun.started_at.desc()).limit(10).all()
     ledger_count = FctMgmtLedger.query.count()
+    alerts = get_dashboard_alerts()
     return render_template(
         "dashboard/index.html",
         uploads=uploads,
         rules=rules,
         batches=batches,
         ledger_count=ledger_count,
+        alerts=alerts,
     )

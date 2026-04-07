@@ -9,6 +9,7 @@ from app.services.testdata_service import (
     generate_interest_rates,
     generate_ftp_configs,
     generate_interest_rate_excel,
+    seed_default_allocation_rules,
 )
 import os
 
@@ -98,4 +99,14 @@ def gen_interest_rate_testdata():
     output_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "templates")
     path, count = generate_interest_rate_excel(output_dir)
     flash(f"Generated interest rate test data: {count} rows in interest_rate_testdata.xlsx", "success")
+    return redirect(url_for("testdata.index"))
+
+
+@bp.route("/seed-default-rules", methods=["POST"])
+def seed_default_rules():
+    added = seed_default_allocation_rules()
+    if added:
+        flash(f"Seeded {added} default allocation rule(s).", "success")
+    else:
+        flash("Default allocation rules already exist — nothing added.", "info")
     return redirect(url_for("testdata.index"))

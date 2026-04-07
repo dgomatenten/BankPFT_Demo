@@ -21,7 +21,7 @@ from app.core.filter_engine import apply_df_filters
 from app.core.batch_logger import BatchLogger, BATCH_LOG_DIR
 
 # ── Load configuration ──
-ALLOC_CONFIG = load_config("allocation_config")
+ALLOC_CONFIG = load_config("allocation_engine_config")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -117,6 +117,17 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
     if not SourceModel:
         raise ValueError(f"No model registered for source: {rule.source_table}")
+
+    # Financial-element unpivot: emit one output row per balance column when the
+    # output model has a financial_element column and the source table declares
+    # financial_element_columns in allocation_config.json.
+    fe_cols     = src_cfg.get("financial_element_columns", {})  # {col: label}
+    supports_fe = bool(fe_cols) and hasattr(OutputModel, "financial_element")
+
+    # org_unit_column: the source column that carries the org unit identifier.
+    # proc_inst_data / proc_gl_data use "org_unit_id";
+    # fct_mgmt_ledger / fct_mgmt_instrument use "source_org_unit_id".
+    ou_col = src_cfg.get("org_unit_column", "org_unit_id")
 
     # For lookup-based methods resolve lookup config/model; STATIC needs neither
     if alloc_method in ("RATIO", "DISTRIBUTION"):
@@ -274,61 +285,114 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                   f" (emit_debit={emit_debit}, emit_credit={emit_credit})")
             for _, row in matched.iterrows():
                 src_acct = str(row.get(acct_col, ""))
-                src_org  = str(row.get("org_unit_id", ""))
+                src_org  = str(row.get(ou_col, ""))
                 src_cust = str(row.get("customer_id", row.get(primary_join_col, "")))
                 src_prod = str(row.get("product_code", ""))
                 src_bal  = float(row[balance_cols[0]])
                 ratio    = float(row[ratio_col])
 
-                alloc_bal = src_bal * ratio
-                alloc_inc = float(row[balance_cols[1]]) * ratio if len(balance_cols) > 1 else 0.0
+                # For RATIO/DISTRIBUTION, target_org defaults to the lookup table's
+                # target org column (the allocated-to org).  The user can override via
+                # output_dim_json → ou_col → mode: fixed / same_as_source.
+                lkp_tgt_org = str(row.get(target_org_col, src_org))
+                tgt_org  = _resolve_dim_value(row, ou_col,           output_dim_cfg, lkp_tgt_org, target_org_col)
+                out_cust = _resolve_dim_value(row, "customer_id",    output_dim_cfg, src_cust,    target_org_col)
+                out_prod = _resolve_dim_value(row, "product_code",   output_dim_cfg, src_prod,    target_org_col)
+                out_acct = _resolve_dim_value(row, acct_col,         output_dim_cfg, src_acct,    target_org_col)
 
-                tgt_org  = _resolve_dim_value(row, "org_unit_id",  output_dim_cfg, src_org,  target_org_col)
-                out_cust = _resolve_dim_value(row, "customer_id",  output_dim_cfg, src_cust, target_org_col)
-                out_prod = _resolve_dim_value(row, "product_code", output_dim_cfg, src_prod, target_org_col)
-                out_acct = _resolve_dim_value(row, acct_col,       output_dim_cfg, src_acct, target_org_col)
+                if supports_fe:
+                    # Resolve credit dims once (same across all financial elements)
+                    if emit_credit:
+                        crd_org  = _resolve_dim_value(row, ou_col,          credit_dim_cfg, src_org,  target_org_col)
+                        crd_cust = _resolve_dim_value(row, "customer_id",   credit_dim_cfg, src_cust, target_org_col)
+                        crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, target_org_col)
+                        crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, target_org_col)
+                    for bal_col, fe_label in fe_cols.items():
+                        src_fe_val = float(row.get(bal_col, 0))
+                        fe_alloc   = src_fe_val * ratio
+                        if emit_debit:
+                            _debit_count += 1
+                            results.append(OutputModel(
+                                batch_run_id=batch_id,
+                                as_of_date=as_of_date,
+                                entry_type="DEBIT",
+                                financial_element=fe_label,
+                                allocation_id=str(row[id_col]),
+                                source_account_id=out_acct,
+                                customer_id=out_cust,
+                                product_code=out_prod,
+                                source_org_unit_id=src_org,
+                                target_org_unit_id=tgt_org,
+                                source_balance=src_fe_val,
+                                allocated_balance=fe_alloc,
+                                allocated_income=0.0,
+                                ratio_applied=ratio,
+                                is_orphan=False,
+                            ))
+                        if emit_credit:
+                            _credit_count += 1
+                            results.append(OutputModel(
+                                batch_run_id=batch_id,
+                                as_of_date=as_of_date,
+                                entry_type="CREDIT",
+                                financial_element=fe_label,
+                                allocation_id=str(row[id_col]),
+                                source_account_id=crd_acct,
+                                customer_id=crd_cust,
+                                product_code=crd_prod,
+                                source_org_unit_id=src_org,
+                                target_org_unit_id=crd_org,
+                                source_balance=src_fe_val,
+                                allocated_balance=-fe_alloc,
+                                allocated_income=0.0,
+                                ratio_applied=ratio,
+                                is_orphan=False,
+                            ))
+                else:
+                    alloc_bal = src_bal * ratio
+                    alloc_inc = float(row[balance_cols[1]]) * ratio if len(balance_cols) > 1 else 0.0
 
-                if emit_debit:
-                    _debit_count += 1
-                    results.append(OutputModel(
-                        batch_run_id=batch_id,
-                        as_of_date=as_of_date,
-                        entry_type="DEBIT",
-                        allocation_id=str(row[id_col]),
-                        source_account_id=out_acct,
-                        customer_id=out_cust,
-                        product_code=out_prod,
-                        source_org_unit_id=src_org,
-                        target_org_unit_id=tgt_org,
-                        source_balance=src_bal,
-                        allocated_balance=alloc_bal,
-                        allocated_income=alloc_inc,
-                        ratio_applied=ratio,
-                        is_orphan=False,
-                    ))
+                    if emit_debit:
+                        _debit_count += 1
+                        results.append(OutputModel(
+                            batch_run_id=batch_id,
+                            as_of_date=as_of_date,
+                            entry_type="DEBIT",
+                            allocation_id=str(row[id_col]),
+                            source_account_id=out_acct,
+                            customer_id=out_cust,
+                            product_code=out_prod,
+                            source_org_unit_id=src_org,
+                            target_org_unit_id=tgt_org,
+                            source_balance=src_bal,
+                            allocated_balance=alloc_bal,
+                            allocated_income=alloc_inc,
+                            ratio_applied=ratio,
+                            is_orphan=False,
+                        ))
 
-                if emit_credit:
-                    _credit_count += 1
-                    crd_org  = _resolve_dim_value(row, "org_unit_id",  credit_dim_cfg, src_org,  target_org_col)
-                    crd_cust = _resolve_dim_value(row, "customer_id",  credit_dim_cfg, src_cust, target_org_col)
-                    crd_prod = _resolve_dim_value(row, "product_code", credit_dim_cfg, src_prod, target_org_col)
-                    crd_acct = _resolve_dim_value(row, acct_col,       credit_dim_cfg, src_acct, target_org_col)
-                    results.append(OutputModel(
-                        batch_run_id=batch_id,
-                        as_of_date=as_of_date,
-                        entry_type="CREDIT",
-                        allocation_id=str(row[id_col]),
-                        source_account_id=crd_acct,
-                        customer_id=crd_cust,
-                        product_code=crd_prod,
-                        source_org_unit_id=src_org,
-                        target_org_unit_id=crd_org,
-                        source_balance=src_bal,
-                        allocated_balance=-alloc_bal,
-                        allocated_income=-alloc_inc,
-                        ratio_applied=ratio,
-                        is_orphan=False,
-                    ))
+                    if emit_credit:
+                        _credit_count += 1
+                        crd_org  = _resolve_dim_value(row, ou_col,          credit_dim_cfg, src_org,  target_org_col)
+                        crd_cust = _resolve_dim_value(row, "customer_id",   credit_dim_cfg, src_cust, target_org_col)
+                        crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, target_org_col)
+                        crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, target_org_col)
+                        results.append(OutputModel(
+                            batch_run_id=batch_id,
+                            as_of_date=as_of_date,
+                            entry_type="CREDIT",
+                            allocation_id=str(row[id_col]),
+                            source_account_id=crd_acct,
+                            customer_id=crd_cust,
+                            product_code=crd_prod,
+                            source_org_unit_id=src_org,
+                            target_org_unit_id=crd_org,
+                            source_balance=src_bal,
+                            allocated_balance=-alloc_bal,
+                            allocated_income=-alloc_inc,
+                            ratio_applied=ratio,
+                            is_orphan=False,
+                        ))
 
             logger.log("PROCESS", f"  → DEBIT entries: {_debit_count:,} | CREDIT entries: {_credit_count:,}")
 
@@ -338,25 +402,46 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                 default_ratio = orphan_cfg["default_ratio"]
                 logger.log("ORPHAN",  f"Processing {len(orphan_dedup):,} orphan rows (default_ratio={default_ratio})")
                 for _, row in orphan_dedup.iterrows():
-                    src_org   = str(row.get("org_unit_id", ""))
-                    src_bal   = float(row[balance_cols[0]])
-                    alloc_inc = float(row[balance_cols[1]]) * default_ratio if len(balance_cols) > 1 else 0.0
-                    results.append(OutputModel(
-                        batch_run_id=batch_id,
-                        as_of_date=as_of_date,
-                        entry_type="DEBIT",
-                        allocation_id=None,
-                        source_account_id=str(row.get(acct_col, "")),
-                        customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
-                        product_code=str(row.get("product_code", "")),
-                        source_org_unit_id=src_org,
-                        target_org_unit_id=src_org,
-                        source_balance=src_bal,
-                        allocated_balance=src_bal * default_ratio,
-                        allocated_income=alloc_inc,
-                        ratio_applied=default_ratio,
-                        is_orphan=True,
-                    ))
+                    src_org = str(row.get(ou_col, ""))
+                    if supports_fe:
+                        for bal_col, fe_label in fe_cols.items():
+                            src_fe_val = float(row.get(bal_col, 0))
+                            results.append(OutputModel(
+                                batch_run_id=batch_id,
+                                as_of_date=as_of_date,
+                                entry_type="DEBIT",
+                                financial_element=fe_label,
+                                allocation_id=None,
+                                source_account_id=str(row.get(acct_col, "")),
+                                customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
+                                product_code=str(row.get("product_code", "")),
+                                source_org_unit_id=src_org,
+                                target_org_unit_id=src_org,
+                                source_balance=src_fe_val,
+                                allocated_balance=src_fe_val * default_ratio,
+                                allocated_income=0.0,
+                                ratio_applied=default_ratio,
+                                is_orphan=True,
+                            ))
+                    else:
+                        src_bal   = float(row[balance_cols[0]])
+                        alloc_inc = float(row[balance_cols[1]]) * default_ratio if len(balance_cols) > 1 else 0.0
+                        results.append(OutputModel(
+                            batch_run_id=batch_id,
+                            as_of_date=as_of_date,
+                            entry_type="DEBIT",
+                            allocation_id=None,
+                            source_account_id=str(row.get(acct_col, "")),
+                            customer_id=str(row.get("customer_id", row.get(primary_join_col, ""))),
+                            product_code=str(row.get("product_code", "")),
+                            source_org_unit_id=src_org,
+                            target_org_unit_id=src_org,
+                            source_balance=src_bal,
+                            allocated_balance=src_bal * default_ratio,
+                            allocated_income=alloc_inc,
+                            ratio_applied=default_ratio,
+                            is_orphan=True,
+                        ))
 
         else:
             # ── STATIC method: direct 1:1 pass-through, ratio = 1.0 ──
@@ -364,59 +449,107 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                   f" (emit_debit={emit_debit}, emit_credit={emit_credit})")
             for _, row in source_data.iterrows():
                 src_acct = str(row.get(acct_col, ""))
-                src_org  = str(row.get("org_unit_id", ""))
+                src_org  = str(row.get(ou_col, ""))
                 src_cust = str(row.get("customer_id", ""))
                 src_prod = str(row.get("product_code", ""))
                 src_bal  = float(row[balance_cols[0]])
-                alloc_inc = float(row[balance_cols[1]]) if len(balance_cols) > 1 else 0.0
 
                 # Output dimensions: same_as_source or fixed (lookup mode not applicable)
-                tgt_org  = _resolve_dim_value(row, "org_unit_id",  output_dim_cfg, src_org,  src_org)
-                out_cust = _resolve_dim_value(row, "customer_id",  output_dim_cfg, src_cust, src_org)
-                out_prod = _resolve_dim_value(row, "product_code", output_dim_cfg, src_prod, src_org)
-                out_acct = _resolve_dim_value(row, acct_col,       output_dim_cfg, src_acct, src_org)
+                tgt_org  = _resolve_dim_value(row, ou_col,           output_dim_cfg, src_org,  src_org)
+                out_cust = _resolve_dim_value(row, "customer_id",    output_dim_cfg, src_cust, src_org)
+                out_prod = _resolve_dim_value(row, "product_code",   output_dim_cfg, src_prod, src_org)
+                out_acct = _resolve_dim_value(row, acct_col,         output_dim_cfg, src_acct, src_org)
 
-                if emit_debit:
-                    _debit_count += 1
-                    results.append(OutputModel(
-                        batch_run_id=batch_id,
-                        as_of_date=as_of_date,
-                        entry_type="DEBIT",
-                        allocation_id=None,
-                        source_account_id=out_acct,
-                        customer_id=out_cust,
-                        product_code=out_prod,
-                        source_org_unit_id=src_org,
-                        target_org_unit_id=tgt_org,
-                        source_balance=src_bal,
-                        allocated_balance=src_bal,
-                        allocated_income=alloc_inc,
-                        ratio_applied=1.0,
-                        is_orphan=False,
-                    ))
+                if supports_fe:
+                    if emit_credit:
+                        crd_org  = _resolve_dim_value(row, ou_col,          credit_dim_cfg, src_org,  src_org)
+                        crd_cust = _resolve_dim_value(row, "customer_id",   credit_dim_cfg, src_cust, src_org)
+                        crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, src_org)
+                        crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, src_org)
+                    for bal_col, fe_label in fe_cols.items():
+                        src_fe_val = float(row.get(bal_col, 0))
+                        if emit_debit:
+                            _debit_count += 1
+                            results.append(OutputModel(
+                                batch_run_id=batch_id,
+                                as_of_date=as_of_date,
+                                entry_type="DEBIT",
+                                financial_element=fe_label,
+                                allocation_id=None,
+                                source_account_id=out_acct,
+                                customer_id=out_cust,
+                                product_code=out_prod,
+                                source_org_unit_id=src_org,
+                                target_org_unit_id=tgt_org,
+                                source_balance=src_fe_val,
+                                allocated_balance=src_fe_val,
+                                allocated_income=0.0,
+                                ratio_applied=1.0,
+                                is_orphan=False,
+                            ))
+                        if emit_credit:
+                            _credit_count += 1
+                            results.append(OutputModel(
+                                batch_run_id=batch_id,
+                                as_of_date=as_of_date,
+                                entry_type="CREDIT",
+                                financial_element=fe_label,
+                                allocation_id=None,
+                                source_account_id=crd_acct,
+                                customer_id=crd_cust,
+                                product_code=crd_prod,
+                                source_org_unit_id=src_org,
+                                target_org_unit_id=crd_org,
+                                source_balance=src_fe_val,
+                                allocated_balance=-src_fe_val,
+                                allocated_income=0.0,
+                                ratio_applied=1.0,
+                                is_orphan=False,
+                            ))
+                else:
+                    alloc_inc = float(row[balance_cols[1]]) if len(balance_cols) > 1 else 0.0
 
-                if emit_credit:
-                    _credit_count += 1
-                    crd_org  = _resolve_dim_value(row, "org_unit_id",  credit_dim_cfg, src_org,  src_org)
-                    crd_cust = _resolve_dim_value(row, "customer_id",  credit_dim_cfg, src_cust, src_org)
-                    crd_prod = _resolve_dim_value(row, "product_code", credit_dim_cfg, src_prod, src_org)
-                    crd_acct = _resolve_dim_value(row, acct_col,       credit_dim_cfg, src_acct, src_org)
-                    results.append(OutputModel(
-                        batch_run_id=batch_id,
-                        as_of_date=as_of_date,
-                        entry_type="CREDIT",
-                        allocation_id=None,
-                        source_account_id=crd_acct,
-                        customer_id=crd_cust,
-                        product_code=crd_prod,
-                        source_org_unit_id=src_org,
-                        target_org_unit_id=crd_org,
-                        source_balance=src_bal,
-                        allocated_balance=-src_bal,
-                        allocated_income=-alloc_inc,
-                        ratio_applied=1.0,
-                        is_orphan=False,
-                    ))
+                    if emit_debit:
+                        _debit_count += 1
+                        results.append(OutputModel(
+                            batch_run_id=batch_id,
+                            as_of_date=as_of_date,
+                            entry_type="DEBIT",
+                            allocation_id=None,
+                            source_account_id=out_acct,
+                            customer_id=out_cust,
+                            product_code=out_prod,
+                            source_org_unit_id=src_org,
+                            target_org_unit_id=tgt_org,
+                            source_balance=src_bal,
+                            allocated_balance=src_bal,
+                            allocated_income=alloc_inc,
+                            ratio_applied=1.0,
+                            is_orphan=False,
+                        ))
+
+                    if emit_credit:
+                        _credit_count += 1
+                        crd_org  = _resolve_dim_value(row, ou_col,          credit_dim_cfg, src_org,  src_org)
+                        crd_cust = _resolve_dim_value(row, "customer_id",   credit_dim_cfg, src_cust, src_org)
+                        crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, src_org)
+                        crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, src_org)
+                        results.append(OutputModel(
+                            batch_run_id=batch_id,
+                            as_of_date=as_of_date,
+                            entry_type="CREDIT",
+                            allocation_id=None,
+                            source_account_id=crd_acct,
+                            customer_id=crd_cust,
+                            product_code=crd_prod,
+                            source_org_unit_id=src_org,
+                            target_org_unit_id=crd_org,
+                            source_balance=src_bal,
+                            allocated_balance=-src_bal,
+                            allocated_income=-alloc_inc,
+                            ratio_applied=1.0,
+                            is_orphan=False,
+                        ))
 
             logger.log("PROCESS", f"  → DEBIT entries: {_debit_count:,} | CREDIT entries: {_credit_count:,}")
 

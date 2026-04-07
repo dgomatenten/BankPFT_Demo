@@ -2,8 +2,10 @@
     "description": "Drives the Allocation Rule creation form. Values must match keys in allocation_config.json.",
 
     "source_tables": [
-        {"value": "proc_inst_data", "label": "Instrument (proc_inst_data)"},
-        {"value": "proc_gl_data", "label": "General Ledger (proc_gl_data)"}
+        {"value": "proc_inst_data",     "label": "Instrument (proc_inst_data)"},
+        {"value": "proc_gl_data",       "label": "General Ledger (proc_gl_data)"},
+        {"value": "fct_mgmt_ledger",    "label": "Management Ledger (fct_mgmt_ledger)"},
+        {"value": "fct_mgmt_instrument","label": "Management Instrument (fct_mgmt_instrument)"}
     ],
 
     "lookup_tables": [
@@ -43,6 +45,20 @@
         "proc_gl_data": [
             {"column": "gl_account",   "label": "GL Account"},
             {"column": "org_unit_id",  "label": "Org Unit"}
+        ],
+        "fct_mgmt_ledger": [
+            {"column": "source_account_id",  "label": "Source Account ID"},
+            {"column": "customer_id",        "label": "Customer ID"},
+            {"column": "product_code",       "label": "Product Code"},
+            {"column": "source_org_unit_id", "label": "Source Org Unit"},
+            {"column": "target_org_unit_id", "label": "Target Org Unit"}
+        ],
+        "fct_mgmt_instrument": [
+            {"column": "source_account_id",  "label": "Source Account ID"},
+            {"column": "customer_id",        "label": "Customer ID"},
+            {"column": "product_code",       "label": "Product Code"},
+            {"column": "source_org_unit_id", "label": "Source Org Unit"},
+            {"column": "target_org_unit_id", "label": "Target Org Unit"}
         ]
     },
 

@@ -70,12 +70,13 @@ class RefStaticAlloc(MakerCheckerMixin, db.Model):
 
 
 class FctMgmtLedger(db.Model):
-    """GL-level allocation output — one row per account per debit/credit entry."""
+    """GL-level allocation output — one row per account per financial element per debit/credit entry."""
     __tablename__ = "fct_mgmt_ledger"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     batch_run_id = db.Column(db.String(36), nullable=False, index=True)
     as_of_date = db.Column(db.Date, nullable=False)
     entry_type = db.Column(db.String(10), default="DEBIT")  # DEBIT / CREDIT
+    financial_element = db.Column(db.String(20), nullable=True)  # e.g. BAL, NII
     allocation_id = db.Column(db.String(36), nullable=True)
     source_account_id = db.Column(db.String(20), nullable=False)
     customer_id = db.Column(db.String(20), nullable=False)
@@ -91,12 +92,13 @@ class FctMgmtLedger(db.Model):
 
 
 class FctMgmtInstrument(db.Model):
-    """Instrument-level allocation output — one row per account per debit/credit entry."""
+    """Instrument-level allocation output — one row per account per financial element per debit/credit entry."""
     __tablename__ = "fct_mgmt_instrument"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     batch_run_id = db.Column(db.String(36), nullable=False, index=True)
     as_of_date = db.Column(db.Date, nullable=False)
     entry_type = db.Column(db.String(10), default="DEBIT")  # DEBIT / CREDIT
+    financial_element = db.Column(db.String(20), nullable=True)  # e.g. BAL, NII
     allocation_id = db.Column(db.String(36), nullable=True)
     source_account_id = db.Column(db.String(20), nullable=False)
     customer_id = db.Column(db.String(20), nullable=False)

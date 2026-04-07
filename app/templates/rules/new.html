@@ -58,7 +58,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-3" id="lookup-table-col">
                     <label class="form-label">Lookup Table</label>
                     <select name="lookup_table" id="lookup_table" class="form-select">
                         {% for opt in rule_config.lookup_tables %}
@@ -74,7 +74,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-3" id="join-keys-col">
                     <label class="form-label">Join Keys</label>
                     <div id="join_key_box" class="border rounded p-2">
                         {% for opt in rule_config.join_keys %}
@@ -212,8 +212,14 @@
         dims.forEach(d => {
             const tr = document.createElement('tr');
             tr.dataset.dim = d.column;
+            // org_unit_id controls target_org_unit_id in the output;
+            // source_org_unit_id is always auto-filled from the source row.
+            const isOrgUnit = (d.column === 'org_unit_id');
+            const labelSuffix = isOrgUnit
+                ? '<br><small class="text-info">→ target_org_unit_id (source_org_unit_id auto-filled)</small>'
+                : '';
             tr.innerHTML = `
-                <td><strong>${d.label}</strong><br><small class="text-muted">${d.column}</small></td>
+                <td><strong>${d.label}</strong><br><small class="text-muted">${d.column}</small>${labelSuffix}</td>
                 <td style="width:200px">
                     <select class="form-select form-select-sm out-mode-sel">
                         <option value="same_as_source" selected>Same as Source</option>
@@ -307,15 +313,21 @@
     const distributionDriverCard = document.getElementById('distribution-driver-card');
     const DISTRIBUTION_TABLE = 'ref_static_distribution';
 
+    const lookupTableCol = document.getElementById('lookup-table-col');
+    const joinKeysCol    = document.getElementById('join-keys-col');
+
     function syncAllocMethod() {
         const sel = document.querySelector('input[name="allocation_method_radio"]:checked');
         const method = sel ? sel.value : 'RATIO';
         allocMethodHidden.value = method;
         if (method === 'STATIC') {
-            lookupJoinSection.style.display = 'none';
+            // Keep source/output table visible; hide only lookup + join keys
+            lookupTableCol.style.display     = 'none';
+            joinKeysCol.style.display        = 'none';
             distributionDriverCard.style.display = 'none';
         } else {
-            lookupJoinSection.style.display = '';
+            lookupTableCol.style.display = '';
+            joinKeysCol.style.display    = '';
             if (method === 'DISTRIBUTION') {
                 lkpSelect.value = DISTRIBUTION_TABLE;
                 distributionDriverCard.style.display = '';

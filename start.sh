@@ -2,10 +2,12 @@
 # ──────────────────────────────────────────────────────
 #  BankPFT — Application Startup Script
 #  Usage:
-#    ./start.sh              # development server (default)
-#    ./start.sh dev          # development server (Flask debug)
-#    ./start.sh prod         # production server (Gunicorn)
-#    ./start.sh docker       # build & run via Docker Compose
+#    ./start.sh              # dev server with PostgreSQL (default)
+#    ./start.sh dev          # dev server with PostgreSQL (Flask debug)
+#    ./start.sh pg           # start PostgreSQL container then Flask
+#    ./start.sh db           # start PostgreSQL container only
+#    ./start.sh prod         # production server (Gunicorn + PostgreSQL)
+#    ./start.sh docker       # build & run full stack via Docker Compose
 #    ./start.sh stop         # stop a running Gunicorn process
 # ──────────────────────────────────────────────────────
 set -euo pipefail
@@ -18,6 +20,9 @@ PID_FILE="$SCRIPT_DIR/bankpft.pid"
 LOG_FILE="$SCRIPT_DIR/bankpft.log"
 BIND_ADDR="0.0.0.0:5000"
 MODE="${1:-dev}"
+
+# ── PostgreSQL connection (can be overridden via environment) ──
+PG_URL="${DATABASE_URL:-postgresql://bankpft:bankpft_dev@localhost:5432/bankpft}"
 
 # ── Colour helpers ──
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -63,9 +68,10 @@ cmd_dev() {
     install_deps
     ensure_instance_dir
     success "Starting Flask development server on http://localhost:5000"
+    info  "Database → $PG_URL"
     info  "Press Ctrl+C to stop."
     echo ""
-    FLASK_ENV=development FLASK_DEBUG=1 python run.py
+    DATABASE_URL="$PG_URL" FLASK_ENV=development FLASK_DEBUG=1 python run.py
 }
 
 cmd_prod() {
@@ -88,9 +94,10 @@ cmd_prod() {
 
     WORKERS="${WORKERS:-4}"
     info "Starting Gunicorn (workers=$WORKERS) on http://$BIND_ADDR"
+    info "Database → $PG_URL"
     info "Logs → $LOG_FILE   PID  → $PID_FILE"
 
-    gunicorn \
+    DATABASE_URL="$PG_URL" gunicorn \
         --bind "$BIND_ADDR" \
         --workers "$WORKERS" \
         --timeout 120 \
@@ -126,6 +133,37 @@ cmd_stop() {
     fi
 }
 
+cmd_db() {
+    if ! command -v docker > /dev/null 2>&1; then
+        error "Docker not found. Install Docker Desktop or Docker Engine first."
+        exit 1
+    fi
+
+    # Check if the db container is already running
+    if docker ps --format '{{.Names}}' | grep -q '^bankpft-db-1$'; then
+        success "PostgreSQL container (bankpft-db-1) is already running."
+        return 0
+    fi
+
+    info "Starting PostgreSQL container via Docker Compose ..."
+    docker compose up -d db
+
+    # Wait for healthy status (up to 30 s)
+    info "Waiting for PostgreSQL to be ready ..."
+    local attempts=0
+    until docker compose exec -T db pg_isready -U bankpft -q 2>/dev/null; do
+        attempts=$((attempts + 1))
+        if [[ $attempts -ge 30 ]]; then
+            error "PostgreSQL did not become ready within 30 seconds."
+            error "Check logs with: docker compose logs db"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    success "PostgreSQL is ready on localhost:5432  (db=bankpft, user=bankpft)"
+}
+
 cmd_docker() {
     if ! command -v docker > /dev/null 2>&1; then
         error "Docker not found. Install Docker Desktop or Docker Engine first."
@@ -139,22 +177,31 @@ cmd_docker() {
     docker compose up --build
 }
 
+cmd_pg() {
+    cmd_db
+    cmd_dev
+}
+
 # ──────────────────────────────────────────────────────
 # Router
 # ──────────────────────────────────────────────────────
 case "$MODE" in
     dev|development)  cmd_dev   ;;
+    pg)               cmd_pg    ;;
+    db|postgres)      cmd_db    ;;
     prod|production)  cmd_prod  ;;
     stop)             cmd_stop  ;;
     docker)           cmd_docker ;;
     *)
         error "Unknown mode: '$MODE'"
         echo ""
-        echo "Usage: $0 [dev|prod|stop|docker]"
-        echo "  dev     Flask debug server  (default)"
-        echo "  prod    Gunicorn daemon"
+        echo "Usage: $0 [dev|pg|db|prod|stop|docker]"
+        echo "  dev     Flask debug server with PostgreSQL  (default)"
+        echo "  pg      Start PostgreSQL container then Flask dev server"
+        echo "  db      Start PostgreSQL Docker container only"
+        echo "  prod    Gunicorn daemon with PostgreSQL"
         echo "  stop    Stop Gunicorn daemon"
-        echo "  docker  Docker Compose"
+        echo "  docker  Full stack via Docker Compose"
         exit 1
         ;;
 esac

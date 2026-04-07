@@ -62,6 +62,22 @@
     </div>
     <div class="col-md-6">
         <div class="card h-100">
+            <div class="card-header">Default Allocation Rules</div>
+            <div class="card-body">
+                <p>Seed two out-of-box allocation rules into the system:</p>
+                <ul class="small mb-3">
+                    <li><strong>Default Instrument Allocation</strong> — <code>proc_inst_data</code> → <code>fct_mgmt_instrument</code> · RATIO · join on <code>customer_id</code></li>
+                    <li><strong>Default GL Allocation</strong> — <code>proc_gl_data</code> → <code>fct_mgmt_ledger</code> · STATIC · join on <code>org_unit_id</code></li>
+                </ul>
+                <form method="POST" action="/testdata/seed-default-rules">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-list-check"></i> Seed Default Rules</button>
+                </form>
+                <p class="text-muted small mt-2">Safe to run multiple times — skips existing rules.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
             <div class="card-header">FTP / Interest Rates</div>
             <div class="card-body">
                 <p>Seed 30 days of approved interest rate data (SWAP_RATE, LIBOR_USD, BASE_RATE × 4 tenors) directly into the database.</p>

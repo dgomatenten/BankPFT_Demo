@@ -311,3 +311,62 @@ def generate_interest_rate_excel(output_dir: str) -> tuple[str, int]:
     path = os.path.join(output_dir, "interest_rate_testdata.xlsx")
     df.to_excel(path, index=False, engine="openpyxl")
     return path, len(rows)
+
+
+def seed_default_allocation_rules():
+    """Seed two default allocation rules if they do not already exist.
+
+    Rule 1 — Instrument to Management Instrument:
+        proc_inst_data → fct_mgmt_instrument via RATIO on customer_id
+
+    Rule 2 — GL to Management Ledger:
+        proc_gl_data → fct_mgmt_ledger via STATIC pass-through on org_unit_id
+    """
+    from app.models.workflow import AllocationRule
+
+    defaults = [
+        dict(
+            name="Default Instrument Allocation",
+            description=(
+                "Out-of-box rule: allocates proc_inst_data to fct_mgmt_instrument "
+                "using customer-level ratios (ref_static_allocation). "
+                "Emits DEBIT + CREDIT entries; financial_element rows produced per balance column."
+            ),
+            source_table="proc_inst_data",
+            lookup_table="ref_static_allocation",
+            output_table="fct_mgmt_instrument",
+            allocation_method="RATIO",
+            join_key="customer_id",
+            entry_mode="BOTH",
+            is_active=True,
+            status="ACTIVE",
+            created_by="system",
+        ),
+        dict(
+            name="Default GL Allocation",
+            description=(
+                "Out-of-box rule: passes proc_gl_data through to fct_mgmt_ledger "
+                "as a STATIC (no-split) allocation. "
+                "Source org_unit_id is preserved on the output row."
+            ),
+            source_table="proc_gl_data",
+            lookup_table="ref_static_allocation",
+            output_table="fct_mgmt_ledger",
+            allocation_method="STATIC",
+            join_key="org_unit_id",
+            entry_mode="DEBIT_ONLY",
+            is_active=True,
+            status="ACTIVE",
+            created_by="system",
+        ),
+    ]
+
+    added = 0
+    for cfg in defaults:
+        exists = AllocationRule.query.filter_by(name=cfg["name"]).first()
+        if not exists:
+            db.session.add(AllocationRule(**cfg))
+            added += 1
+
+    db.session.commit()
+    return added

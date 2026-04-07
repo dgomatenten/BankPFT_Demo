@@ -6,8 +6,13 @@
             "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "balance", "interest_income"],
             "date_filter_column": "as_of_date",
             "account_id_column": "account_id",
+            "org_unit_column": "org_unit_id",
             "balance_columns": ["balance", "interest_income"],
-            "dimension_columns": ["account_id", "customer_id", "product_code", "org_unit_id"]
+            "dimension_columns": ["account_id", "customer_id", "product_code", "org_unit_id"],
+            "financial_element_columns": {
+                "balance": "BAL",
+                "interest_income": "NII"
+            }
         },
         "proc_gl_data": {
             "label": "General Ledger Data",
@@ -15,8 +20,29 @@
             "columns": ["gl_account", "org_unit_id", "debit", "credit", "balance"],
             "date_filter_column": "as_of_date",
             "account_id_column": "gl_account",
+            "org_unit_column": "org_unit_id",
             "balance_columns": ["balance"],
             "dimension_columns": ["gl_account", "org_unit_id"]
+        },
+        "fct_mgmt_ledger": {
+            "label": "Management Ledger",
+            "model": "FctMgmtLedger",
+            "columns": ["source_account_id", "customer_id", "product_code", "source_org_unit_id", "target_org_unit_id", "allocated_balance", "allocated_income", "entry_type", "financial_element"],
+            "date_filter_column": "as_of_date",
+            "account_id_column": "source_account_id",
+            "org_unit_column": "source_org_unit_id",
+            "balance_columns": ["allocated_balance", "allocated_income"],
+            "dimension_columns": ["source_account_id", "customer_id", "product_code", "source_org_unit_id", "target_org_unit_id"]
+        },
+        "fct_mgmt_instrument": {
+            "label": "Management Instrument",
+            "model": "FctMgmtInstrument",
+            "columns": ["source_account_id", "customer_id", "product_code", "source_org_unit_id", "target_org_unit_id", "allocated_balance", "allocated_income", "entry_type", "financial_element"],
+            "date_filter_column": "as_of_date",
+            "account_id_column": "source_account_id",
+            "org_unit_column": "source_org_unit_id",
+            "balance_columns": ["allocated_balance", "allocated_income"],
+            "dimension_columns": ["source_account_id", "customer_id", "product_code", "source_org_unit_id", "target_org_unit_id"]
         }
     },
 

@@ -6,7 +6,7 @@ from app.models.workflow import AllocationRule
 from app.models.allocation import RefStaticAllocation
 from app.core.config_loader import load_config
 
-RULE_CONFIG = load_config("rule_config")
+RULE_CONFIG = load_config("allocation_rule_form_config")
 FILTER_CONFIG = load_config("filter_config")
 
 bp = Blueprint("rules", __name__)
