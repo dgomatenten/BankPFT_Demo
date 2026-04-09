@@ -30,6 +30,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
   - [Custom Stored Procedure Batch Runner](#custom-stored-procedure-batch-runner)
   - [Logging Framework](#logging-framework--implementation-consideration)
   - [Exception & Error Handling Framework](#exception--error-handling-framework--implementation-consideration)
+- [AI Development & Copilot Usage](#ai-development--copilot-usage)
 - [License](#license)
 
 ---
@@ -2732,6 +2733,13 @@ A recovery Flask CLI command can then re-run just the failed step:
 | CLI `recover-step` command — re-drive failed batch steps | Low | `app/commands.py` |
 
 ---
+
+## AI Development & Copilot Usage
+For engineers building new features using GitHub Copilot, Cursor, or Gemini, this project includes native system mapping instructions.
+- Central system prompt constraints are defined in `copilot-instructions.md`.
+- Deep architectural best-practices mapping out how to build iterative database components are defined in `docs/AI_DEVELOPMENT_GUIDE.md`.
+
+Please ensure AI coding assistants strictly read and adhere to those guides to maintain structural uniformity.
 
 ## License
 
