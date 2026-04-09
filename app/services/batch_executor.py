@@ -38,6 +38,12 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
     processing_date = _get_processing_date(as_of_date)
 
     exec_id = str(uuid.uuid4())
+    
+    from app.core.batch_logger import BatchLogger
+    logger = BatchLogger(f"execution_{exec_id}")
+    logger.info(f"Starting Multi-task Batch Execution for definition '{defn.name}' (ID: {defn.id})")
+    logger.info(f"Run ID: {exec_id} | As-of: {as_of_date} | Run By: {run_by}")
+    
     execution = BatchExecution(
         id=exec_id,
         definition_id=definition_id,
@@ -64,22 +70,29 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
         step.status = "RUNNING"
         step.started_at = utc_now()
         db.session.commit()
+        
+        logger.info(f"\n--- Starting Step {step.step_order}: [{step.task_type}] {step.label or step.ref_id} ---")
 
         try:
             _run_step(step, processing_date, as_of_date, run_by)
             step.completed_at = utc_now()
             db.session.commit()
+            logger.info(f"Step {step.step_order} completed successfully.\nSummary: {step.summary}")
         except Exception as exc:
             step.status = "FAILED"
             step.error_message = str(exc)
             step.completed_at = utc_now()
             db.session.commit()
             failed_count += 1
+            logger.error(f"Step {step.step_order} FAILED: {exc}")
+            
             if not defn.continue_on_error:
+                logger.warning("Continue-on-error is false. Halting execution pipeline.")
                 # Mark all remaining PENDING steps as SKIPPED
                 for remaining in execution.steps:
                     if remaining.status == "PENDING":
                         remaining.status = "SKIPPED"
+                        logger.warning(f"Skipped Step {remaining.step_order}: [{remaining.task_type}]")
                 db.session.commit()
                 break
 
@@ -91,7 +104,10 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
         execution.status = "PARTIAL"
     else:
         execution.status = "FAILED"
+        
+    logger.info(f"\nBatch Execution finished with status: {execution.status}")
     db.session.commit()
+    logger.close()
     return execution
 
 
@@ -119,12 +135,54 @@ def _run_step(
         step.ref_run_id = result.id
         step.status = result.status
         step.summary = (
-            f"{result.output_row_count} output rows, "
-            f"{result.orphan_count} orphans, "
-            f"output total {result.output_total:,.2f}"
+            f"{result.output_row_count or 0} output rows, "
+            f"{result.orphan_count or 0} orphans, "
+            f"output total {(result.output_total or 0):,.2f}"
         )
         if result.status == "FAILED":
+            step.error_message = result.error_message
             raise RuntimeError(result.error_message or "Allocation failed")
+
+    elif t == "ALLOCATION_SP":
+        # ── SP-based allocation: calls sp_run_allocation in PostgreSQL ──
+        # ref_id = rule_id (integer as string); as_of_date passed automatically.
+        from app.services.sp_runner import run_sp
+        from app.models.workflow import AllocationRule
+        rule_id = int(step.ref_id)
+        rule = db.session.get(AllocationRule, rule_id)
+        if not rule:
+            raise RuntimeError(f"Allocation rule {rule_id} not found")
+        params = {
+            "p_rule_id":    str(rule_id),
+            "p_as_of_date": as_of_date.isoformat(),
+            "p_run_by":     run_by,
+        }
+        sp_run = run_sp(
+            sp_name="sp_run_allocation",
+            params=params,
+            run_by=run_by,
+            exec_step_id=step.id,
+        )
+        step.ref_run_id = sp_run.id
+        step.status = sp_run.status
+        # Link to the batch_run created by the SP (most recent for this rule+date)
+        from app.models.workflow import BatchRun
+        batch_run = (
+            BatchRun.query
+            .filter_by(rule_id=rule_id, as_of_date=as_of_date)
+            .order_by(BatchRun.started_at.desc())
+            .first()
+        )
+        step.summary = (
+            f"SP allocation: rule={rule.name} | "
+            + (f"output={batch_run.output_row_count or 0} rows, "
+               f"orphans={batch_run.orphan_count or 0}, "
+               f"total={float(batch_run.output_total or 0):,.2f}"
+               if batch_run else sp_run.result_message or "completed")
+        )
+        if sp_run.status == "FAILED":
+            step.error_message = sp_run.error_message
+            raise RuntimeError(sp_run.error_message or f"sp_run_allocation failed for rule {rule_id}")
 
     elif t == "FTP":
         from app.services.ftp_engine import run_ftp

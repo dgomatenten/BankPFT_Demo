@@ -138,8 +138,11 @@ def _cast_value(value, col_cfg):
     """
     col_type = col_cfg["type"]
     if col_type == "date":
+        if pd.isna(value):
+            return None
         try:
-            return pd.to_datetime(value).date()
+            dt = pd.to_datetime(value)
+            return dt.date() if pd.notna(dt) else None
         except (ValueError, TypeError) as exc:
             raise ValueError(f"Cannot parse '{value}' as a date: {exc}") from exc
     elif col_type == "integer":
@@ -169,7 +172,7 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
         status="DRAFT" if errors else "PENDING",
         row_count=len(df),
         error_count=len(errors),
-        errors_json=json.dumps(errors) if errors else None,
+        errors_json=errors if errors else None,
         maker_id=maker_id,
     )
     db.session.add(batch)
@@ -197,7 +200,7 @@ def process_upload(filepath: str, data_type: str, maker_id: str) -> UploadBatch:
             batch.status = "DRAFT"
             cast_errors = [str(exc)]
             batch.error_count = len(cast_errors)
-            batch.errors_json = json.dumps(cast_errors)
+            batch.errors_json = cast_errors
             db.session.commit()
             return batch
 

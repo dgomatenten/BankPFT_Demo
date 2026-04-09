@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app.models.workflow import (
     AllocationRule, BatchRun,
-    BatchDefinition, BatchTask, BatchExecution, TASK_TYPES, SpRun,
+    BatchDefinition, BatchTask, BatchExecution, TASK_TYPES, SpRun, RegisteredSp
 )
 from app.models.ftp import FtpRun
 from app.models import db
@@ -14,7 +14,104 @@ from app.services.ftp_engine import run_ftp
 from app.services.batch_executor import run_batch
 from app.services.datafile_service import DATAFILE_CONFIG
 
+from app.models.datafile import DataFileBatch
+
 bp = Blueprint("batch", __name__)
+
+
+@bp.route("/api/run-by-name", methods=["POST"])
+def api_run_by_name():
+    """REST API endpoint to run a batch definition by name."""
+    data = request.get_json() or {}
+    batch_name = data.get("name")
+    if not batch_name:
+        return {"error": "Batch 'name' is required in JSON payload"}, 400
+        
+    defn = BatchDefinition.query.filter_by(name=batch_name).first()
+    if not defn:
+        return {"error": f"Batch definition '{batch_name}' not found"}, 404
+        
+    as_of_str = data.get("as_of_date", "")
+    try:
+        as_of = datetime.strptime(as_of_str, "%Y-%m-%d").date() if as_of_str else date.today()
+    except ValueError:
+        return {"error": "Invalid date. Use YYYY-MM-DD."}, 400
+
+    run_by = data.get("run_by", "api_user")
+    
+    if not defn.tasks:
+        return {"error": "This batch has no steps. Add at least one task first."}, 400
+
+    try:
+        from app.services.batch_executor import run_batch
+        execution = run_batch(defn.id, as_of, run_by)
+    except Exception as exc:
+        return {"error": f"Batch failed to start: {exc}"}, 500
+
+    return {
+        "status": execution.status, 
+        "execution_id": execution.id, 
+        "message": f"Batch '{defn.name}' finished with status: {execution.status}"
+    }
+
+
+@bp.route("/monitor")
+@login_required
+def monitor():
+    """Live dashboard showing running and recent batch activity across all engine types."""
+    from flask import jsonify as _jf
+
+    running_executions = BatchExecution.query.filter(
+        BatchExecution.status == "RUNNING"
+    ).order_by(BatchExecution.started_at.desc()).all()
+
+    running_alloc = BatchRun.query.filter(
+        BatchRun.status == "RUNNING"
+    ).order_by(BatchRun.started_at.desc()).all()
+
+    recent_executions = BatchExecution.query.filter(
+        BatchExecution.status != "RUNNING"
+    ).order_by(BatchExecution.started_at.desc()).limit(20).all()
+
+    recent_alloc = BatchRun.query.filter(
+        BatchRun.status != "RUNNING"
+    ).order_by(BatchRun.started_at.desc()).limit(20).all()
+
+    recent_ftp = FtpRun.query.order_by(FtpRun.started_at.desc()).limit(20).all()
+
+    recent_datafile = DataFileBatch.query.order_by(
+        DataFileBatch.started_at.desc()
+    ).limit(20).all()
+
+    recent_sp = SpRun.query.order_by(SpRun.started_at.desc()).limit(20).all()
+
+    return render_template(
+        "batch/monitor.html",
+        running_executions=running_executions,
+        running_alloc=running_alloc,
+        recent_executions=recent_executions,
+        recent_alloc=recent_alloc,
+        recent_ftp=recent_ftp,
+        recent_datafile=recent_datafile,
+        recent_sp=recent_sp,
+    )
+
+
+@bp.route("/monitor/status")
+@login_required
+def monitor_status():
+    """JSON endpoint polled by the monitor page for live refresh."""
+    from flask import jsonify
+
+    running_exec_count = BatchExecution.query.filter_by(status="RUNNING").count()
+    running_alloc_count = BatchRun.query.filter_by(status="RUNNING").count()
+    total_running = running_exec_count + running_alloc_count
+
+    return jsonify({
+        "running_total": total_running,
+        "running_executions": running_exec_count,
+        "running_allocations": running_alloc_count,
+    })
 
 
 @bp.route("/")
@@ -98,9 +195,13 @@ def detail(batch_id):
     batch = BatchRun.query.get_or_404(batch_id)
     log_content = None
     log_path = os.path.join(BATCH_LOG_DIR, f"batch_{batch_id}.log")
-    if os.path.exists(log_path):
+    log_exists = os.path.exists(log_path)
+    if log_exists:
         with open(log_path, encoding="utf-8") as _f:
             log_content = _f.read()
+    else:
+        log_content = f"DEBUG INFO:\nExpected Path: {log_path}\nExists: {log_exists}\nbatch_id: '{batch_id}'\nLength of ID: {len(batch_id)}"
+        
     return render_template("batch/detail.html", batch=batch, log_content=log_content)
 
 
@@ -148,6 +249,7 @@ def definition_detail(def_id):
     rules = AllocationRule.query.filter_by(is_active=True).order_by(AllocationRule.name).all()
     formats = DATAFILE_CONFIG.get("formats", [])
     exports = DATAFILE_CONFIG.get("exports", [])
+    registered_sps = RegisteredSp.query.filter_by(is_batch_enabled=True).order_by(RegisteredSp.procedure_name).all()
     recent_executions = defn.executions.limit(20).all()
     return render_template(
         "batch/definition_detail.html",
@@ -155,6 +257,7 @@ def definition_detail(def_id):
         rules=rules,
         formats=formats,
         exports=exports,
+        registered_sps=registered_sps,
         task_types=TASK_TYPES,
         recent_executions=recent_executions,
     )
@@ -258,7 +361,12 @@ def run_definition(def_id):
 @login_required
 def execution_detail(exec_id):
     execution = BatchExecution.query.get_or_404(exec_id)
-    return render_template("batch/execution_detail.html", execution=execution)
+    log_content = None
+    log_path = os.path.join(BATCH_LOG_DIR, f"batch_execution_{exec_id}.log")
+    if os.path.exists(log_path):
+        with open(log_path, encoding="utf-8") as _f:
+            log_content = _f.read()
+    return render_template("batch/execution_detail.html", execution=execution, log_content=log_content)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -267,7 +375,8 @@ def execution_detail(exec_id):
 
 def _auto_label(task_type: str, ref_id: str | None) -> str:
     labels = {
-        "ALLOCATION": f"Allocation rule {ref_id}",
+        "ALLOCATION":    f"Allocation rule {ref_id}",
+        "ALLOCATION_SP": f"Allocation SP: rule {ref_id}",
         "FTP": "FTP calculation",
         "DATAFILE_IMPORT": f"Import {ref_id}",
         "DATAFILE_EXPORT": f"Export {ref_id}",
@@ -311,3 +420,60 @@ def sp_status(run_id):
         "result_message": sp_run.result_message,
         "error_message": sp_run.error_message,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stored Procedures Registry
+# ─────────────────────────────────────────────────────────────────────────────
+
+@bp.route("/procedures")
+@login_required
+def list_procedures():
+    procedures = RegisteredSp.query.order_by(RegisteredSp.procedure_name).all()
+    
+    # Fetch all actual procedures from the DB to populate the Add dropdown
+    query = db.text("""
+        SELECT routine_schema, routine_name
+        FROM information_schema.routines
+        WHERE routine_type = 'PROCEDURE' 
+          AND routine_schema NOT IN ('pg_catalog', 'information_schema');
+    """)
+    db_result = db.session.execute(query).fetchall()
+    db_procedures = [f"{row[0]}.{row[1]}" for row in db_result]
+    
+    return render_template("batch/procedures.html", procedures=procedures, db_procedures=db_procedures)
+
+
+@bp.route("/procedures/add", methods=["POST"])
+@login_required
+def add_procedure():
+    name = request.form.get("procedure_name", "").strip()
+    description = request.form.get("description", "").strip()
+    if not name:
+        flash("Procedure name is required.", "danger")
+        return redirect(url_for("batch.list_procedures"))
+        
+    if RegisteredSp.query.filter_by(procedure_name=name).first():
+        flash("This procedure is already registered.", "warning")
+        return redirect(url_for("batch.list_procedures"))
+        
+    sp = RegisteredSp(
+        procedure_name=name,
+        description=description,
+        is_batch_enabled=True
+    )
+    db.session.add(sp)
+    db.session.commit()
+    flash(f"Registered stored procedure '{name}'.", "success")
+    return redirect(url_for("batch.list_procedures"))
+
+
+@bp.route("/procedures/<int:sp_id>/toggle", methods=["POST"])
+@login_required
+def toggle_procedure(sp_id):
+    sp = RegisteredSp.query.get_or_404(sp_id)
+    sp.is_batch_enabled = not sp.is_batch_enabled
+    db.session.commit()
+    state = "enabled" if sp.is_batch_enabled else "disabled"
+    flash(f"Stored procedure '{sp.procedure_name}' is now {state}.", "info")
+    return redirect(url_for("batch.list_procedures"))

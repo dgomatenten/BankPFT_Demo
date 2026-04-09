@@ -102,5 +102,5 @@ def download(batch_id):
 @login_required
 def batch_detail(batch_id):
     batch = DataFileBatch.query.get_or_404(batch_id)
-    errors = json.loads(batch.errors_json) if batch.errors_json else []
+    errors = batch.errors_json if isinstance(batch.errors_json, list) else (json.loads(batch.errors_json) if batch.errors_json else [])
     return render_template("datafile/batch_detail.html", batch=batch, errors=errors)

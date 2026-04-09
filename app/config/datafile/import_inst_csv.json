@@ -16,6 +16,7 @@
     { "name": "org_unit_id",     "column": 3, "type": "string" },
     { "name": "as_of_date",      "column": 4, "type": "date",  "date_format": "%Y-%m-%d" },
     { "name": "balance",         "column": 5, "type": "float", "transform": "float(value) / 100.0" },
-    { "name": "interest_income", "column": 6, "type": "float", "transform": "float(value) / 100.0" }
+    { "name": "interest_income", "column": 6, "type": "float", "transform": "float(value) / 100.0" },
+    { "name": "transaction_number", "column": 7, "type": "string" }
   ]
 }

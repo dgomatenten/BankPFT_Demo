@@ -27,6 +27,9 @@
                 <td>{{ r.created_by or '—' }}</td>
                 <td>
                     <a href="/rules/{{ r.id }}/edit" class="btn btn-sm btn-outline-warning me-1" title="Edit"><i class="bi bi-pencil-square"></i></a>
+                    <form method="POST" action="/rules/{{ r.id }}/copy" class="d-inline me-1">
+                        <button class="btn btn-sm btn-outline-info" title="Copy"><i class="bi bi-copy"></i></button>
+                    </form>
                     <form method="POST" action="/rules/{{ r.id }}/toggle" class="d-inline">
                         <button class="btn btn-sm btn-outline-{{ 'secondary' if r.is_active else 'success' }}" title="{{ 'Deactivate' if r.is_active else 'Activate' }}">{{ 'Deactivate' if r.is_active else 'Activate' }}</button>
                     </form>

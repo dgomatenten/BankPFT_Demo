@@ -86,7 +86,7 @@ class TestUINavigation:
         """All main nav links are visible in the sidebar after login."""
         logged_in_browser.get(f"{live_server}/")
         nav_text = logged_in_browser.find_element(By.CSS_SELECTOR, "nav, .sidebar, aside").text
-        for label in ["Dashboard", "Data Management", "Allocation Rules", "Batch Execution", "Reports"]:
+        for label in ["Dashboard", "Data Management", "Allocation Rules", "Batch", "Reports"]:
             assert label in nav_text, f"'{label}' not found in sidebar"
 
     def test_dashboard_loads(self, logged_in_browser, live_server):

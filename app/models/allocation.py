@@ -7,6 +7,7 @@ class RefStaticAllocation(MakerCheckerMixin, db.Model):
     __tablename__ = "ref_static_allocation"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    as_of_date = db.Column(db.Date, nullable=True, index=True)
     allocation_id = db.Column(db.String(36), nullable=False, index=True)
     customer_id = db.Column(db.String(20), db.ForeignKey("dim_customer.customer_id"), nullable=False)
     source_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
@@ -19,6 +20,7 @@ class RefOrgReclass(MakerCheckerMixin, db.Model):
     __tablename__ = "ref_org_reclass"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    as_of_date = db.Column(db.Date, nullable=True, index=True)
     reclass_id = db.Column(db.String(36), nullable=False, index=True)
     source_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
     target_org_unit_id = db.Column(db.String(20), db.ForeignKey("dim_org_unit.org_unit_id"), nullable=False)
@@ -36,6 +38,7 @@ class RefStaticDistribution(MakerCheckerMixin, db.Model):
     __tablename__ = "ref_static_distribution"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    as_of_date = db.Column(db.Date, nullable=True, index=True)
     driver_name = db.Column(db.String(100), nullable=False, index=True, default="")
     distribution_id = db.Column(db.String(50), nullable=False, index=True)
     # Source join columns — populate the one that matches the rule's join_key
@@ -58,6 +61,7 @@ class RefStaticAlloc(MakerCheckerMixin, db.Model):
     __tablename__ = "ref_static_alloc"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     upload_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    as_of_date = db.Column(db.Date, nullable=True, index=True)
     alloc_id = db.Column(db.String(50), nullable=False, index=True)
     # Source join columns — populate the one that matches the rule's join_key
     customer_id = db.Column(db.String(20), nullable=True, index=True)
@@ -97,6 +101,7 @@ class FctMgmtInstrument(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     batch_run_id = db.Column(db.String(36), nullable=False, index=True)
     as_of_date = db.Column(db.Date, nullable=False)
+    transaction_number = db.Column(db.String(100), nullable=True)
     entry_type = db.Column(db.String(10), default="DEBIT")  # DEBIT / CREDIT
     financial_element = db.Column(db.String(20), nullable=True)  # e.g. BAL, NII
     allocation_id = db.Column(db.String(36), nullable=True)

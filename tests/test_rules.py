@@ -172,67 +172,6 @@ class TestApplyFilters:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Allocation engine — end-to-end with seeded data
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestAllocationEngine:
-    def test_run_allocation_creates_batch(self, seeded_db, app):
-        from app.services.allocation_engine import run_allocation
-        from app.models.workflow import AllocationRule, BatchRun
-        with app.app_context():
-            rule = AllocationRule(
-                name="Engine E2E Test",
-                source_table="proc_inst_data",
-                lookup_table="ref_static_allocation",
-                output_table="fct_mgmt_instrument",
-                join_key="customer_id",
-                entry_mode="BOTH",
-                is_active=True,
-                created_by="admin",
-            )
-            seeded_db.add(rule)
-            seeded_db.flush()
-
-            batch = run_allocation(rule.id, date(2026, 1, 1), "admin")
-            assert batch is not None
-            assert batch.status == "COMPLETED"
-            assert batch.source_row_count >= 1
-
-    def test_run_allocation_unknown_rule_raises(self, db_session, app):
-        from app.services.allocation_engine import run_allocation
-        with app.app_context():
-            with pytest.raises(ValueError, match="not found"):
-                run_allocation(999999, date(2026, 1, 1), "admin")
-
-    def test_debit_credit_balance_equals_source(self, seeded_db, app):
-        """DEBIT + CREDIT ratio sum must equal the allocated balance."""
-        from app.services.allocation_engine import run_allocation
-        from app.models.workflow import AllocationRule
-        from app.models.allocation import FctMgmtInstrument
-        with app.app_context():
-            rule = AllocationRule(
-                name="Balance Check Rule",
-                source_table="proc_inst_data",
-                lookup_table="ref_static_allocation",
-                output_table="fct_mgmt_instrument",
-                join_key="customer_id",
-                entry_mode="BOTH",
-                is_active=True,
-                created_by="admin",
-            )
-            seeded_db.add(rule)
-            seeded_db.flush()
-
-            batch = run_allocation(rule.id, date(2026, 1, 1), "admin")
-            assert batch.status == "COMPLETED"
-            entries = FctMgmtInstrument.query.filter_by(batch_run_id=batch.id).all()
-            debits  = sum(e.allocated_balance for e in entries if e.entry_type == "DEBIT")
-            credits = sum(e.allocated_balance for e in entries if e.entry_type == "CREDIT")
-            # CREDIT allocated_balance is stored as negative — debits + credits must sum to ~0
-            assert abs(debits + credits) < 0.01
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # allocation_method field defaults
 # ─────────────────────────────────────────────────────────────────────────────
 

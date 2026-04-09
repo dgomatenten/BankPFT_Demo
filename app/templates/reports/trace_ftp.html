@@ -1,0 +1,237 @@
+{% extends "layout/base.html" %}
+{% block title %}FTP Trace — BankPFT{% endblock %}
+{% block content %}
+
+<!-- ═══════ Header ═══════ -->
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-currency-exchange"></i> FTP Trace</h2>
+        <div class="text-muted">
+            As-of: <strong>{{ ftp_run.as_of_date }}</strong>
+            &nbsp;|&nbsp; Status:
+            <span class="badge bg-{{ 'success' if ftp_run.status == 'COMPLETED' else 'danger' }}">{{ ftp_run.status }}</span>
+            &nbsp;|&nbsp; Run: <code>{{ ftp_run.id[:12] }}…</code>
+        </div>
+    </div>
+    <a href="/reports/traceability" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<!-- ═══════ Account Filter ═══════ -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="form-label mb-0 small fw-bold">Filter by Account:</label>
+            </div>
+            <div class="col-md-3">
+                <input type="text" name="account_id" class="form-control form-control-sm"
+                       value="{{ sel_account_id }}" placeholder="e.g. ACC-0001">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Filter</button>
+                {% if sel_account_id %}
+                <a href="/reports/traceability/ftp/{{ ftp_run.id }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════ Summary Cards ═══════ -->
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="card text-center border-info">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-info">{{ summary.source_count }}</div>
+                <small class="text-muted">Source Instruments</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-warning">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-warning">{{ summary.config_count }}</div>
+                <small class="text-muted">Product Configs</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold">{{ summary.rate_count }}</div>
+                <small class="text-muted">Rate Points</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-success">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-success">{{ summary.matched }}</div>
+                <small class="text-muted">Matched</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-danger">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-danger">{{ summary.skipped }}</div>
+                <small class="text-muted">Skipped</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ Flow Diagram ═══════ -->
+<div class="d-flex align-items-center justify-content-center mb-4 gap-2">
+    <span class="badge bg-info fs-6 px-3 py-2"><i class="bi bi-box-arrow-in-right"></i> Source (proc_inst_data)</span>
+    <i class="bi bi-arrow-right fs-4 text-muted"></i>
+    <span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-sliders"></i> Driver (Rate Config)</span>
+    <i class="bi bi-arrow-right fs-4 text-muted"></i>
+    <span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-box-arrow-right"></i> Output (Enriched)</span>
+</div>
+
+<!-- ═══════ 1. SOURCE ═══════ -->
+<div class="card mb-4">
+    <div class="card-header bg-info text-white">
+        <i class="bi bi-box-arrow-in-right"></i> Source — proc_inst_data
+        <span class="badge bg-light text-dark ms-2">{{ source_rows|length }} rows</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+            <table class="table table-sm table-striped mb-0">
+                <thead class="table-light sticky-top">
+                    <tr>
+                        <th>Account</th><th>Customer</th><th>Product</th><th>Org Unit</th>
+                        <th class="text-end">Balance</th><th class="text-end">Interest Inc</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in source_rows %}
+                <tr>
+                    <td><code>{{ s.account_id }}</code></td>
+                    <td>{{ s.customer_id }}</td>
+                    <td>{{ s.product_code }}</td>
+                    <td>{{ s.org_unit_id }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(s.balance) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(s.interest_income) }}</td>
+                </tr>
+                {% endfor %}
+                {% if not source_rows %}
+                <tr><td colspan="6" class="text-center text-muted py-3">No source rows.</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ 2. DRIVER — Product Config + Rate Curves ═══════ -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-warning text-dark">
+                <i class="bi bi-sliders"></i> FTP Product Config
+                <span class="badge bg-light text-dark ms-2">{{ product_configs|length }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Product</th><th>Method</th><th>Rate Code</th>
+                                <th>Tenor</th><th>Avg Period</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for pc in product_configs %}
+                        <tr>
+                            <td><code>{{ pc.product_code }}</code></td>
+                            <td>{{ pc.method }}</td>
+                            <td>{{ pc.rate_code }}</td>
+                            <td>{{ pc.term }}{{ pc.term_mult }}</td>
+                            <td>{{ pc.avg_period }}{{ pc.avg_period_mult }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% if not product_configs %}
+                        <tr><td colspan="5" class="text-center text-muted py-3">No configs.</td></tr>
+                        {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-warning text-dark">
+                <i class="bi bi-graph-up"></i> Interest Rate Curves ({{ ftp_run.as_of_date }})
+                <span class="badge bg-light text-dark ms-2">{{ rate_rows|length }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Rate Code</th><th>Tenor</th><th class="text-end">Rate (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for r in rate_rows %}
+                        <tr>
+                            <td>{{ r.interest_rate_code }}</td>
+                            <td>{{ r.term }}{{ r.term_mult }}</td>
+                            <td class="text-end">{{ "%.4f"|format(r.rate * 100) }}%</td>
+                        </tr>
+                        {% endfor %}
+                        {% if not rate_rows %}
+                        <tr><td colspan="3" class="text-center text-muted py-3">No approved rates for this date.</td></tr>
+                        {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ 3. OUTPUT — Enriched Instruments ═══════ -->
+<div class="card mb-4">
+    <div class="card-header bg-success text-white">
+        <i class="bi bi-box-arrow-right"></i> Output — Enriched Instruments
+        <span class="badge bg-light text-dark ms-2">{{ output_rows|length }} rows</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+            <table class="table table-sm table-striped mb-0">
+                <thead class="table-light sticky-top">
+                    <tr>
+                        <th>Account</th><th>Customer</th><th>Product</th><th>Org Unit</th>
+                        <th class="text-end">Balance</th><th class="text-end">Interest Inc</th>
+                        <th class="text-end">Base Rate</th><th class="text-end">Cost of Fund</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for o in output_rows %}
+                <tr>
+                    <td><code>{{ o.account_id }}</code></td>
+                    <td>{{ o.customer_id }}</td>
+                    <td>{{ o.product_code }}</td>
+                    <td>{{ o.org_unit_id }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(o.balance) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(o.interest_income) }}</td>
+                    <td class="text-end">{{ "%.6f"|format(o.base_rate) if o.base_rate is not none else '—' }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(o.cost_of_fund) if o.cost_of_fund is not none else '—' }}</td>
+                </tr>
+                {% endfor %}
+                {% if not output_rows %}
+                <tr><td colspan="8" class="text-center text-muted py-3">No enriched instruments found (FTP may not have matched any).</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

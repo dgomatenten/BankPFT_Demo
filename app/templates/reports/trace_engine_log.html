@@ -1,0 +1,109 @@
+{% extends "layout/base.html" %}
+{% block title %}Engine Log — {{ batch.id[:8] }}… — BankPFT{% endblock %}
+{% block content %}
+
+<!-- ═══════ Header ═══════ -->
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-journal-text"></i> Allocation Engine Log</h2>
+        <div class="text-muted small">
+            Batch: <code>{{ batch.id }}</code>
+            &nbsp;|&nbsp; As-of: <strong>{{ batch.as_of_date }}</strong>
+            &nbsp;|&nbsp; Status:
+            <span class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else ('danger' if batch.status == 'FAILED' else 'secondary') }}">{{ batch.status }}</span>
+            &nbsp;|&nbsp; Engine: <span class="badge bg-info text-dark">Python ORM</span>
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/reports/traceability/batch/{{ batch.id }}/sql-log"
+           class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-database"></i> SQL Log
+        </a>
+        <a href="/reports/traceability/batch/{{ batch.id }}"
+           class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-diagram-3"></i> Trace View
+        </a>
+        <a href="/reports/traceability" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+{% if not log_exists %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    No engine log file found for this batch.
+    Log file expected at: <code>{{ log_path }}</code>
+    <br><small>Note: Log files are only available for Python-engine allocation runs. SP-based runs use the <a href="/reports/traceability/batch/{{ batch.id }}/sql-log">SQL Log</a> instead.</small>
+</div>
+{% elif not log_lines %}
+<div class="alert alert-secondary">
+    <i class="bi bi-info-circle"></i> Log file exists but is empty.
+</div>
+{% else %}
+
+<!-- ════ Level Legend ════ -->
+<div class="d-flex flex-wrap gap-2 mb-3 small">
+    {% for level, color in [('START','primary'),('RULE','secondary'),('QUERY','info'),
+                             ('SQL','dark'),('JOIN','info'),('FILTER','warning'),
+                             ('PROCESS','success'),('ORPHAN','warning'),
+                             ('DB','primary'),('SUMMARY','success'),('COMPLETE','success'),('ERROR','danger')] %}
+    <span class="badge bg-{{ color }}">{{ level }}</span>
+    {% endfor %}
+</div>
+
+<!-- ════ Log Table ════ -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-ul"></i> Log Entries
+            <span class="badge bg-secondary ms-1">{{ log_lines|length }}</span>
+        </span>
+        <small class="text-muted">{{ log_path }}</small>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 700px; overflow-y: auto;">
+            <table class="table table-sm table-hover mb-0" style="font-size: 0.82rem;">
+                <thead class="table-light sticky-top">
+                    <tr>
+                        <th style="width:170px">Timestamp</th>
+                        <th style="width:90px">Level</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for line in log_lines %}
+                {% set lvl = line.level %}
+                {% set badge_color = {
+                    'START': 'primary', 'RULE': 'secondary', 'QUERY': 'info',
+                    'SQL': 'dark', 'JOIN': 'cyan', 'FILTER': 'warning',
+                    'PROCESS': 'success', 'ORPHAN': 'warning', 'DB': 'primary',
+                    'SUMMARY': 'success', 'COMPLETE': 'success', 'ERROR': 'danger',
+                    'FAILED': 'danger', 'RAW': 'light'
+                }.get(lvl, 'secondary') %}
+                <tr class="{{ 'table-danger' if lvl in ('ERROR','FAILED') else ('table-success' if lvl in ('COMPLETE','SUMMARY') else ('table-info bg-opacity-10' if lvl == 'SQL' else '')) }}">
+                    <td class="text-muted" style="font-family: monospace; white-space: nowrap;">{{ line.ts }}</td>
+                    <td><span class="badge bg-{{ badge_color }}">{{ lvl }}</span></td>
+                    <td>
+                    {% if lvl == 'SQL' %}
+                        {# SQL lines: show message normally but check if it contains SELECT/INSERT/DELETE/UPDATE #}
+                        {% set msg = line.msg %}
+                        {% if 'INSERT INTO' in msg or 'DELETE FROM' in msg or 'SELECT' in msg %}
+                        <code class="text-dark">{{ msg }}</code>
+                        {% else %}
+                        {{ msg }}
+                        {% endif %}
+                    {% else %}
+                        {{ line.msg }}
+                    {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+{% endblock %}

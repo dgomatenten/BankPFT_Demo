@@ -14,6 +14,7 @@ import uuid
 from app.core.time_utils import utc_now
 import pandas as pd
 from app.models import db
+from sqlalchemy import or_
 from app.models.workflow import AllocationRule, BatchRun
 from app.models.registry import MODEL_REGISTRY
 from app.core.config_loader import load_config
@@ -142,9 +143,9 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         LookupModel = None
 
     # ── Parse new dimension configs ──
-    source_dim_cfg = json.loads(rule.source_dim_json) if rule.source_dim_json else {}
-    output_dim_cfg = json.loads(rule.output_dim_json) if rule.output_dim_json else {}
-    credit_dim_cfg = json.loads(rule.credit_dim_json) if rule.credit_dim_json else {}
+    source_dim_cfg = rule.source_dim_json if isinstance(rule.source_dim_json, dict) else (json.loads(rule.source_dim_json) if rule.source_dim_json else {})
+    output_dim_cfg = rule.output_dim_json if isinstance(rule.output_dim_json, dict) else (json.loads(rule.output_dim_json) if rule.output_dim_json else {})
+    credit_dim_cfg = rule.credit_dim_json if isinstance(rule.credit_dim_json, dict) else (json.loads(rule.credit_dim_json) if rule.credit_dim_json else {})
 
     # Resolve entry mode: new entry_mode field takes precedence over legacy generate_offset
     raw_mode = (rule.entry_mode or "").strip().upper() if getattr(rule, "entry_mode", None) else ""
@@ -186,6 +187,8 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         source_rows = SourceModel.query.filter(
             getattr(SourceModel, date_col) == as_of_date
         ).all()
+        logger.log("SQL",    f"SELECT * FROM {rule.source_table} WHERE {date_col} = '{as_of_date}'  "
+                             f"[{len(source_rows):,} rows returned]")
         if not source_rows:
             logger.log("ERROR",  f"No rows in '{rule.source_table}' for as_of_date={as_of_date}")
             batch.status        = "FAILED"
@@ -237,7 +240,57 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         # If the rule specifies a single balance column, restrict to that column only
         if getattr(rule, "balance_column", None) and rule.balance_column in balance_cols:
             balance_cols = [rule.balance_column]
-        acct_col     = src_cfg["account_id_column"]
+        # Also restrict fe_cols to match the selected balance columns
+        if supports_fe:
+            fe_cols = {c: l for c, l in fe_cols.items() if c in balance_cols}
+
+        # ── 4a. Drop rows where all selected balance columns are 0 or NULL ──
+        _pre_zero = len(source_data)
+        source_data[balance_cols] = source_data[balance_cols].fillna(0)
+        source_data = source_data[source_data[balance_cols].ne(0).any(axis=1)]
+        if _pre_zero != len(source_data):
+            logger.log("FILTER", f"Zero-balance filter: {_pre_zero:,} → {len(source_data):,} rows")
+        if source_data.empty:
+            logger.log("ERROR", "No rows remain after zero-balance filter")
+            batch.status = "FAILED"
+            batch.error_message = "No non-zero balance rows in source data."
+            batch.completed_at = utc_now()
+            db.session.commit()
+            return batch
+
+        acct_col     = src_cfg.get("account_id_column", "account_id")
+        
+        # ── Source Aggregation (aggregate_source=True) ──
+        if getattr(rule, "aggregate_source", False):
+            group_cols = []
+            agg_funcs = {}
+            for col in src_cfg["dimension_columns"]:
+                mode = output_dim_cfg.get(col, {}).get("mode", "same_as_source")
+                if mode != "fixed":
+                    group_cols.append(col)
+                else:
+                    agg_funcs[col] = "max"
+            for col in balance_cols:
+                agg_funcs[col] = "sum"
+            
+            # Ensure join keys are present in group_cols
+            for k in [jk.strip() for jk in join_key.split(",") if jk.strip()]:
+                if k not in group_cols and k in source_data.columns:
+                    group_cols.append(k)
+                    
+            # For any remaining source columns (e.g. date), keep them via max()
+            for col in src_cfg["columns"]:
+                if col not in group_cols and col not in agg_funcs and col in source_data.columns:
+                    agg_funcs[col] = "max"
+            
+            _pre_agg = len(source_data)
+            if group_cols:
+                source_data = source_data.groupby(group_cols, as_index=False).agg(agg_funcs)
+            elif agg_funcs:
+                source_data = source_data.assign(_dummy=1).groupby('_dummy', as_index=False).agg(agg_funcs).drop(columns=['_dummy'])
+            
+            logger.log("FILTER", f"Source aggregation applied: {_pre_agg:,} → {len(source_data):,} rows")
+
         results       = []
         _debit_count  = 0
         _credit_count = 0
@@ -245,15 +298,23 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
 
         if alloc_method in ("RATIO", "DISTRIBUTION"):
             # ── 4a. Load lookup table ──
-            logger.log("QUERY",  f"Loading lookup ratios from '{rule.lookup_table}' (status={lkp_cfg['status_filter']})")
+            lkp_date_col = lkp_cfg.get("date_filter_column")
+            logger.log("QUERY",  f"Loading lookup ratios from '{rule.lookup_table}' (status={lkp_cfg['status_filter']}, as_of_date={as_of_date})")
+
+            # Base filter: status + as_of_date (match exact date or NULL for backward compat)
+            base_q = LookupModel.query.filter_by(status=lkp_cfg["status_filter"])
+            if lkp_date_col and hasattr(LookupModel, lkp_date_col):
+                date_attr = getattr(LookupModel, lkp_date_col)
+                base_q = base_q.filter(or_(date_attr == as_of_date, date_attr.is_(None)))
+
             if alloc_method == "DISTRIBUTION" and rule.distribution_driver:
-                alloc_rows = LookupModel.query.filter_by(
-                    status=lkp_cfg["status_filter"],
-                    driver_name=rule.distribution_driver,
-                ).all()
+                alloc_rows = base_q.filter_by(driver_name=rule.distribution_driver).all()
                 logger.log("QUERY", f"Filtered by driver_name='{rule.distribution_driver}'")
             else:
-                alloc_rows = LookupModel.query.filter_by(status=lkp_cfg["status_filter"]).all()
+                alloc_rows = base_q.all()
+            logger.log("SQL",   f"SELECT * FROM {rule.lookup_table} WHERE status = '{lkp_cfg['status_filter']}' "
+                                f"AND ({lkp_date_col} = '{as_of_date}' OR {lkp_date_col} IS NULL)  "
+                                f"[{len(alloc_rows):,} rows returned]")
             alloc_data = (
                 pd.DataFrame([
                     {col: getattr(r, col) for col in lkp_cfg["columns"]}
@@ -317,8 +378,8 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                 src_org  = str(row.get(ou_col, ""))
                 src_cust = str(row.get("customer_id", row.get(primary_join_col, "")))
                 src_prod = str(row.get("product_code", ""))
-                src_bal  = float(row[balance_cols[0]])
-                ratio    = float(row[ratio_col])
+                src_bal  = float(row[balance_cols[0]] or 0)
+                ratio    = float(row[ratio_col] or 0)
 
                 # For RATIO/DISTRIBUTION, target_org defaults to the lookup table's
                 # target org column (the allocated-to org).  The user can override via
@@ -341,7 +402,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                         crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, target_org_col)
                         crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, target_org_col)
                     for bal_col, fe_label in fe_cols.items():
-                        src_fe_val = float(row.get(bal_col, 0))
+                        src_fe_val = float(row.get(bal_col) or 0)
                         fe_alloc   = src_fe_val * ratio
                         if emit_debit:
                             _debit_count += 1
@@ -383,7 +444,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             ))
                 else:
                     alloc_bal = src_bal * ratio
-                    alloc_inc = float(row[balance_cols[1]]) * ratio if len(balance_cols) > 1 else 0.0
+                    alloc_inc = float(row[balance_cols[1]] or 0) * ratio if len(balance_cols) > 1 else 0.0
 
                     if emit_debit:
                         _debit_count += 1
@@ -439,7 +500,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                     src_org = str(row.get(ou_col, ""))
                     if supports_fe:
                         for bal_col, fe_label in fe_cols.items():
-                            src_fe_val = float(row.get(bal_col, 0))
+                            src_fe_val = float(row.get(bal_col) or 0)
                             results.append(OutputModel(
                                 batch_run_id=batch_id,
                                 as_of_date=as_of_date,
@@ -458,8 +519,8 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 is_orphan=True,
                             ))
                     else:
-                        src_bal   = float(row[balance_cols[0]])
-                        alloc_inc = float(row[balance_cols[1]]) * default_ratio if len(balance_cols) > 1 else 0.0
+                        src_bal   = float(row[balance_cols[0]] or 0)
+                        alloc_inc = float(row[balance_cols[1]] or 0) * default_ratio if len(balance_cols) > 1 else 0.0
                         results.append(OutputModel(
                             batch_run_id=batch_id,
                             as_of_date=as_of_date,
@@ -486,7 +547,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                 src_org  = str(row.get(ou_col, ""))
                 src_cust = str(row.get("customer_id", ""))
                 src_prod = str(row.get("product_code", ""))
-                src_bal  = float(row[balance_cols[0]])
+                src_bal  = float(row[balance_cols[0]] or 0)
 
                 # Output dimensions: same_as_source or fixed (lookup mode not applicable)
                 tgt_org  = _resolve_dim_value(row, ou_col,           output_dim_cfg, src_org,  src_org)
@@ -501,7 +562,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                         crd_prod = _resolve_dim_value(row, "product_code",  credit_dim_cfg, src_prod, src_org)
                         crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, src_org)
                     for bal_col, fe_label in fe_cols.items():
-                        src_fe_val = float(row.get(bal_col, 0))
+                        src_fe_val = float(row.get(bal_col) or 0)
                         if emit_debit:
                             _debit_count += 1
                             results.append(OutputModel(
@@ -541,7 +602,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 is_orphan=False,
                             ))
                 else:
-                    alloc_inc = float(row[balance_cols[1]]) if len(balance_cols) > 1 else 0.0
+                    alloc_inc = float(row[balance_cols[1]] or 0) if len(balance_cols) > 1 else 0.0
 
                     if emit_debit:
                         _debit_count += 1
@@ -593,16 +654,20 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
             OutputModel.as_of_date == as_of_date,
         ).delete(synchronize_session=False)
         if del_count:
-            logger.log("DB", f"Deleted {del_count:,} prior rows for rule_id={rule_id}, as_of_date={as_of_date}")
+            logger.log("DB",  f"Deleted {del_count:,} prior rows for rule_id={rule_id}, as_of_date={as_of_date}")
+        logger.log("SQL",     f"DELETE FROM {rule.output_table} WHERE allocation_id = '{rule_id}' "
+                             f"AND as_of_date = '{as_of_date}'  [{del_count:,} rows deleted]")
         db.session.add_all(results)
         logger.log("DB",      f"Writing {len(results):,} output rows to '{rule.output_table}'")
+        logger.log("SQL",     f"INSERT INTO {rule.output_table} — {len(results):,} total rows "
+                             f"({_debit_count:,} DEBIT, {_credit_count:,} CREDIT)")
 
         # ── 9. Update batch stats (DEBIT rows drive totals) ──
         debit_rows = [r for r in results if r.entry_type == "DEBIT"]
         batch.source_row_count = len(source_data)
         batch.output_row_count = len(results)
         batch.orphan_count     = len(orphan_dedup)
-        batch.source_total     = float(source_data[balance_cols[0]].sum())
+        batch.source_total     = float(source_data[balance_cols[0]].fillna(0).sum())
         batch.output_total     = sum(r.allocated_balance for r in debit_rows)
         batch.status           = "COMPLETED"
         batch.completed_at     = utc_now()

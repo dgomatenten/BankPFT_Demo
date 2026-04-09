@@ -171,13 +171,16 @@
         <a href="/rules/{{ rule.id }}/edit" class="btn btn-warning">
             <i class="bi bi-pencil-square"></i> Edit Rule
         </a>
-        <form method="POST" action="/rules/{{ rule.id }}/toggle">
+        <form method="POST" action="/rules/{{ rule.id }}/copy" class="d-inline">
+            <button class="btn btn-info"><i class="bi bi-copy"></i> Copy Rule</button>
+        </form>
+        <form method="POST" action="/rules/{{ rule.id }}/toggle" class="d-inline">
             <button class="btn btn-{{ 'secondary' if rule.is_active else 'success' }}">
                 <i class="bi bi-{{ 'pause-circle' if rule.is_active else 'play-circle' }}"></i>
                 {{ 'Deactivate Rule' if rule.is_active else 'Activate Rule' }}
             </button>
         </form>
-        <form method="POST" action="/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete this rule permanently?');">
+        <form method="POST" action="/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete this rule permanently?');" class="d-inline">
             <button class="btn btn-outline-danger"><i class="bi bi-trash"></i> Delete Rule</button>
         </form>
     </div>

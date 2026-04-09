@@ -58,7 +58,7 @@
         "ALLOCATION": {
             "label": "Allocation Ratios",
             "description": "Static allocation ratios for customer shredding",
-            "required_columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"],
+            "required_columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio", "as_of_date"],
             "optional_columns": [],
             "unique_key": null,
             "staging_table": "ref_static_allocation",
@@ -82,7 +82,8 @@
                 "customer_id": {"type": "string"},
                 "source_org_unit_id": {"type": "string"},
                 "target_org_unit_id": {"type": "string"},
-                "ratio": {"type": "float"}
+                "ratio": {"type": "float"},
+                "as_of_date": {"type": "date"}
             },
             "validation_rules": ["required_columns", "null_check", "dimension_lookup", "ratio_sum", "numeric_range"],
             "post_approval": {"type": "stored_procedure", "procedure_name": "sp_refresh_allocation_cache"}
@@ -90,7 +91,7 @@
         "ORG_RECLASS": {
             "label": "Org Reclassification",
             "description": "Org unit reclassification mapping (1:1)",
-            "required_columns": ["reclass_id", "source_org_unit_id", "target_org_unit_id"],
+            "required_columns": ["reclass_id", "source_org_unit_id", "target_org_unit_id", "as_of_date"],
             "optional_columns": ["ratio"],
             "unique_key": null,
             "staging_table": "ref_org_reclass",
@@ -105,7 +106,8 @@
                 "reclass_id": {"type": "string"},
                 "source_org_unit_id": {"type": "string"},
                 "target_org_unit_id": {"type": "string"},
-                "ratio": {"type": "float", "default": 1.0}
+                "ratio": {"type": "float", "default": 1.0},
+                "as_of_date": {"type": "date"}
             },
             "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"],
             "post_approval": null
@@ -134,7 +136,7 @@
         "DISTRIBUTION": {
             "label": "Static Distribution",
             "description": "Distribution table mapping source dimension values to target dimensions with ratios. Used by the Static Distribution allocation method. Required columns: driver_name, distribution_id, target_dim, ratio. Include one of customer_id / org_unit_id / product_code as the join key column.",
-            "required_columns": ["driver_name", "distribution_id", "target_dim", "ratio"],
+            "required_columns": ["driver_name", "distribution_id", "target_dim", "ratio", "as_of_date"],
             "optional_columns": ["customer_id", "org_unit_id", "product_code"],
             "unique_key": null,
             "staging_table": "ref_static_distribution",
@@ -155,7 +157,8 @@
                 "org_unit_id":     {"type": "string", "default": null},
                 "product_code":    {"type": "string", "default": null},
                 "target_dim":      {"type": "string"},
-                "ratio":           {"type": "float"}
+                "ratio":           {"type": "float"},
+                "as_of_date":      {"type": "date"}
             },
             "validation_rules": ["required_columns", "null_check", "ratio_sum", "numeric_range"],
             "post_approval": {"type": "stored_procedure", "procedure_name": "sp_refresh_distribution_cache"}
@@ -163,7 +166,7 @@
         "STATIC_ALLOC": {
             "label": "Static Allocation Mapping",
             "description": "Simple source-to-target dimension mapping for Static Allocation (aggregation / reclass). Required columns: alloc_id, target_dim. Include one of customer_id / org_unit_id / product_code as the join key. Ratio defaults to 1.0.",
-            "required_columns": ["alloc_id", "target_dim"],
+            "required_columns": ["alloc_id", "target_dim", "as_of_date"],
             "optional_columns": ["customer_id", "org_unit_id", "product_code", "ratio"],
             "unique_key": null,
             "staging_table": "ref_static_alloc",
@@ -176,7 +179,8 @@
                 "org_unit_id":  {"type": "string", "default": null},
                 "product_code": {"type": "string", "default": null},
                 "target_dim":   {"type": "string"},
-                "ratio":        {"type": "float", "default": 1.0}
+                "ratio":        {"type": "float", "default": 1.0},
+                "as_of_date":   {"type": "date"}
             },
             "validation_rules": ["required_columns", "null_check", "numeric_range"],
             "post_approval": null

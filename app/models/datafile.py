@@ -1,4 +1,4 @@
-from app.models import db
+from app.models import db, JSONB_TYPE
 from app.core.time_utils import utc_now
 
 
@@ -15,7 +15,7 @@ class DataFileBatch(db.Model):
     status = db.Column(db.String(20), default="RUNNING")        # RUNNING | COMPLETED | FAILED
     row_count = db.Column(db.Integer, default=0)
     error_count = db.Column(db.Integer, default=0)
-    errors_json = db.Column(db.JSON, nullable=True)             # JSON list of error strings
+    errors_json = db.Column(JSONB_TYPE, nullable=True)             # JSON list of error strings
     run_by = db.Column(db.String(50), nullable=False)
     started_at = db.Column(db.DateTime(timezone=True), default=utc_now)
     completed_at = db.Column(db.DateTime(timezone=True), nullable=True)

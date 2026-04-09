@@ -19,6 +19,7 @@
     { "source_col": "org_unit_id",     "header": "org_unit_id",     "type": "string" },
     { "source_col": "as_of_date",      "header": "as_of_date",      "type": "date",  "date_format": "%Y-%m-%d" },
     { "source_col": "balance",         "header": "balance",         "type": "float", "decimals": 2 },
-    { "source_col": "interest_income", "header": "interest_income", "type": "float", "decimals": 2 }
+    { "source_col": "interest_income", "header": "interest_income", "type": "float", "decimals": 2 },
+    { "source_col": "transaction_number", "header": "transaction_number", "type": "string" }
   ]
 }

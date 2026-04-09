@@ -130,7 +130,7 @@ def _datafile_batch_dict(b: DataFileBatch) -> dict:
         "status":      b.status,
         "row_count":   b.row_count,
         "error_count": b.error_count,
-        "errors":      json.loads(b.errors_json)[:20] if b.errors_json else [],
+        "errors":      (b.errors_json if isinstance(b.errors_json, list) else json.loads(b.errors_json) if b.errors_json else [])[:20],
         "error_message": b.error_message,
         "run_by":      b.run_by,
         "started_at":  _fmt_dt(b.started_at),
@@ -391,7 +391,14 @@ def api_import_rule(api_user):
     def _to_json(v):
         if v is None:
             return None
-        return json.dumps(v) if isinstance(v, dict) else str(v)
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return None
 
     raw_jk = body.get("join_key", body.get("join_keys", "customer_id"))
     if isinstance(raw_jk, list):

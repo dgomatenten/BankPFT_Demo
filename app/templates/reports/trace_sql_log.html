@@ -1,0 +1,177 @@
+{% extends "layout/base.html" %}
+{% block title %}SQL Execution Log — {{ batch.id[:8] }}… — BankPFT{% endblock %}
+{% block content %}
+
+<!-- ═══════ Header ═══════ -->
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-database-check"></i> SQL Execution Log</h2>
+        <div class="text-muted small">
+            Batch: <code>{{ batch.id }}</code>
+            &nbsp;|&nbsp; As-of: <strong>{{ batch.as_of_date }}</strong>
+            &nbsp;|&nbsp; Status:
+            <span class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else ('danger' if batch.status == 'FAILED' else 'secondary') }}">{{ batch.status }}</span>
+            &nbsp;|&nbsp; Engine: <span class="badge bg-dark text-white">PostgreSQL SP</span>
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/reports/traceability/batch/{{ batch.id }}/engine-log"
+           class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-journal-text"></i> Engine Log
+        </a>
+        <a href="/reports/traceability/batch/{{ batch.id }}"
+           class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-diagram-3"></i> Trace View
+        </a>
+        <a href="/reports/traceability" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+{% if not has_log_table %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    <strong>sp_alloc_log table not found.</strong>
+    Please deploy the DDL before running SP-based allocations:
+    <code>psql -U bankpft -d bankpft -f db/ddl/sp_alloc_log_table.sql</code>
+</div>
+{% elif not log_rows %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    No SQL log entries found for this batch.
+    <br><small>This may be a Python-engine batch — use the
+    <a href="/reports/traceability/batch/{{ batch.id }}/engine-log">Engine Log</a> view instead.</small>
+</div>
+{% else %}
+
+<!-- ════ Summary Stats ════ -->
+{% set summary_rows = log_rows | selectattr('event_type', 'equalto', 'SUMMARY') | list %}
+{% set sql_exec_rows = log_rows | selectattr('event_type', 'equalto', 'SQL_EXEC') | list %}
+{% set error_rows = log_rows | selectattr('event_type', 'equalto', 'ERROR') | list %}
+
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="card text-center border-secondary">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold">{{ log_rows | length }}</div>
+                <small class="text-muted">Total Log Rows</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-dark">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-dark">{{ sql_exec_rows | length }}</div>
+                <small class="text-muted">SQL Statements</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-{{ 'danger' if error_rows else 'success' }}">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-{{ 'danger' if error_rows else 'success' }}">
+                    {{ error_rows | length }}
+                </div>
+                <small class="text-muted">Errors</small>
+            </div>
+        </div>
+    </div>
+    {% if summary_rows %}
+    <div class="col-6">
+        <div class="card border-success">
+            <div class="card-body py-2">
+                <small class="fw-bold text-success"><i class="bi bi-check-circle"></i> Summary</small><br>
+                <small class="text-muted">{{ summary_rows[-1].message }}</small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ════ Log Table ════ -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-list-ul"></i> Execution Events
+        <span class="badge bg-secondary ms-1">{{ log_rows|length }}</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 720px; overflow-y: auto;">
+            <table class="table table-sm mb-0" style="font-size: 0.82rem;">
+                <thead class="table-light sticky-top">
+                    <tr>
+                        <th style="width:40px">#</th>
+                        <th style="width:55px">Phase</th>
+                        <th style="width:120px">Type</th>
+                        <th style="width:140px">Label</th>
+                        <th style="width:80px" class="text-end">Rows</th>
+                        <th>Message / SQL</th>
+                        <th style="width:90px">Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in log_rows %}
+                {% set et = row.event_type %}
+                {% set row_class = {
+                    'PHASE_START': 'table-light fw-bold',
+                    'SQL_EXEC':    '',
+                    'NOTICE':      'table-info bg-opacity-25',
+                    'SUMMARY':     'table-success',
+                    'ERROR':       'table-danger',
+                }.get(et, '') %}
+                {% set badge_color = {
+                    'PHASE_START': 'secondary',
+                    'SQL_EXEC':    'dark',
+                    'NOTICE':      'info',
+                    'SUMMARY':     'success',
+                    'ERROR':       'danger',
+                }.get(et, 'secondary') %}
+                <tr class="{{ row_class }}">
+                    <td class="text-muted">{{ row.id }}</td>
+                    <td class="text-center">
+                        {% if et == 'PHASE_START' %}
+                        <span class="badge bg-light text-dark border">{{ row.phase }}</span>
+                        {% else %}
+                        <small class="text-muted">{{ row.phase }}</small>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge bg-{{ badge_color }}">{{ et }}</span></td>
+                    <td><code class="small">{{ row.event_label or '' }}</code></td>
+                    <td class="text-end">
+                        {% if row.row_count is not none %}
+                        <span class="badge bg-{{ 'danger' if row.row_count == 0 and et == 'SQL_EXEC' else 'secondary' }}">
+                            {{ "{:,}".format(row.row_count) }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.message %}
+                        <div class="text-muted small mb-1">{{ row.message }}</div>
+                        {% endif %}
+                        {% if row.sql_text %}
+                        <details>
+                            <summary class="small text-primary" style="cursor:pointer;">
+                                <i class="bi bi-code-square"></i> View SQL
+                            </summary>
+                            <pre class="mt-1 mb-0 p-2 rounded" style="background:#1e1e1e; color:#d4d4d4;
+                                 font-size:0.78rem; white-space:pre-wrap; word-break:break-word;
+                                 max-height:400px; overflow-y:auto;">{{ row.sql_text | e }}</pre>
+                        </details>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted" style="white-space:nowrap; font-size:0.75rem;">
+                        {% if row.logged_at %}{{ row.logged_at.strftime('%H:%M:%S') }}{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+{% endblock %}

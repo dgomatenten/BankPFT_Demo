@@ -1,0 +1,288 @@
+{% extends "layout/base.html" %}
+{% block title %}Batch Monitor — BankPFT{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h2 class="mb-0"><i class="bi bi-activity"></i> Batch Monitor</h2>
+    <div class="d-flex align-items-center gap-2">
+        <span id="autoRefreshBadge" class="badge bg-info"><i class="bi bi-arrow-repeat"></i> Auto-refresh 10 s</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="refreshPage()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh Now
+        </button>
+    </div>
+</div>
+
+<!-- ── Running Now ──────────────────────────────────────────────────── -->
+{% set total_running = running_executions | length + running_alloc | length %}
+<div class="card mb-4 {{ 'border-warning' if total_running > 0 else 'border-success' }}">
+    <div class="card-header fw-semibold {{ 'bg-warning text-dark' if total_running > 0 else 'bg-success text-white' }}">
+        <i class="bi bi-{{ 'hourglass-split' if total_running > 0 else 'check-circle' }}"></i>
+        Running Now
+        {% if total_running > 0 %}
+        <span class="badge bg-dark ms-2">{{ total_running }}</span>
+        {% else %}
+        <span class="ms-2">— All clear</span>
+        {% endif %}
+    </div>
+    {% if total_running > 0 %}
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr><th>Type</th><th>ID</th><th>Name / Rule</th><th>As-of Date</th><th>Started</th><th>Run By</th><th>Progress</th></tr>
+            </thead>
+            <tbody>
+            {% for ex in running_executions %}
+            <tr class="table-warning">
+                <td><span class="badge bg-info">BATCH</span></td>
+                <td><a href="{{ url_for('batch.execution_detail', exec_id=ex.id) }}" class="font-monospace">{{ ex.id[:8] }}…</a></td>
+                <td>{{ ex.definition.name }}</td>
+                <td>{{ ex.as_of_date }}</td>
+                <td class="small">{{ ex.started_at.strftime('%H:%M:%S') }}</td>
+                <td class="small">{{ ex.run_by }}</td>
+                <td>
+                    {% set done  = ex.steps | selectattr('status','in',['COMPLETED','FAILED','SKIPPED']) | list | length %}
+                    {% set total = ex.steps | length %}
+                    <div class="progress" style="height: 20px; min-width: 120px;">
+                        <div class="progress-bar bg-success" style="width: {{ (done / total * 100) if total else 0 }}%">
+                            {{ done }}/{{ total }}
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            {% for br in running_alloc %}
+            <tr class="table-warning">
+                <td><span class="badge bg-primary">ALLOCATION</span></td>
+                <td><a href="{{ url_for('batch.detail', batch_id=br.id) }}" class="font-monospace">{{ br.id[:8] }}…</a></td>
+                <td>Rule #{{ br.rule_id }}</td>
+                <td>{{ br.as_of_date }}</td>
+                <td class="small">{{ br.started_at.strftime('%H:%M:%S') }}</td>
+                <td class="small">{{ br.run_by }}</td>
+                <td><span class="badge bg-info"><i class="bi bi-hourglass-split"></i> Running</span></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No batches are currently running.</div>
+    {% endif %}
+</div>
+
+<!-- ── Recent Activity Tabs ─────────────────────────────────────────── -->
+<div class="card mb-4">
+    <div class="card-header p-0">
+        <ul class="nav nav-tabs card-header-tabs" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active fw-semibold" data-bs-toggle="tab" data-bs-target="#tab-executions">
+                    <i class="bi bi-collection-play"></i> Batch Executions
+                    <span class="badge bg-secondary ms-1">{{ recent_executions | length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link fw-semibold" data-bs-toggle="tab" data-bs-target="#tab-alloc">
+                    <i class="bi bi-gear"></i> Allocations
+                    <span class="badge bg-secondary ms-1">{{ recent_alloc | length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link fw-semibold" data-bs-toggle="tab" data-bs-target="#tab-ftp">
+                    <i class="bi bi-currency-exchange"></i> FTP
+                    <span class="badge bg-secondary ms-1">{{ recent_ftp | length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link fw-semibold" data-bs-toggle="tab" data-bs-target="#tab-datafile">
+                    <i class="bi bi-file-earmark-binary"></i> Data Files
+                    <span class="badge bg-secondary ms-1">{{ recent_datafile | length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link fw-semibold" data-bs-toggle="tab" data-bs-target="#tab-sp">
+                    <i class="bi bi-terminal"></i> Stored Procedures
+                    <span class="badge bg-secondary ms-1">{{ recent_sp | length }}</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body p-0">
+        <div class="tab-content">
+
+            <!-- Batch Executions -->
+            <div class="tab-pane fade show active" id="tab-executions">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Run ID</th><th>Batch</th><th>As-of Date</th><th>Status</th><th>Steps</th><th>Run By</th><th>Started</th><th>Duration</th></tr></thead>
+                    <tbody>
+                    {% for ex in recent_executions %}
+                    {% set sc = {'COMPLETED':'success','FAILED':'danger','PARTIAL':'warning','RUNNING':'info'} %}
+                    <tr>
+                        <td><a href="{{ url_for('batch.execution_detail', exec_id=ex.id) }}" class="font-monospace">{{ ex.id[:8] }}…</a></td>
+                        <td>{{ ex.definition.name }}</td>
+                        <td>{{ ex.as_of_date }}</td>
+                        <td><span class="badge bg-{{ sc.get(ex.status,'secondary') }}">{{ ex.status }}</span></td>
+                        <td>
+                            {% set done   = ex.steps | selectattr('status','in',['COMPLETED','FAILED','SKIPPED']) | list | length %}
+                            {% set total  = ex.steps | length %}
+                            {% set failed = ex.steps | selectattr('status','eq','FAILED') | list | length %}
+                            <span class="small">{{ done }}/{{ total }}</span>
+                            {% if failed %}<span class="badge bg-danger ms-1">{{ failed }} failed</span>{% endif %}
+                        </td>
+                        <td class="small text-muted">{{ ex.run_by }}</td>
+                        <td class="small text-muted">{{ ex.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td class="small text-muted">
+                            {% if ex.completed_at %}
+                            {% set secs = (ex.completed_at - ex.started_at).total_seconds() | int %}
+                            {% if secs < 60 %}{{ secs }}s{% else %}{{ (secs // 60) }}m {{ secs % 60 }}s{% endif %}
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="text-center text-muted py-3">No recent batch executions.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Allocation Runs -->
+            <div class="tab-pane fade" id="tab-alloc">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Run ID</th><th>Rule</th><th>As-of Date</th><th>Status</th><th>Source Rows</th><th>Output Rows</th><th>Run By</th><th>Started</th><th>Duration</th></tr></thead>
+                    <tbody>
+                    {% for br in recent_alloc %}
+                    {% set sc = {'COMPLETED':'success','FAILED':'danger','RUNNING':'info'} %}
+                    <tr>
+                        <td><a href="{{ url_for('batch.detail', batch_id=br.id) }}" class="font-monospace">{{ br.id[:8] }}…</a></td>
+                        <td>Rule #{{ br.rule_id }}</td>
+                        <td>{{ br.as_of_date }}</td>
+                        <td><span class="badge bg-{{ sc.get(br.status,'secondary') }}">{{ br.status }}</span></td>
+                        <td>{{ '{:,}'.format(br.source_row_count) }}</td>
+                        <td>{{ '{:,}'.format(br.output_row_count) }}</td>
+                        <td class="small text-muted">{{ br.run_by }}</td>
+                        <td class="small text-muted">{{ br.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td class="small text-muted">
+                            {% if br.completed_at %}
+                            {% set secs = (br.completed_at - br.started_at).total_seconds() | int %}
+                            {% if secs < 60 %}{{ secs }}s{% else %}{{ (secs // 60) }}m {{ secs % 60 }}s{% endif %}
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted py-3">No recent allocation runs.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- FTP Runs -->
+            <div class="tab-pane fade" id="tab-ftp">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Run ID</th><th>As-of Date</th><th>Status</th><th>Configs</th><th>Records</th><th>Run By</th><th>Started</th><th>Duration</th></tr></thead>
+                    <tbody>
+                    {% for fr in recent_ftp %}
+                    {% set sc = {'COMPLETED':'success','FAILED':'danger','RUNNING':'info'} %}
+                    <tr>
+                        <td><a href="{{ url_for('ftp.run_detail', run_id=fr.id) }}" class="font-monospace">{{ fr.id[:8] }}…</a></td>
+                        <td>{{ fr.as_of_date }}</td>
+                        <td><span class="badge bg-{{ sc.get(fr.status,'secondary') }}">{{ fr.status }}</span></td>
+                        <td>{{ fr.configs_processed | default(0, true) }}</td>
+                        <td>{{ '{:,}'.format(fr.records_updated | default(0, true)) }}</td>
+                        <td class="small text-muted">{{ fr.run_by }}</td>
+                        <td class="small text-muted">{{ fr.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td class="small text-muted">
+                            {% if fr.completed_at %}
+                            {% set secs = (fr.completed_at - fr.started_at).total_seconds() | int %}
+                            {% if secs < 60 %}{{ secs }}s{% else %}{{ (secs // 60) }}m {{ secs % 60 }}s{% endif %}
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="text-center text-muted py-3">No recent FTP runs.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Data File Batches -->
+            <div class="tab-pane fade" id="tab-datafile">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Batch ID</th><th>Operation</th><th>Format</th><th>File</th><th>Status</th><th>Rows</th><th>Errors</th><th>Run By</th><th>Started</th></tr></thead>
+                    <tbody>
+                    {% for df in recent_datafile %}
+                    {% set sc = {'COMPLETED':'success','FAILED':'danger','RUNNING':'info'} %}
+                    <tr>
+                        <td><a href="{{ url_for('datafile.batch_detail', batch_id=df.id) }}" class="font-monospace">{{ df.id[:8] }}…</a></td>
+                        <td><span class="badge bg-{{ 'success' if df.operation == 'IMPORT' else 'warning' }}">{{ df.operation }}</span></td>
+                        <td>{{ df.format_name or df.format_id }}</td>
+                        <td class="small">{{ df.filename }}</td>
+                        <td><span class="badge bg-{{ sc.get(df.status,'secondary') }}">{{ df.status }}</span></td>
+                        <td>{{ '{:,}'.format(df.row_count) }}</td>
+                        <td>{{ df.error_count }}</td>
+                        <td class="small text-muted">{{ df.run_by }}</td>
+                        <td class="small text-muted">{{ df.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted py-3">No recent data file operations.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Stored Procedure Runs -->
+            <div class="tab-pane fade" id="tab-sp">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Run ID</th><th>SP Name</th><th>Status</th><th>Run By</th><th>Started</th><th>Duration</th><th>Result / Error</th></tr></thead>
+                    <tbody>
+                    {% for sp in recent_sp %}
+                    {% set sc = {'COMPLETED':'success','FAILED':'danger','RUNNING':'info'} %}
+                    <tr>
+                        <td><a href="{{ url_for('batch.sp_detail', run_id=sp.id) }}" class="font-monospace">{{ sp.id[:8] }}…</a></td>
+                        <td class="font-monospace small">{{ sp.sp_name }}</td>
+                        <td><span class="badge bg-{{ sc.get(sp.status,'secondary') }}">{{ sp.status }}</span></td>
+                        <td class="small text-muted">{{ sp.run_by or '—' }}</td>
+                        <td class="small text-muted">{{ sp.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td class="small text-muted">
+                            {% if sp.completed_at %}
+                            {% set secs = (sp.completed_at - sp.started_at).total_seconds() | int %}
+                            {% if secs < 60 %}{{ secs }}s{% else %}{{ (secs // 60) }}m {{ secs % 60 }}s{% endif %}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="small text-truncate" style="max-width: 250px;">
+                            {% if sp.error_message %}
+                            <span class="text-danger">{{ sp.error_message[:80] }}</span>
+                            {% elif sp.result_message %}
+                            {{ sp.result_message[:80] }}
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center text-muted py-3">No recent stored procedure runs.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-refresh: poll status endpoint and reload if anything is running
+let refreshTimer;
+function startAutoRefresh() {
+    refreshTimer = setInterval(async () => {
+        try {
+            const resp = await fetch('{{ url_for("batch.monitor_status") }}');
+            const data = await resp.json();
+            if (data.running_total > 0) {
+                location.reload();
+            }
+        } catch(e) { /* ignore */ }
+    }, 10000);
+}
+function refreshPage() { location.reload(); }
+startAutoRefresh();
+</script>
+{% endblock %}

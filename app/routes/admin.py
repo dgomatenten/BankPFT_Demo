@@ -4,7 +4,7 @@ from functools import wraps
 from datetime import datetime
 from app.models import db
 from app.models.auth import User, Group
-from app.models.workflow import OperationVariable, AlertConfig
+from app.models.workflow import OperationVariable, AlertConfig, JsonConfig
 
 bp = Blueprint("admin", __name__)
 
@@ -409,3 +409,191 @@ def _validate_alert_config(name, check_type, table_name, date_column, severity, 
     if severity not in _VALID_SEVERITIES:
         return f"Severity must be one of: {', '.join(sorted(_VALID_SEVERITIES))}."
     return None
+
+
+# ── JSON Configurations ────────────────────────────────────────────────────
+
+import json
+import os
+
+_JSON_CONFIG_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "config"))
+
+
+def _discover_config_files() -> list[dict]:
+    """Return list of {name, path} for all .json files in app/config/."""
+    results = []
+    for fn in sorted(os.listdir(_JSON_CONFIG_DIR)):
+        if fn.endswith(".json"):
+            results.append({
+                "name": fn.removesuffix(".json"),
+                "path": os.path.join(_JSON_CONFIG_DIR, fn),
+                "filename": fn,
+            })
+    return results
+
+
+@bp.route("/json-configs")
+@admin_required
+def list_json_configs():
+    db_configs = JsonConfig.query.order_by(JsonConfig.config_name).all()
+    file_configs = _discover_config_files()
+
+    # Build lookup of DB configs by name
+    db_map = {c.config_name: c for c in db_configs}
+
+    # Merge: show filesystem configs with DB sync status
+    merged = []
+    for fc in file_configs:
+        db_entry = db_map.pop(fc["name"], None)
+        merged.append({
+            "name": fc["name"],
+            "filename": fc["filename"],
+            "in_db": db_entry is not None,
+            "db_entry": db_entry,
+            "in_filesystem": True,
+        })
+    # Any DB-only configs (not on filesystem)
+    for name, db_entry in db_map.items():
+        merged.append({
+            "name": name,
+            "filename": None,
+            "in_db": True,
+            "db_entry": db_entry,
+            "in_filesystem": False,
+        })
+
+    return render_template("admin/json_configs.html", configs=merged)
+
+
+@bp.route("/json-configs/sync-all", methods=["POST"])
+@admin_required
+def sync_all_json_configs():
+    """Load all filesystem JSON configs into the database."""
+    file_configs = _discover_config_files()
+    loaded = 0
+    for fc in file_configs:
+        try:
+            with open(fc["path"], encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (json.JSONDecodeError, OSError) as e:
+            flash(f"Error reading {fc['filename']}: {e}", "danger")
+            continue
+
+        existing = JsonConfig.query.filter_by(config_name=fc["name"]).first()
+        if existing:
+            existing.config_data = data
+            existing.updated_by = current_user.username
+        else:
+            db.session.add(JsonConfig(
+                config_name=fc["name"],
+                config_data=data,
+                updated_by=current_user.username,
+            ))
+        loaded += 1
+
+    db.session.commit()
+    flash(f"Synced {loaded} config(s) from filesystem to database.", "success")
+    return redirect(url_for("admin.list_json_configs"))
+
+
+@bp.route("/json-configs/<int:cfg_id>")
+@admin_required
+def view_json_config(cfg_id):
+    cfg = JsonConfig.query.get_or_404(cfg_id)
+    # Pretty-print the JSON for display
+    pretty = json.dumps(cfg.config_data, indent=2, ensure_ascii=False)
+    return render_template("admin/json_config_view.html", config=cfg, pretty_json=pretty)
+
+
+@bp.route("/json-configs/<int:cfg_id>/edit", methods=["GET", "POST"])
+@admin_required
+def edit_json_config(cfg_id):
+    cfg = JsonConfig.query.get_or_404(cfg_id)
+
+    if request.method == "POST":
+        raw_json = request.form.get("config_data", "").strip()
+        description = request.form.get("description", "").strip() or None
+        is_active = "is_active" in request.form
+
+        if not raw_json:
+            flash("JSON content is required.", "danger")
+            return render_template("admin/json_config_form.html", config=cfg,
+                                   raw_json=raw_json)
+        try:
+            parsed = json.loads(raw_json)
+        except json.JSONDecodeError as e:
+            flash(f"Invalid JSON: {e}", "danger")
+            return render_template("admin/json_config_form.html", config=cfg,
+                                   raw_json=raw_json)
+
+        cfg.config_data = parsed
+        cfg.description = description
+        cfg.is_active = is_active
+        cfg.updated_by = current_user.username
+        db.session.commit()
+        flash(f"Config '{cfg.config_name}' updated.", "success")
+        return redirect(url_for("admin.view_json_config", cfg_id=cfg.id))
+
+    pretty = json.dumps(cfg.config_data, indent=2, ensure_ascii=False)
+    return render_template("admin/json_config_form.html", config=cfg, raw_json=pretty)
+
+
+@bp.route("/json-configs/sync/<config_name>", methods=["POST"])
+@admin_required
+def sync_json_config(config_name):
+    """Load a single filesystem config into the database."""
+    path = os.path.join(_JSON_CONFIG_DIR, f"{config_name}.json")
+    if not os.path.isfile(path):
+        flash(f"Config file '{config_name}.json' not found on filesystem.", "danger")
+        return redirect(url_for("admin.list_json_configs"))
+
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError) as e:
+        flash(f"Error reading {config_name}.json: {e}", "danger")
+        return redirect(url_for("admin.list_json_configs"))
+
+    existing = JsonConfig.query.filter_by(config_name=config_name).first()
+    if existing:
+        existing.config_data = data
+        existing.updated_by = current_user.username
+    else:
+        db.session.add(JsonConfig(
+            config_name=config_name,
+            config_data=data,
+            updated_by=current_user.username,
+        ))
+
+    db.session.commit()
+    flash(f"Config '{config_name}' synced to database.", "success")
+    return redirect(url_for("admin.list_json_configs"))
+
+
+@bp.route("/json-configs/<int:cfg_id>/export", methods=["POST"])
+@admin_required
+def export_json_config(cfg_id):
+    """Write DB config back to the filesystem."""
+    cfg = JsonConfig.query.get_or_404(cfg_id)
+    path = os.path.join(_JSON_CONFIG_DIR, f"{cfg.config_name}.json")
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(cfg.config_data, fh, indent=4, ensure_ascii=False)
+            fh.write("\n")
+    except OSError as e:
+        flash(f"Error writing {cfg.config_name}.json: {e}", "danger")
+        return redirect(url_for("admin.list_json_configs"))
+
+    flash(f"Config '{cfg.config_name}' exported to filesystem.", "success")
+    return redirect(url_for("admin.list_json_configs"))
+
+
+@bp.route("/json-configs/<int:cfg_id>/delete", methods=["POST"])
+@admin_required
+def delete_json_config(cfg_id):
+    cfg = JsonConfig.query.get_or_404(cfg_id)
+    name = cfg.config_name
+    db.session.delete(cfg)
+    db.session.commit()
+    flash(f"Config '{name}' removed from database.", "success")
+    return redirect(url_for("admin.list_json_configs"))

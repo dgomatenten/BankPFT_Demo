@@ -80,7 +80,7 @@ def create_app(config_class=Config):
         _seed_defaults()
 
     # Custom Jinja filter for parsing JSON in templates
-    flask_app.jinja_env.filters["from_json"] = lambda s: json.loads(s) if s else {}
+    flask_app.jinja_env.filters["from_json"] = lambda s: s if isinstance(s, dict) else (json.loads(s) if s else {})
 
     # Global error handlers — prevent stack traces leaking to users
     from flask import render_template as _rt

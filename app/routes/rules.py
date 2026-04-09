@@ -49,10 +49,19 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
         alloc_method = "RATIO"
     join_keys = request.form.getlist("join_keys")
     join_key = ",".join(k.strip() for k in join_keys if k.strip()) or fallback_join_key
-    filter_raw = request.form.get("filter_json", "").strip()
-    src_dim_raw = request.form.get("source_dim_json", "").strip()
-    out_dim_raw = request.form.get("output_dim_json", "").strip()
-    crd_dim_raw = request.form.get("credit_dim_json", "").strip()
+    def _parse_json_field(raw: str) -> dict | None:
+        raw = raw.strip() if raw else ""
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    filter_raw = request.form.get("filter_json", "")
+    src_dim_raw = request.form.get("source_dim_json", "")
+    out_dim_raw = request.form.get("output_dim_json", "")
+    crd_dim_raw = request.form.get("credit_dim_json", "")
     distribution_driver = request.form.get("distribution_driver", "").strip() or None
     balance_column = request.form.get("balance_column", "").strip() or None
     return {
@@ -60,12 +69,13 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
         "entry_mode": entry_mode,
         "join_key": join_key,
         "generate_offset": (entry_mode != "CREDIT_ONLY"),
-        "filter_json": filter_raw or None,
-        "source_dim_json": src_dim_raw or None,
-        "output_dim_json": out_dim_raw or None,
-        "credit_dim_json": crd_dim_raw or None,
+        "filter_json": _parse_json_field(filter_raw),
+        "source_dim_json": _parse_json_field(src_dim_raw),
+        "output_dim_json": _parse_json_field(out_dim_raw),
+        "credit_dim_json": _parse_json_field(crd_dim_raw),
         "distribution_driver": distribution_driver,
         "balance_column": balance_column,
+        "aggregate_source": request.form.get("aggregate_source") == "on",
     }
 
 
@@ -101,6 +111,7 @@ def new_rule():
             balance_column=form["balance_column"],
             entry_mode=form["entry_mode"],
             generate_offset=form["generate_offset"],
+            aggregate_source=form["aggregate_source"],
             created_by=current_user.username,
             status="ACTIVE",
         )
@@ -138,11 +149,18 @@ def import_rule():
             flash("JSON must contain a 'name' field.", "danger")
             return render_template("rules/import.html")
 
-        # Serialise nested dicts back to JSON strings if needed
-        def _to_json(v):
+        # Ensure JSON fields are dicts (JSONB columns)
+        def _to_dict(v):
             if v is None:
                 return None
-            return json.dumps(v) if isinstance(v, dict) else str(v)
+            if isinstance(v, dict):
+                return v
+            if isinstance(v, str):
+                try:
+                    return json.loads(v)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+            return None
 
         # join_key: accept string "customer_id", comma-separated "a,b", or list ["a","b"]
         raw_jk = data.get("join_key", data.get("join_keys", "customer_id"))
@@ -165,10 +183,10 @@ def import_rule():
             lookup_table=import_lookup,
             output_table=data.get("output_table", "fct_mgmt_instrument"),
             join_key=join_key_val,
-            filter_json=_to_json(data.get("filter_json")),
-            source_dim_json=_to_json(data.get("source_dim_json")),
-            output_dim_json=_to_json(data.get("output_dim_json")),
-            credit_dim_json=_to_json(data.get("credit_dim_json")),
+            filter_json=_to_dict(data.get("filter_json")),
+            source_dim_json=_to_dict(data.get("source_dim_json")),
+            output_dim_json=_to_dict(data.get("output_dim_json")),
+            credit_dim_json=_to_dict(data.get("credit_dim_json")),
             allocation_method=raw_method,
             distribution_driver=data.get("distribution_driver") or None,
             entry_mode=(
@@ -176,6 +194,7 @@ def import_rule():
                 ("BOTH" if data.get("generate_offset", True) else "DEBIT_ONLY")
             ),
             generate_offset=bool(data.get("generate_offset", True)),
+            aggregate_source=bool(data.get("aggregate_source", False)),
             created_by=current_user.username,
             status="ACTIVE",
         )
@@ -223,6 +242,7 @@ def edit_rule(rule_id):
         rule.balance_column  = form["balance_column"]
         rule.entry_mode     = form["entry_mode"]
         rule.generate_offset = form["generate_offset"]
+        rule.aggregate_source = form["aggregate_source"]
         db.session.commit()
         flash(f"Rule '{rule.name}' updated.", "success")
         return redirect(url_for("rules.detail", rule_id=rule.id))
@@ -240,6 +260,37 @@ def toggle(rule_id):
     db.session.commit()
     flash(f"Rule {'activated' if rule.is_active else 'deactivated'}.", "success")
     return redirect(url_for("rules.detail", rule_id=rule_id))
+
+
+@bp.route("/<int:rule_id>/copy", methods=["POST"])
+@login_required
+def copy_rule(rule_id):
+    rule = AllocationRule.query.get_or_404(rule_id)
+    new_rule = AllocationRule(
+        name=f"{rule.name} (Copy)",
+        description=rule.description,
+        source_table=rule.source_table,
+        lookup_table=rule.lookup_table,
+        output_table=rule.output_table,
+        join_key=rule.join_key,
+        allocation_method=rule.allocation_method,
+        distribution_driver=rule.distribution_driver,
+        balance_column=rule.balance_column,
+        entry_mode=rule.entry_mode,
+        generate_offset=rule.generate_offset,
+        filter_json=rule.filter_json,
+        source_dim_json=rule.source_dim_json,
+        output_dim_json=rule.output_dim_json,
+        credit_dim_json=rule.credit_dim_json,
+        aggregate_source=rule.aggregate_source,
+        created_by=current_user.username,
+        is_active=False,
+        status="INACTIVE",
+    )
+    db.session.add(new_rule)
+    db.session.commit()
+    flash(f"Rule copied as '{new_rule.name}' (inactive).", "success")
+    return redirect(url_for("rules.detail", rule_id=new_rule.id))
 
 
 @bp.route("/<int:rule_id>/delete", methods=["POST"])

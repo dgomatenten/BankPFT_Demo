@@ -57,7 +57,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 ## Architecture
 
 ```
-Dimensions (Org Unit, Product, Customer, Account)
+Dimensions (Org Unit, Product, Customer, Account, Transaction Number)
         ↓ validation
 Staging (STG_INST_DATA, STG_GL_DATA, REF_INTEREST_RATE)
         ↓ Maker/Checker approval
@@ -345,6 +345,12 @@ The batch system allows grouping multiple engine calls into a single, ordered ex
 
 Tokens are substituted in the `params` JSON values before the SP is called.
 
+### Stored Procedure Registry
+
+System administrators can register stored procedures for use within Batch Definitions. Accessible via `/batch/procedures`, the registry dynamically scans the `information_schema.routines` table to auto-discover all available database procedures. Admins can selectively toggle which procedures are "Batch Enabled."
+
+When configuring a Multi-Task Batch Definition, any step defined as `CUSTOM_SP` will enforce a dropdown selection restricted exclusively to these enabled, registered procedures, guaranteeing schema integrity and preventing typos.
+
 ## Lookup Tables
 
 The system supports multiple lookup tables that the allocation engine can join against:
@@ -523,6 +529,10 @@ Each rule can be independently **enabled/disabled**, assigned a **severity** (er
 
 To add a new data type: add an entry to `upload_config.json` with its `validation_rules` list — no code changes required.
 To add a new validation rule: define it in `validation_rules.json` and implement the check in `_run_validation_rule()`.
+
+### Interactive Error Grids
+
+When data validations fail during a manual file upload, the UI natively renders a Bootstrap Error Grid detailing the exact row number, column name, and specific error message preventing submission. If the file passes seamlessly, a "Data Integrity Check: PASSED" banner validates the success.
 
 ## Output Tables
 

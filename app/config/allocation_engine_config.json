@@ -3,15 +3,16 @@
         "proc_inst_data": {
             "label": "Instrument Data",
             "model": "ProcInstData",
-            "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "balance", "interest_income"],
+            "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "transaction_number", "balance", "interest_income", "cost_of_fund"],
             "date_filter_column": "as_of_date",
             "account_id_column": "account_id",
             "org_unit_column": "org_unit_id",
             "balance_columns": ["balance", "interest_income", "cost_of_fund"],
-            "dimension_columns": ["account_id", "customer_id", "product_code", "org_unit_id"],
+            "dimension_columns": ["account_id", "customer_id", "product_code", "org_unit_id", "transaction_number"],
             "financial_element_columns": {
                 "balance": "BAL",
-                "interest_income": "NII"
+                "interest_income": "II",
+                "cost_of_fund": "COF"
             }
         },
         "proc_gl_data": {
@@ -37,7 +38,7 @@
         "fct_mgmt_instrument": {
             "label": "Management Instrument",
             "model": "FctMgmtInstrument",
-            "columns": ["source_account_id", "customer_id", "product_code", "source_org_unit_id", "target_org_unit_id", "allocated_balance", "allocated_income", "entry_type", "financial_element"],
+            "columns": ["source_account_id", "customer_id", "product_code", "source_org_unit_id", "target_org_unit_id", "transaction_number", "allocated_balance", "allocated_income", "entry_type", "financial_element"],
             "date_filter_column": "as_of_date",
             "account_id_column": "source_account_id",
             "org_unit_column": "source_org_unit_id",
@@ -50,38 +51,42 @@
         "ref_static_allocation": {
             "label": "Static Allocation Ratios",
             "model": "RefStaticAllocation",
-            "columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio"],
+            "columns": ["allocation_id", "customer_id", "source_org_unit_id", "target_org_unit_id", "ratio", "as_of_date"],
             "id_column": "allocation_id",
             "ratio_column": "ratio",
             "target_org_column": "target_org_unit_id",
+            "date_filter_column": "as_of_date",
             "status_filter": "APPROVED"
         },
         "ref_org_reclass": {
             "label": "Org Reclassification",
             "model": "RefOrgReclass",
-            "columns": ["reclass_id", "source_org_unit_id", "target_org_unit_id", "ratio"],
+            "columns": ["reclass_id", "source_org_unit_id", "target_org_unit_id", "ratio", "as_of_date"],
             "id_column": "reclass_id",
             "ratio_column": "ratio",
             "target_org_column": "target_org_unit_id",
+            "date_filter_column": "as_of_date",
             "status_filter": "APPROVED"
         },
         "ref_static_distribution": {
             "label": "Static Distribution",
             "model": "RefStaticDistribution",
-            "columns": ["driver_name", "distribution_id", "customer_id", "org_unit_id", "product_code", "target_dim", "ratio"],
+            "columns": ["driver_name", "distribution_id", "customer_id", "org_unit_id", "product_code", "target_dim", "ratio", "as_of_date"],
             "id_column": "distribution_id",
             "ratio_column": "ratio",
             "target_org_column": "target_dim",
             "driver_filter_column": "driver_name",
+            "date_filter_column": "as_of_date",
             "status_filter": "APPROVED"
         },
         "ref_static_alloc": {
             "label": "Static Allocation Mapping",
             "model": "RefStaticAlloc",
-            "columns": ["alloc_id", "customer_id", "org_unit_id", "product_code", "target_dim", "ratio"],
+            "columns": ["alloc_id", "customer_id", "org_unit_id", "product_code", "target_dim", "ratio", "as_of_date"],
             "id_column": "alloc_id",
             "ratio_column": "ratio",
             "target_org_column": "target_dim",
+            "date_filter_column": "as_of_date",
             "status_filter": "APPROVED"
         }
     },
@@ -104,13 +109,14 @@
         "source_account_id":  {"label": "Source Account ID",  "available_in": ["fct_mgmt_ledger", "fct_mgmt_instrument"]},
         "product_code":       {"label": "Product Code",       "available_in": ["proc_inst_data", "fct_mgmt_ledger", "fct_mgmt_instrument"]},
         "account_id":         {"label": "Account ID",         "available_in": ["proc_inst_data"]},
+        "transaction_number": {"label": "Transaction Number", "available_in": ["proc_inst_data", "fct_mgmt_instrument"]},
         "gl_account":         {"label": "GL Account",         "available_in": ["proc_gl_data"]}
     },
 
     "join_type": "left",
 
     "orphan_handling": {
-        "enabled": true,
+        "enabled": false,
         "default_ratio": 1.0,
         "target_org_from": "source_org_unit_id"
     }

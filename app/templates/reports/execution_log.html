@@ -47,5 +47,14 @@
     </div>
 </div>
 
-<a href="/batch/{{ batch.id }}" class="btn btn-outline-secondary mt-3"><i class="bi bi-arrow-left"></i> Back to Batch</a>
+{% if log_content %}
+<div class="card mt-4 mb-4 shadow-sm border-dark">
+    <div class="card-header bg-dark text-white font-monospace"><i class="bi bi-terminal"></i> batch_{{ batch.id[:8] }}.log</div>
+    <div class="card-body bg-dark text-light p-3" style="max-height: 400px; overflow-y: auto;">
+        <pre class="mb-0" style="font-size: 0.85rem;">{{ log_content }}</pre>
+    </div>
+</div>
+{% endif %}
+
+<a href="/reports/operations" class="btn btn-outline-secondary mt-3"><i class="bi bi-arrow-left"></i> Back to Operations</a>
 {% endblock %}

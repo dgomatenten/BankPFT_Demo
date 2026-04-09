@@ -33,6 +33,7 @@
             {"column": "customer_id", "label": "Customer ID", "type": "string"},
             {"column": "product_code", "label": "Product Code", "type": "string"},
             {"column": "org_unit_id", "label": "Org Unit", "type": "string"},
+            {"column": "transaction_number", "label": "Transaction Number", "type": "string"},
             {"column": "balance", "label": "Balance", "type": "float"},
             {"column": "interest_income", "label": "Interest Income", "type": "float"}
         ],

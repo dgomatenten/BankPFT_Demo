@@ -48,12 +48,13 @@ CREATE TABLE IF NOT EXISTS allocation_rule (
     lookup_table        VARCHAR(50)  NOT NULL DEFAULT 'ref_static_allocation',
     output_table        VARCHAR(50)  NOT NULL DEFAULT 'fct_mgmt_ledger',
     join_key            VARCHAR(50)  NOT NULL DEFAULT 'customer_id',
-    filter_json         TEXT,        -- JSON: {"logic":"AND","conditions":[...]}
-    source_dim_json     TEXT,        -- per-dimension source member filters
-    output_dim_json     TEXT,        -- per-dimension output mapping (DEBIT)
-    credit_dim_json     TEXT,        -- per-dimension output mapping (CREDIT)
+    filter_json         JSONB,        -- {"logic":"AND","conditions":[...]}
+    source_dim_json     JSONB,        -- per-dimension source member filters
+    output_dim_json     JSONB,        -- per-dimension output mapping (DEBIT)
+    credit_dim_json     JSONB,        -- per-dimension output mapping (CREDIT)
     allocation_method   VARCHAR(20)  NOT NULL DEFAULT 'RATIO',    -- RATIO | DISTRIBUTION | STATIC
     distribution_driver VARCHAR(100),                             -- driver_name for DISTRIBUTION method
+    balance_column      VARCHAR(50),                              -- specific balance column to allocate; NULL = all
     entry_mode          VARCHAR(20)  NOT NULL DEFAULT 'BOTH',     -- BOTH | DEBIT_ONLY | CREDIT_ONLY
     generate_offset     BOOLEAN      NOT NULL DEFAULT TRUE,
     offset_account      VARCHAR(50),

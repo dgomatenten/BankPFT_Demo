@@ -59,7 +59,7 @@ def new_upload():
 @login_required
 def detail(batch_id):
     batch = UploadBatch.query.get_or_404(batch_id)
-    errors = json.loads(batch.errors_json) if batch.errors_json else []
+    errors = batch.errors_json if isinstance(batch.errors_json, list) else (json.loads(batch.errors_json) if batch.errors_json else [])
 
     # Load staged data preview — derive columns from upload_config.json
     preview_rows = []

@@ -17,14 +17,17 @@ import json
 import pandas as pd
 
 
-def apply_df_filters(df: pd.DataFrame, filter_json: str | None) -> pd.DataFrame:
-    """Apply user-defined filter conditions (stored as JSON) to a DataFrame."""
+def apply_df_filters(df: pd.DataFrame, filter_json: str | dict | None) -> pd.DataFrame:
+    """Apply user-defined filter conditions (stored as JSON/dict) to a DataFrame."""
     if not filter_json:
         return df
-    try:
-        filt = json.loads(filter_json)
-    except (json.JSONDecodeError, TypeError):
-        return df
+    if isinstance(filter_json, dict):
+        filt = filter_json
+    else:
+        try:
+            filt = json.loads(filter_json)
+        except (json.JSONDecodeError, TypeError):
+            return df
 
     conditions = filt.get("conditions", [])
     if not conditions:

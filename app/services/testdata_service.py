@@ -91,6 +91,7 @@ def generate_instrument_data(as_of_date=None):
                 customer_id=acc.customer_id,
                 product_code=acc.product_code,
                 org_unit_id=acc.org_unit_id,
+                transaction_number=f"TXN-{uuid.uuid4().hex[:8].upper()}",
                 balance=round(random.uniform(1000, 500000), 2),
                 interest_income=round(random.uniform(10, 5000), 2),
             ))
@@ -169,6 +170,7 @@ def generate_allocation_template_with_data(output_dir: str) -> tuple[str, int]:
                 "source_org_unit_id": source_org,
                 "target_org_unit_id": tgt,
                 "ratio": ratio,
+                "as_of_date": date.today().isoformat()
             })
 
     df = pd.DataFrame(rows)
@@ -179,30 +181,58 @@ def generate_allocation_template_with_data(output_dir: str) -> tuple[str, int]:
 
 
 def generate_excel_templates(output_dir: str) -> list[str]:
-    """Generate empty Excel templates with correct headers."""
-    templates = {
-        "instrument_template.xlsx": [
-            "as_of_date", "account_id", "customer_id", "product_code",
-            "org_unit_id", "balance", "interest_income"
-        ],
-        "gl_template.xlsx": [
-            "as_of_date", "gl_account", "org_unit_id", "debit", "credit", "balance"
-        ],
-        "allocation_template.xlsx": [
-            "allocation_id", "customer_id", "source_org_unit_id",
-            "target_org_unit_id", "ratio"
-        ],
-    }
+    """Generate Excel templates pre-filled with sample data rows."""
+    from datetime import date
+    import random
+    import uuid
+    import pandas as pd
+    import os
 
-    templates["interest_rate_template.xlsx"] = [
-        "effective_date", "interest_rate_code", "term", "term_mult", "rate"
-    ]
+    today_str = date.today().isoformat()
+
+    templates = {
+        "instrument_template.xlsx": pd.DataFrame([{
+            "as_of_date": today_str,
+            "account_id": f"ACC-100{i}",
+            "customer_id": f"CUST-{i:03d}",
+            "product_code": "PROD-LON",
+            "org_unit_id": "ORG-001",
+            "transaction_number": f"TXN-{uuid.uuid4().hex[:8].upper()}",
+            "balance": round(random.uniform(10000, 50000), 2),
+            "interest_income": round(random.uniform(100, 500), 2)
+        } for i in range(1, 4)]),
+
+        "gl_template.xlsx": pd.DataFrame([{
+            "as_of_date": today_str,
+            "gl_account": f"GL-10{i}",
+            "org_unit_id": "ORG-001",
+            "debit": 5000.0 if i % 2 == 1 else 0.0,
+            "credit": 0.0 if i % 2 == 1 else 5000.0,
+            "balance": 5000.0 if i % 2 == 1 else -5000.0
+        } for i in range(1, 4)]),
+
+        "allocation_template.xlsx": pd.DataFrame([{
+            "allocation_id": str(uuid.uuid4()),
+            "customer_id": "CUST-001",
+            "source_org_unit_id": "ORG-001",
+            "target_org_unit_id": f"ORG-00{i+1}",
+            "ratio": 0.5,
+            "as_of_date": today_str
+        } for i in range(1, 3)]),
+
+        "interest_rate_template.xlsx": pd.DataFrame([{
+            "effective_date": today_str,
+            "interest_rate_code": "SWAP_RATE",
+            "term": i,
+            "term_mult": "M",
+            "rate": round(0.0350 + (i * 0.001), 4)
+        } for i in range(1, 4)])
+    }
 
     os.makedirs(output_dir, exist_ok=True)
     files = []
-    for fname, cols in templates.items():
+    for fname, df in templates.items():
         path = os.path.join(output_dir, fname)
-        df = pd.DataFrame(columns=cols)
         df.to_excel(path, index=False, engine="openpyxl")
         files.append(path)
 

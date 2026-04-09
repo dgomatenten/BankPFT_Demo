@@ -1,0 +1,186 @@
+{% extends "layout/base.html" %}
+{% block title %}Trace Detail — BankPFT{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-diagram-3"></i> Trace Detail</h2>
+
+<!-- ═══════ Data Lineage Flow ═══════ -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex align-items-center justify-content-center flex-wrap gap-2">
+            <span class="badge bg-info fs-6 px-3 py-2">
+                <i class="bi bi-box-arrow-in-right"></i> Source
+                {% if rule %}({{ rule.source_table }}){% endif %}
+            </span>
+            <i class="bi bi-arrow-right fs-4 text-muted"></i>
+            <span class="badge bg-secondary fs-6 px-3 py-2">
+                <i class="bi bi-gear"></i> Rule
+                {% if rule %}({{ rule.name }}){% endif %}
+            </span>
+            <i class="bi bi-arrow-right fs-4 text-muted"></i>
+            <span class="badge bg-warning text-dark fs-6 px-3 py-2">
+                <i class="bi bi-table"></i> Lookup
+                {% if rule %}({{ rule.lookup_table }}){% endif %}
+            </span>
+            <i class="bi bi-arrow-right fs-4 text-muted"></i>
+            <span class="badge bg-success fs-6 px-3 py-2">
+                <i class="bi bi-box-arrow-right"></i> Output ({{ table }})
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+
+    <!-- ═══════ 1. SOURCE ROW ═══════ -->
+    <div class="col-md-6">
+        <div class="card h-100 border-info">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-box-arrow-in-right"></i> Source Record
+            </div>
+            <div class="card-body">
+                {% if source_row %}
+                <table class="table table-sm mb-0">
+                    {% if source_row.account_id is defined %}
+                    <tr><th class="w-40">Account ID</th><td><code>{{ source_row.account_id }}</code></td></tr>
+                    <tr><th>Customer</th><td>{{ source_row.customer_id }}</td></tr>
+                    <tr><th>Product</th><td>{{ source_row.product_code }}</td></tr>
+                    <tr><th>Org Unit</th><td>{{ source_row.org_unit_id }}</td></tr>
+                    <tr><th>Balance</th><td>{{ "{:,.2f}".format(source_row.balance) }}</td></tr>
+                    <tr><th>Interest Income</th><td>{{ "{:,.2f}".format(source_row.interest_income) }}</td></tr>
+                    {% if source_row.base_rate is not none %}
+                    <tr><th>Base Rate</th><td>{{ "%.6f"|format(source_row.base_rate) }}</td></tr>
+                    {% endif %}
+                    {% if source_row.cost_of_fund is not none %}
+                    <tr><th>Cost of Fund</th><td>{{ "{:,.2f}".format(source_row.cost_of_fund) }}</td></tr>
+                    {% endif %}
+                    {% elif source_row.gl_account is defined %}
+                    <tr><th class="w-40">GL Account</th><td><code>{{ source_row.gl_account }}</code></td></tr>
+                    <tr><th>Org Unit</th><td>{{ source_row.org_unit_id }}</td></tr>
+                    <tr><th>Balance</th><td>{{ "{:,.2f}".format(source_row.balance) }}</td></tr>
+                    {% endif %}
+                    <tr><th>As-of Date</th><td>{{ source_row.as_of_date }}</td></tr>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">Source record not found (may have been replaced by a later upload).</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════ 2. RULE ═══════ -->
+    <div class="col-md-6">
+        <div class="card h-100 border-secondary">
+            <div class="card-header bg-secondary text-white">
+                <i class="bi bi-gear"></i> Allocation Rule
+            </div>
+            <div class="card-body">
+                {% if rule %}
+                <table class="table table-sm mb-0">
+                    <tr><th class="w-40">Rule ID</th><td>{{ rule.id }}</td></tr>
+                    <tr><th>Name</th><td><strong>{{ rule.name }}</strong></td></tr>
+                    <tr><th>Method</th><td><span class="badge bg-primary">{{ rule.allocation_method }}</span></td></tr>
+                    <tr><th>Source Table</th><td>{{ rule.source_table }}</td></tr>
+                    <tr><th>Lookup Table</th><td>{{ rule.lookup_table }}</td></tr>
+                    <tr><th>Output Table</th><td>{{ rule.output_table }}</td></tr>
+                    <tr><th>Join Key</th><td><code>{{ rule.join_key }}</code></td></tr>
+                    <tr><th>Balance Column</th><td>{{ rule.balance_column or 'All' }}</td></tr>
+                    <tr><th>Entry Mode</th><td>{{ rule.entry_mode }}</td></tr>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">Rule information not available.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════ 3. LOOKUP ROW ═══════ -->
+    <div class="col-md-6">
+        <div class="card h-100 border-warning">
+            <div class="card-header bg-warning text-dark">
+                <i class="bi bi-table"></i> Lookup Record
+            </div>
+            <div class="card-body">
+                {% if lookup_row %}
+                <table class="table table-sm mb-0">
+                    {% for attr in lookup_row.__table__.columns %}
+                    <tr>
+                        <th class="w-40">{{ attr.name }}</th>
+                        <td>
+                            {% set val = lookup_row.__getattribute__(attr.name) %}
+                            {% if attr.name == 'ratio' %}
+                                {{ "%.4f"|format(val) }} ({{ "%.2f"|format(val * 100) }}%)
+                            {% else %}
+                                {{ val }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">
+                    {% if out_row.is_orphan %}
+                        <span class="badge bg-warning text-dark">⚠ Orphan</span>
+                        No matching lookup record — ratio defaulted to 1.0.
+                    {% else %}
+                        Lookup record not found.
+                    {% endif %}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════ 4. OUTPUT ROW ═══════ -->
+    <div class="col-md-6">
+        <div class="card h-100 border-success">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-box-arrow-right"></i> Output Record ({{ table }})
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr><th class="w-40">Output ID</th><td>{{ out_row.id }}</td></tr>
+                    <tr><th>Batch Run</th><td><code>{{ out_row.batch_run_id[:12] }}…</code></td></tr>
+                    <tr><th>As-of Date</th><td>{{ out_row.as_of_date }}</td></tr>
+                    <tr><th>Account</th><td><code>{{ out_row.source_account_id }}</code></td></tr>
+                    <tr><th>Customer</th><td>{{ out_row.customer_id }}</td></tr>
+                    <tr><th>Product</th><td>{{ out_row.product_code }}</td></tr>
+                    <tr><th>Source Org</th><td>{{ out_row.source_org_unit_id }}</td></tr>
+                    <tr><th>Target Org</th><td>{{ out_row.target_org_unit_id }}</td></tr>
+                    <tr><th>Financial Element</th><td>{{ out_row.financial_element or '—' }}</td></tr>
+                    <tr><th>Entry Type</th><td><span class="badge bg-{{ 'success' if out_row.entry_type == 'DEBIT' else 'danger' }}">{{ out_row.entry_type }}</span></td></tr>
+                    <tr><th>Source Balance</th><td>{{ "{:,.2f}".format(out_row.source_balance) }}</td></tr>
+                    <tr><th>Ratio Applied</th><td>{{ "%.4f"|format(out_row.ratio_applied) }} ({{ "%.2f"|format(out_row.ratio_applied * 100) }}%)</td></tr>
+                    <tr><th>Allocated Balance</th><td class="fw-bold text-success">{{ "{:,.2f}".format(out_row.allocated_balance) }}</td></tr>
+                    <tr><th>Allocated Income</th><td>{{ "{:,.2f}".format(out_row.allocated_income) }}</td></tr>
+                    <tr><th>Allocation ID</th><td><code>{{ out_row.allocation_id or '—' }}</code></td></tr>
+                    <tr><th>Orphan</th><td>{{ '⚠ Yes' if out_row.is_orphan else 'No' }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ═══════ Batch Run Info ═══════ -->
+{% if batch %}
+<div class="card mt-4">
+    <div class="card-header"><i class="bi bi-clock-history"></i> Batch Execution Context</div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-2"><strong>Batch ID:</strong> <code>{{ batch.id[:12] }}…</code></div>
+            <div class="col-md-2"><strong>Status:</strong>
+                <span class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else 'danger' }}">{{ batch.status }}</span>
+            </div>
+            <div class="col-md-2"><strong>Source Rows:</strong> {{ batch.source_row_count }}</div>
+            <div class="col-md-2"><strong>Output Rows:</strong> {{ batch.output_row_count }}</div>
+            <div class="col-md-2"><strong>Orphans:</strong> {{ batch.orphan_count }}</div>
+            <div class="col-md-2"><strong>Run By:</strong> {{ batch.run_by }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<a href="/reports/traceability/batch/{{ batch.id }}" class="btn btn-outline-secondary mt-3">
+    <i class="bi bi-arrow-left"></i> Back to Trace
+</a>
+{% endblock %}

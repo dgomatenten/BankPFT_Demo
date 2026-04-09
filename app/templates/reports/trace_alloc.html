@@ -1,0 +1,349 @@
+{% extends "layout/base.html" %}
+{% block title %}Allocation Trace — {{ rule.name }} — BankPFT{% endblock %}
+{% block content %}
+
+<!-- ═══════ Header ═══════ -->
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-diagram-3"></i> {{ rule.name }}</h2>
+        <div class="text-muted">
+            <span class="badge bg-secondary">{{ rule.allocation_method }}</span>
+            {{ rule.source_table }} → {{ rule.lookup_table }} → {{ rule.output_table }}
+            &nbsp;|&nbsp; As-of: <strong>{{ batch.as_of_date }}</strong>
+            &nbsp;|&nbsp; Status:
+            <span class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else 'danger' }}">{{ batch.status }}</span>
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/reports/traceability/batch/{{ batch.id }}/engine-log"
+           class="btn btn-outline-secondary btn-sm" title="Python engine log (BatchLogger)">
+            <i class="bi bi-journal-text"></i> Engine Log
+        </a>
+        <a href="/reports/traceability/batch/{{ batch.id }}/sql-log"
+           class="btn btn-outline-secondary btn-sm" title="SQL execution audit (sp_alloc_log)">
+            <i class="bi bi-database-check"></i> SQL Log
+        </a>
+        <a href="/reports/traceability" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+
+<!-- ═══════ Account Filter ═══════ -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="form-label mb-0 small fw-bold">Filter by Account:</label>
+            </div>
+            <div class="col-md-3">
+                <input type="text" name="account_id" class="form-control form-control-sm"
+                       value="{{ sel_account_id }}" placeholder="e.g. ACC-0001">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Filter</button>
+                {% if sel_account_id %}
+                <a href="/reports/traceability/batch/{{ batch.id }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════ Summary Cards ═══════ -->
+{% if summary %}
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="card text-center border-info">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-info">{{ summary.source_count }}</div>
+                <small class="text-muted">Source Rows</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-warning">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-warning">{{ summary.driver_count }}</div>
+                <small class="text-muted">Driver Rows</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-success">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-success">{{ summary.output_count }}</div>
+                <small class="text-muted">Output Rows</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="fs-5 fw-bold">{{ "{:,.2f}".format(summary.total_source) }}</div>
+                <small class="text-muted">Source Total</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="fs-5 fw-bold">{{ "{:,.2f}".format(summary.total_allocated) }}</div>
+                <small class="text-muted">Allocated Total</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-center border-danger">
+            <div class="card-body py-2">
+                <div class="fs-4 fw-bold text-danger">{{ summary.orphan_count }}</div>
+                <small class="text-muted">Orphans</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ═══════ Flow Diagram ═══════ -->
+<div class="d-flex align-items-center justify-content-center mb-4 gap-2">
+    <span class="badge bg-info fs-6 px-3 py-2"><i class="bi bi-box-arrow-in-right"></i> Source ({{ rule.source_table }})</span>
+    <i class="bi bi-arrow-right fs-4 text-muted"></i>
+    <span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-sliders"></i> Driver ({{ rule.lookup_table }})</span>
+    <i class="bi bi-arrow-right fs-4 text-muted"></i>
+    <span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-box-arrow-right"></i> Output ({{ rule.output_table }})</span>
+</div>
+
+<!-- ═══════ 1. SOURCE ═══════ -->
+<div class="card mb-4">
+    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+        <span>
+            <i class="bi bi-box-arrow-in-right"></i> Source — {{ rule.source_table }}
+            <span class="badge bg-light text-dark ms-2">{{ source_rows|length }} rows{% if source_rows|length == 500 %} (capped){% endif %}</span>
+        </span>
+        <button type="button" class="btn btn-sm btn-light py-0 px-2"
+                data-bs-toggle="modal" data-bs-target="#sqlSourceModal">
+            <i class="bi bi-code-square"></i> SQL
+        </button>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+            <table class="table table-sm table-striped mb-0">
+                <thead class="table-light sticky-top">
+                    <tr>
+                        {% if rule.source_table == 'proc_gl_data' %}
+                        <th>GL Account</th><th>Org Unit</th><th>As-of Date</th>
+                        <th class="text-end">Debit</th><th class="text-end">Credit</th><th class="text-end">Balance</th>
+                        {% else %}
+                        <th>Account</th><th>Customer</th><th>Product</th><th>Org Unit</th><th>As-of Date</th>
+                        <th class="text-end">Balance</th><th class="text-end">Interest Inc</th>
+                        {% if rule.source_table == 'proc_inst_data' %}
+                        <th class="text-end">Base Rate</th><th class="text-end">Cost of Fund</th>
+                        {% endif %}
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in source_rows %}
+                <tr>
+                    {% if rule.source_table == 'proc_gl_data' %}
+                    <td><code>{{ s.get('gl_account') }}</code></td>
+                    <td>{{ s.get('org_unit_id') }}</td>
+                    <td>{{ s.get('as_of_date') }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(s.get('debit', 0) or 0) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(s.get('credit', 0) or 0) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(s.get('balance', 0) or 0) }}</td>
+                    {% else %}
+                    <td><code>{{ s.get('account_id') }}</code></td>
+                    <td>{{ s.get('customer_id') }}</td>
+                    <td>{{ s.get('product_code') }}</td>
+                    <td>{{ s.get('org_unit_id') }}</td>
+                    <td>{{ s.get('as_of_date') }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(s.get('balance', 0) or 0) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(s.get('interest_income', 0) or 0) }}</td>
+                    {% if rule.source_table == 'proc_inst_data' %}
+                    {% set br = s.get('base_rate') %}
+                    <td class="text-end">{{ "%.6f"|format(br) if br is not none and str(br).lower() != 'nan' else '—' }}</td>
+                    {% set cof = s.get('cost_of_fund') %}
+                    <td class="text-end">{{ "{:,.2f}".format(cof) if cof is not none and str(cof).lower() != 'nan' else '—' }}</td>
+                    {% endif %}
+                    {% endif %}
+                </tr>
+                {% endfor %}
+                {% if not source_rows %}
+                <tr><td colspan="10" class="text-center text-muted py-3">No source rows found for this as-of date.</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ 2. DRIVER ═══════ -->
+<div class="card mb-4">
+    <div class="card-header bg-warning text-dark">
+        <i class="bi bi-sliders"></i> Driver — {{ rule.lookup_table }}
+        <span class="badge bg-light text-dark ms-2">{{ driver_rows|length }} rows{% if driver_rows|length == 500 %} (capped){% endif %}</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+            <table class="table table-sm table-striped mb-0">
+                <thead class="table-light sticky-top">
+                    <tr>
+                        {% for col in driver_columns %}
+                        <th{% if col == 'ratio' %} class="text-end"{% endif %}>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                {% for d in driver_rows %}
+                <tr>
+                    {% for col in driver_columns %}
+                    <td{% if col == 'ratio' %} class="text-end"{% endif %}>
+                        {% set val = d.__getattribute__(col) %}
+                        {% if col == 'ratio' and val is not none %}
+                            {{ "%.4f"|format(val) }} ({{ "%.1f"|format(val * 100) }}%)
+                        {% elif val is none %}
+                            —
+                        {% else %}
+                            {{ val }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                {% if not driver_rows %}
+                <tr><td colspan="{{ driver_columns|length }}" class="text-center text-muted py-3">No driver rows found.</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ 3. OUTPUT ═══════ -->
+<div class="card mb-4">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+        <span>
+            <i class="bi bi-box-arrow-right"></i> Output — {{ out_model_name or rule.output_table }}
+            <span class="badge bg-light text-dark ms-2">{{ output_rows|length }} rows{% if output_rows|length == 500 %} (capped){% endif %}</span>
+        </span>
+        <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-light py-0 px-2"
+                    data-bs-toggle="modal" data-bs-target="#sqlOutputModal">
+                <i class="bi bi-code-square"></i> SELECT SQL
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-light py-0 px-2"
+                    data-bs-toggle="modal" data-bs-target="#sqlDeleteModal">
+                <i class="bi bi-trash"></i> Prior DELETE
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+            <table class="table table-sm table-striped table-hover mb-0">
+                <thead class="table-light sticky-top">
+                    <tr>
+                        <th>Account</th><th>Customer</th><th>Product</th>
+                        <th>Source Org</th><th>Target Org</th>
+                        <th>FE</th><th>Entry</th>
+                        <th class="text-end">Source Bal</th>
+                        <th class="text-end">Ratio</th>
+                        <th class="text-end">Alloc Bal</th>
+                        <th class="text-end">Alloc Inc</th>
+                        <th>Orphan</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for o in output_rows %}
+                <tr class="{{ 'table-warning' if o.is_orphan }}">
+                    <td><code>{{ o.source_account_id }}</code></td>
+                    <td>{{ o.customer_id }}</td>
+                    <td>{{ o.product_code }}</td>
+                    <td>{{ o.source_org_unit_id }}</td>
+                    <td>{{ o.target_org_unit_id }}</td>
+                    <td>{{ o.financial_element or '—' }}</td>
+                    <td><span class="badge bg-{{ 'success' if o.entry_type == 'DEBIT' else 'danger' }}">{{ o.entry_type }}</span></td>
+                    <td class="text-end">{{ "{:,.2f}".format(o.source_balance) }}</td>
+                    <td class="text-end">{{ "%.2f"|format(o.ratio_applied * 100) }}%</td>
+                    <td class="text-end">{{ "{:,.2f}".format(o.allocated_balance) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(o.allocated_income) }}</td>
+                    <td>{{ '⚠' if o.is_orphan else '✓' }}</td>
+                    <td>
+                        <a href="/reports/traceability/detail/{{ o.id }}?table={{ rule.output_table }}"
+                           class="btn btn-outline-primary btn-sm py-0" title="Full chain detail">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not output_rows %}
+                <tr><td colspan="13" class="text-center text-muted py-3">No output rows found.</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ SQL Modals ═══════ -->
+
+<!-- Source SQL Modal -->
+<div class="modal fade" id="sqlSourceModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-info text-white">
+        <h5 class="modal-title"><i class="bi bi-code-square"></i> Source Query — {{ rule.source_table }}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <pre class="m-0 p-3" style="background:#1e1e1e;color:#d4d4d4;font-size:0.88rem;
+             white-space:pre-wrap;word-break:break-all;min-height:120px;">{{ sql_source | e }}</pre>
+      </div>
+      <div class="modal-footer text-muted small">
+        This is the SELECT used to load source data into the traceability view (capped at 500 rows).
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Output SELECT SQL Modal -->
+<div class="modal fade" id="sqlOutputModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="bi bi-code-square"></i> Output Query — {{ out_model_name or rule.output_table }}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <pre class="m-0 p-3" style="background:#1e1e1e;color:#d4d4d4;font-size:0.88rem;
+             white-space:pre-wrap;word-break:break-all;min-height:120px;">{{ sql_output | e }}</pre>
+      </div>
+      <div class="modal-footer text-muted small">
+        This SELECT retrieves the allocation output rows written to <code>{{ out_model_name or rule.output_table }}</code> by this batch run.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Prior DELETE SQL Modal -->
+<div class="modal fade" id="sqlDeleteModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="bi bi-trash"></i> Prior Output DELETE — {{ out_model_name or rule.output_table }}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <pre class="m-0 p-3" style="background:#1e1e1e;color:#ff8080;font-size:0.88rem;
+             white-space:pre-wrap;word-break:break-all;min-height:120px;">{{ sql_delete | e }}</pre>
+      </div>
+      <div class="modal-footer text-muted small">
+        This DELETE runs at the start of each batch to clear prior results before inserting new allocations.
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -41,6 +41,9 @@
                     <tr>
                         <td class="text-center fw-bold text-muted">{{ task.step_order }}</td>
                         <td>
+                            {% if task.task_type == 'ALLOCATION_SP' %}
+                            <span class="badge" style="background:#6f42c1">ALLOCATION_SP</span>
+                            {% else %}
                             {% set type_colors = {
                                 'ALLOCATION':      'primary',
                                 'FTP':             'info',
@@ -51,6 +54,7 @@
                             <span class="badge bg-{{ type_colors.get(task.task_type, 'secondary') }}">
                                 {{ task.task_type }}
                             </span>
+                            {% endif %}
                         </td>
                         <td class="font-monospace small">{{ task.ref_id or '—' }}</td>
                         <td class="small">{{ task.label or '—' }}</td>
@@ -91,13 +95,27 @@
 
                         <!-- ALLOCATION ref -->
                         <div class="col-md-4" id="ref_allocation" style="display:none">
-                            <label class="form-label">Allocation Rule</label>
+                            <label class="form-label">Allocation Rule <small class="text-muted">(Python engine)</small></label>
                             <select name="ref_id_allocation" class="form-select">
                                 <option value="">— Select Rule —</option>
                                 {% for r in rules %}
                                 <option value="{{ r.id }}">{{ r.name }}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+
+                        <!-- ALLOCATION_SP ref -->
+                        <div class="col-md-4" id="ref_allocation_sp" style="display:none">
+                            <label class="form-label">Allocation Rule
+                                <span class="badge" style="background:#6f42c1">SP</span>
+                            </label>
+                            <select name="ref_id_allocation_sp" class="form-select">
+                                <option value="">— Select Rule —</option>
+                                {% for r in rules %}
+                                <option value="{{ r.id }}">{{ r.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Runs via <code>sp_run_allocation</code> — SQL execution logged to <code>sp_alloc_log</code>.</div>
                         </div>
 
                         <!-- DATAFILE_IMPORT ref -->
@@ -125,9 +143,13 @@
                         <!-- CUSTOM_SP ref -->
                         <div class="col-md-4" id="ref_custom_sp" style="display:none">
                             <label class="form-label">SP Name</label>
-                            <input type="text" name="ref_id_custom_sp" class="form-control"
-                                   placeholder="e.g. reporting.sp_extract">
-                            <div class="form-text">Schema prefix allowed: <code>schema.sp_name</code></div>
+                            <select name="ref_id_custom_sp" class="form-select">
+                                <option value="">— Select Procedure —</option>
+                                {% for sp in registered_sps %}
+                                <option value="{{ sp.procedure_name }}">{{ sp.procedure_name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Configure <a href="/batch/procedures">Registered SPs</a> here.</div>
                         </div>
                         <!-- CUSTOM_SP params (shown only when CUSTOM_SP selected) -->
                         <div class="col-12" id="ref_custom_sp_params" style="display:none">
@@ -231,24 +253,26 @@
 <script>
 function updateRefInput() {
     const t = document.getElementById('taskTypeSelect').value;
-    ['allocation','import','export','custom_sp','ftp'].forEach(id => {
+    ['allocation','allocation_sp','import','export','custom_sp','ftp'].forEach(id => {
         document.getElementById('ref_' + id).style.display = 'none';
     });
     const paramsDiv = document.getElementById('ref_custom_sp_params');
     paramsDiv.style.display = 'none';
-    if (t === 'ALLOCATION')      document.getElementById('ref_allocation').style.display = '';
+    if (t === 'ALLOCATION')    document.getElementById('ref_allocation').style.display    = '';
+    if (t === 'ALLOCATION_SP') document.getElementById('ref_allocation_sp').style.display = '';
     if (t === 'DATAFILE_IMPORT') document.getElementById('ref_import').style.display     = '';
     if (t === 'DATAFILE_EXPORT') document.getElementById('ref_export').style.display     = '';
     if (t === 'CUSTOM_SP') {
         document.getElementById('ref_custom_sp').style.display  = '';
         paramsDiv.style.display = '';
     }
-    if (t === 'FTP')             document.getElementById('ref_ftp').style.display         = '';
+    if (t === 'FTP')           document.getElementById('ref_ftp').style.display           = '';
 }
 function mergeRefId() {
     const t = document.getElementById('taskTypeSelect').value;
     let val = '';
     if (t === 'ALLOCATION')      val = document.querySelector('[name=ref_id_allocation]').value;
+    if (t === 'ALLOCATION_SP')   val = document.querySelector('[name=ref_id_allocation_sp]').value;
     if (t === 'DATAFILE_IMPORT') val = document.querySelector('[name=ref_id_import]').value;
     if (t === 'DATAFILE_EXPORT') val = document.querySelector('[name=ref_id_export]').value;
     if (t === 'CUSTOM_SP')       val = document.querySelector('[name=ref_id_custom_sp]').value;

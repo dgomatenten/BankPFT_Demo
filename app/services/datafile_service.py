@@ -410,7 +410,7 @@ def import_file(format_id: str, filename: str, run_by: str) -> DataFileBatch:
 
         batch.row_count = rows_loaded
         batch.error_count = len(errors)
-        batch.errors_json = json.dumps(errors[:100]) if errors else None
+        batch.errors_json = errors[:100] if errors else None
         batch.status = "COMPLETED" if rows_loaded > 0 else "FAILED"
         if rows_loaded == 0:
             batch.error_message = "No rows were loaded. Check errors for details."

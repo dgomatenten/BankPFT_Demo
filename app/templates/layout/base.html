@@ -45,9 +45,20 @@
                 <a href="/datafile" class="nav-sub-item"><i class="bi bi-file-earmark-binary"></i> Data Files</a>
             </div>
             <a href="/rules"><i class="bi bi-gear"></i> Allocation Rules</a>
-            <a href="/batch"><i class="bi bi-play-circle"></i> Batch Execution</a>
-            <a href="/batch/definitions"><i class="bi bi-collection-play"></i> Batch Definitions</a>
             <a href="/ftp"><i class="bi bi-currency-exchange"></i> Fund Transfer Pricing</a>
+            <!-- Batch collapsible group -->
+            <a href="#BatchMgmt" data-bs-toggle="collapse"
+               class="nav-group-header"
+               aria-expanded="{{ 'true' if request.path.startswith('/batch') else 'false' }}">
+                <span><i class="bi bi-play-circle"></i> Batch</span>
+                <i class="bi bi-chevron-down small"></i>
+            </a>
+            <div class="collapse {% if request.path.startswith('/batch') %}show{% endif %}" id="BatchMgmt">
+                <a href="/batch/monitor"        class="nav-sub-item"><i class="bi bi-activity"></i> Monitor</a>
+                <a href="/batch"                class="nav-sub-item"><i class="bi bi-collection-play"></i> Execution</a>
+                <a href="/batch/definitions"    class="nav-sub-item"><i class="bi bi-list-check"></i> Definitions</a>
+                <a href="/batch/procedures"     class="nav-sub-item"><i class="bi bi-code-square"></i> Registered SPs</a>
+            </div>
             <a href="/reports"><i class="bi bi-bar-chart"></i> Reports</a>
             <a href="/testdata"><i class="bi bi-database-gear"></i> Test Data</a>
             {% if current_user.is_authenticated and current_user.is_admin %}
@@ -56,6 +67,7 @@
                 <a href="/admin/groups"><i class="bi bi-collection"></i> Groups</a>
                 <a href="/admin/op-vars"><i class="bi bi-sliders"></i> Operation Variables</a>
                 <a href="/admin/alert-configs"><i class="bi bi-bell"></i> Alert Configurations</a>
+                <a href="/admin/json-configs"><i class="bi bi-filetype-json"></i> JSON Configurations</a>
                 <a href="/tests/"><i class="bi bi-clipboard2-check"></i> Test Suite</a>
             </div>
             {% endif %}

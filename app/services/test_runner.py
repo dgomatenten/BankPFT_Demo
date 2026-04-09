@@ -81,7 +81,7 @@ def run_test_suite(triggered_by: str = "system") -> TestSuiteRun:
     suite_run.error    = summary.get("error",   0)
     suite_run.skipped  = summary.get("skipped", 0)
     suite_run.duration_s = report.get("duration", 0.0)
-    suite_run.results_json = json.dumps(report)
+    suite_run.results_json = report
     suite_run.stdout = stdout[:65535]  # cap to avoid huge DB rows
 
     has_failures = (suite_run.failed + suite_run.error) > 0
@@ -105,7 +105,7 @@ def get_run_tests(suite_run: TestSuiteRun) -> list[dict]:
     if not suite_run.results_json:
         return []
     try:
-        report = json.loads(suite_run.results_json)
+        report = suite_run.results_json if isinstance(suite_run.results_json, dict) else json.loads(suite_run.results_json)
     except (json.JSONDecodeError, TypeError):
         return []
 

@@ -1,0 +1,2 @@
+ALTER TABLE allocation_rule
+  ADD COLUMN IF NOT EXISTS aggregate_source BOOLEAN NOT NULL DEFAULT FALSE;

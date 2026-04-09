@@ -42,7 +42,8 @@
             {"column": "account_id",   "label": "Account ID"},
             {"column": "customer_id",  "label": "Customer ID"},
             {"column": "product_code", "label": "Product Code"},
-            {"column": "org_unit_id",  "label": "Org Unit"}
+            {"column": "org_unit_id",  "label": "Org Unit"},
+            {"column": "transaction_number", "label": "Transaction Number"}
         ],
         "proc_gl_data": [
             {"column": "gl_account",   "label": "GL Account"},
@@ -58,7 +59,8 @@
             {"column": "source_account_id",  "label": "Source Account ID"},
             {"column": "customer_id",        "label": "Customer ID"},
             {"column": "product_code",       "label": "Product Code"},
-             {"column": "org_unit_id",  "label": "Org Unit"}
+             {"column": "org_unit_id",  "label": "Org Unit"},
+             {"column": "transaction_number",  "label": "Transaction Number"}
         ]
     },
 

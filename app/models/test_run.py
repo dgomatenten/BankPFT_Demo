@@ -1,6 +1,6 @@
 """TestSuiteRun model — persists each in-app pytest invocation and its results."""
 
-from app.models import db
+from app.models import db, JSONB_TYPE
 from app.core.time_utils import utc_now
 import uuid
 
@@ -24,7 +24,7 @@ class TestSuiteRun(db.Model):
     duration_s = db.Column(db.Numeric(10, 3), default=0.0)
 
     # Full pytest-json-report payload and captured stdout
-    results_json = db.Column(db.JSON, nullable=True)   # JSON string
+    results_json = db.Column(JSONB_TYPE, nullable=True)   # JSON string
     stdout = db.Column(db.Text, nullable=True)          # combined output
 
     def summary_dict(self):

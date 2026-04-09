@@ -193,15 +193,13 @@
     }
 
     // Load existing filters if present
-    const existingRaw = '{{ existing_filters|default("", true)|e }}';
+    const existingRaw = {{ (existing_filters|tojson) if existing_filters else '""' }};
     if (existingRaw) {
-        try {
-            const existing = JSON.parse(existingRaw);
-            if (existing.logic === 'OR') {
-                document.getElementById('logic-or').checked = true;
-            }
-            (existing.conditions || []).forEach(c => addRow(c.field, c.operator, c.value));
-        } catch(e) { /* ignore bad JSON */ }
+        const existing = (typeof existingRaw === 'string') ? JSON.parse(existingRaw) : existingRaw;
+        if (existing.logic === 'OR') {
+            document.getElementById('logic-or').checked = true;
+        }
+        (existing.conditions || []).forEach(c => addRow(c.field, c.operator, c.value));
     }
 })();
 </script>

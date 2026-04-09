@@ -60,11 +60,24 @@
 <div class="card mb-4 border-danger">
     <div class="card-header bg-danger text-white"><i class="bi bi-exclamation-triangle"></i> Validation Errors ({{ errors|length }})</div>
     <div class="card-body">
-        <ul class="mb-0">
-            {% for e in errors %}
-            <li>{{ e }}</li>
-            {% endfor %}
-        </ul>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm table-hover mb-0">
+                <thead class="table-danger">
+                    <tr>
+                        <th style="width: 5%">#</th>
+                        <th>Validation Issue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in errors %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td class="text-danger">{{ e }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         <hr>
         <p class="mb-0 text-muted small">Fix the errors in the source file and <a href="/upload/new">re-upload</a>. Validation checks: required columns, nulls, duplicates, dimension lookups, ratio sums = 1.0.</p>
     </div>
@@ -99,7 +112,10 @@
     </div>
 </div>
 {% elif batch.error_count == 0 and batch.status not in ['DRAFT'] %}
-<div class="alert alert-info">Data has been staged. Use the workflow below to approve and promote to processing.</div>
+<div class="alert alert-success mt-4">
+    <h5 class="alert-heading"><i class="bi bi-shield-check"></i> Data Integrity Check: PASSED</h5>
+    <p class="mb-0">All <strong>{{ batch.row_count }}</strong> records successfully passed validation (required columns, nulls, duplicates, and dimension lookups). Data has been staged automatically. Use the workflow below to review and approve.</p>
+</div>
 {% endif %}
 
 {# ── Workflow Actions ── #}

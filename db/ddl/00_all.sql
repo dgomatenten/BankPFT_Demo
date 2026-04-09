@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS stg_inst_data (
     id              SERIAL        PRIMARY KEY,
     upload_batch_id VARCHAR(36)   NOT NULL,
     as_of_date      DATE          NOT NULL,
+    transaction_number VARCHAR(100),
     account_id      VARCHAR(20)   NOT NULL,
     customer_id     VARCHAR(20)   NOT NULL,
     product_code    VARCHAR(20)   NOT NULL,
@@ -152,6 +153,7 @@ CREATE TABLE IF NOT EXISTS proc_inst_data (
     id              SERIAL        PRIMARY KEY,
     upload_batch_id VARCHAR(36)   NOT NULL,
     as_of_date      DATE          NOT NULL,
+    transaction_number VARCHAR(100),
     account_id      VARCHAR(20)   NOT NULL,
     customer_id     VARCHAR(20)   NOT NULL,
     product_code    VARCHAR(20)   NOT NULL,
@@ -397,6 +399,7 @@ CREATE TABLE IF NOT EXISTS fct_mgmt_instrument (
     id                  SERIAL        PRIMARY KEY,
     batch_run_id        VARCHAR(36)   NOT NULL,
     as_of_date          DATE          NOT NULL,
+    transaction_number  VARCHAR(100),
     entry_type          VARCHAR(10)   NOT NULL DEFAULT 'DEBIT',  -- DEBIT | CREDIT
     allocation_id       VARCHAR(36),
     source_account_id   VARCHAR(20)   NOT NULL,

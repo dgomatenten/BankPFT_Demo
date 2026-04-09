@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS fct_mgmt_ledger (
     batch_run_id        VARCHAR(36)   NOT NULL,
     as_of_date          DATE          NOT NULL,
     entry_type          VARCHAR(10)   NOT NULL DEFAULT 'DEBIT',  -- DEBIT | CREDIT
+    financial_element   VARCHAR(20),                              -- BAL | II | COF (NULL for non-FE sources)
     allocation_id       VARCHAR(36),
     source_account_id   VARCHAR(20)   NOT NULL,
     customer_id         VARCHAR(20)   NOT NULL,
@@ -44,7 +45,9 @@ CREATE TABLE IF NOT EXISTS fct_mgmt_instrument (
     id                  SERIAL        PRIMARY KEY,
     batch_run_id        VARCHAR(36)   NOT NULL,
     as_of_date          DATE          NOT NULL,
+    transaction_number  VARCHAR(100),
     entry_type          VARCHAR(10)   NOT NULL DEFAULT 'DEBIT',  -- DEBIT | CREDIT
+    financial_element   VARCHAR(20),                              -- BAL | II | COF (NULL for non-FE sources)
     allocation_id       VARCHAR(36),
     source_account_id   VARCHAR(20)   NOT NULL,
     customer_id         VARCHAR(20)   NOT NULL,
