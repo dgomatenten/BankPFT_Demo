@@ -201,10 +201,21 @@ app/
 
 db/
 ├── ddl/
-│   └── sp_call_log.sql        # Audit table written to by sp_test_echo (integration test fixture)
+│   ├── 00_all.sql                   # Monolithic concatenation of all schemas
+│   ├── 01_auth.sql                  # Users & Groups
+│   ├── 02_dimensions.sql            # Core dimensions (org, account, instrument lookup)
+│   ├── 03_staging.sql               # Staging tables (GL, Instrument) with JSONB and processing status
+│   ├── 04_reference.sql             # Allocation lookups and static mapping
+│   ├── 05_fact.sql                  # Ledger and Instrument fact execution tables
+│   ├── 06_ftp.sql                   # Funds Transfer Pricing configs and logs
+│   ├── 07_workflow.sql              # Batch and Rule execution mappings capturing app state
+│   ├── migration_sp_registry.sql    # Dynamic procedure registry table (`sys_registered_sp`)
+│   ├── sp_alloc_log_table.sql       # Procedural debug execution trace core (`sys_sp_alloc_log`)
+│   └── sp_call_log.sql              # Pytest integration audit definition
 └── procedures/
-    ├── sp_test_echo.sql       # Test stored procedure used exclusively by integration tests
-    └── sp_month_end_sample.sql # Template for month-end SP with standard batch token convention
+    ├── sp_run_allocation.sql        # The Master Allocation Engine computational procedure
+    ├── sp_month_end_sample.sql      # Template constraint for user batch execution deployments
+    └── sp_test_echo.sql             # Isolated logic hook utilized exclusively by Pytest
 
 development_prompt/
 ├── 1_frist_prompt.md        # AI rules, app factory init, and start.sh/bat bootstrapper
