@@ -15,7 +15,7 @@ Once you have created your new folder and copied over the [README.md](cci:7://fi
 >
 > Please read these three files carefully. Acknowledge that you understand that you must use **Flask Application Factories**, **Blueprint Routing**, **Local Bootstrap 5**, and native **PostgreSQL JSONB** data structures instead of heavy relational ones.
 >
-> Once you acknowledge these rules, please generate the basic [app/__init__.py](cci:7://file:///home/dgoma/app_dev/BankPFT/app/__init__.py:0:0-0:0) factory and the [start.sh](cci:7://file:///home/dgoma/app_dev/BankPFT/start.sh:0:0-0:0) startup script to initialize our new project mirroring the architecture shown in the README!"
+> Once you acknowledge these rules, please generate the basic [app/__init__.py](cci:7://file:///home/dgoma/app_dev/BankPFT/app/__init__.py:0:0-0:0) factory. Additionally, please generate both a [start.sh](cci:7://file:///home/dgoma/app_dev/BankPFT/start.sh:0:0-0:0) and a `start.bat` startup script to initialize our new project mirroring the architecture shown in the README, ensuring we can natively map dependencies on both Linux and Windows environments!"
 
 ***
 

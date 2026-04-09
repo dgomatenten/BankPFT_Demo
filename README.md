@@ -206,6 +206,21 @@ db/
     ├── sp_test_echo.sql       # Test stored procedure used exclusively by integration tests
     └── sp_month_end_sample.sql # Template for month-end SP with standard batch token convention
 
+development_prompt/
+├── 1_frist_prompt.md        # AI rules, app factory init, and start.sh/bat bootstrapper
+├── 1.5_prompt.md            # Generic helpers (time tracking & execution loggers)
+├── 2_secnond_p.md           # Base layout, Bootstrap 5 UI shell, Authentication config
+├── 3_prompt.md              # SQLAlchemy Model blueprints and MakerChecker Mixin config
+├── 4_prompt.md              # PostgreSQL physical DDL mappings
+├── 5_prompt.md              # JSON rules & definitions setup
+├── 6_prompt.md              # Core business SP and Upload logic engines
+├── 7_prompt.md              # Blueprint routing and WTForms wrappers
+├── 8_prompt.md              # Jinja2 presentation templates and DataTables
+├── 8.5_prompt.md            # Operational Dashboards & Batch Logging matrix
+├── 9_prompt.md              # Pytest fixture & test suite generation
+├── 10_prompt.md             # Mock user dataset generation service
+└── 11_prompt.md             # Production Docker & Gunicorn deployment setup
+
 tests/
 ├── __init__.py              # Package marker
 ├── conftest.py              # Shared fixtures (app, db_session, client, auth_client, seeded_db)
@@ -291,30 +306,20 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 
 **Engine flow:**
 ```
-1. Load AllocationRule from DB → source_table, allocation_method, join_key, filter_json,
-   source_dim_json, output_dim_json, credit_dim_json, entry_mode
-2. Look up column definitions in allocation_config.json for each table
-3. Query source data → apply filter_json → apply source_dim_json member filters
+1. Route executes `BatchExecutor` which invokes the `ALLOCATION` abstraction.
+2. The `app.services.allocation_engine` parses `rule_config.json` and loads the selected rule context (Filter logic and Dimension mappings).
+3. The Python engine formats those properties into a deterministic JSON object mapping.
+4. Python securely dispatches execution natively to PostgreSQL via `sp_run_allocation(rule_id, as_of_date, 'BOTH', json_payload)`.
 
-── RATIO / DISTRIBUTION method ──
-4. Query lookup table (ref_static_allocation / ref_static_distribution)
-   For DISTRIBUTION: if rule.distribution_driver is set, adds WHERE driver_name = rule.distribution_driver
-5. Pandas LEFT JOIN on rule's join_key
-6. For each matched row: allocated_balance = source × ratio
-   Output dimension for DISTRIBUTION taken from lookup's target_dim column
-7. Resolve DEBIT dims per output_dim_json (same-as-source / lookup / fixed)
-8. If BOTH or DEBIT_ONLY: write DEBIT entry; if BOTH or CREDIT_ONLY: write CREDIT (negative)
-9. Orphan rows (no lookup match): DEBIT at source org, ratio = 1.0
+── Inside PostgreSQL Stored Procedure ──
+5. Dynamic SQL generates queries applying JSON filters physically on the database layer (`proc_inst_data` or `proc_gl_data`).
+6. Based on method (`RATIO`, `DISTRIBUTION`, or `STATIC`), the procedure executes native `LEFT JOIN` operations against `ref_static_distribution` or `ref_static_allocation`.
+7. Source balances are mathematically generated inside the temp table (balance × ratio). Output dimensions map directly from the matched target lookup.
+8. The procedure maps explicit DEBIT and CREDIT columns dynamically based on `output_dim_json` mapping. Orhpans are defaulted securely to 1.0 ratio.
 
-── STATIC method ──
-4. No lookup join; each source row maps 1:1, ratio_applied = 1.0
-5. Resolve DEBIT dims per output_dim_json (same-as-source / fixed)
-6. If BOTH or DEBIT_ONLY: write DEBIT; if BOTH or CREDIT_ONLY: write CREDIT (negative)
-   No orphan rows possible with STATIC method
-
-── Idempotent write (all methods) ──
-7. DELETE existing output rows WHERE allocation_id = rule_id AND as_of_date = run date
-8. INSERT new output rows — every output row carries allocation_id = rule_id for traceability
+── Idempotent Write Lifecycle ──
+9. The Transaction structurally enforces `DELETE FROM fct_mgmt_instrument WHERE allocation_id = rule_id AND as_of_date = run_date` resolving duplications.
+10. The procedure commits the generated allocation allocations securely mapping traces into `sys_sp_alloc_log`. Python receives success validation, avoiding heavy multi-gigabyte pandas merges entirely.
 ```
 
 **Traceability:** Every output row stores the generating rule's `allocation_id` (= `AllocationRule.id`). This allows downstream reports and audits to trace any `fct_mgmt_*` record back to the rule that produced it.
