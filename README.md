@@ -217,6 +217,27 @@ tests/
 └── test_sp_integration.py   # PostgreSQL live integration: sp_test_echo DDL, dispatch_sp end-to-end (12 tests)
 ```
 
+### UI Navigation Structure
+The platform is heavily structured around a centralized sidebar matrix defined in `base.html`. All functional screens must seamlessly nest within one of these specific navigation hierarchies:
+
+- **Dashboard**
+- **Data Management**
+  - Manual Data Load
+  - Data Files
+- **Allocation Rules**
+- **Fund Transfer Pricing**
+- **Batch**
+  - Monitor
+  - Execution
+  - Definitions
+  - Registered SPs
+- **Reports**
+- **Test Data**
+- **Admin Tools** (requires `is_admin` flag)
+  - Users / Groups
+  - JSON Configurations
+  - Test Suite
+
 ## JSON vs Database — What Lives Where
 
 The system separates **configuration** (JSON files, no code changes) from **runtime data** (database, created by users at runtime).

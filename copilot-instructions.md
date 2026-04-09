@@ -10,6 +10,7 @@ By strictly adhering to these rules, you will ensure that the Application Factor
 
 ## 2. Python Coding Standards (PEP 8)
 - **Formatting:** Strictly adhere to PEP 8 conventions. Use 4 spaces for indentation, limit line length where practical, and use standard Python casing (`snake_case` for variables/functions, `PascalCase` for classes, `UPPER_CASE` for constants).
+- **Modern Syntax & Deprecations:** You must exclusively output modern syntax. Do NOT use deprecated functions, near-retired methodologies, or legacy abstractions (e.g. prioritize SQLAlchemy 2.0+ paradigms over legacy ORM hacks, and use modern Pandas 2.1+ logic).
 - **Type Hinting:** Modern Python (`3.10+`) type hints (`-> dict`, `: list[str]`, etc.) must be aggressively used across all service layers, helper methods, and internal logic to provide static analysis tracking.
 - **Documentation:** All functions, methods, and classes must include clear docstrings. Detail expected parameters, payload types, and return values.
 
