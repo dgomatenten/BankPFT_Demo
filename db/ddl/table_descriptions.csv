@@ -1,0 +1,40 @@
+table_name,description
+alert_config,Stores user-defined dashboard alert rules evaluated on every page load.
+allocation_rule,Configuration for a single allocation rule including source lookup and output mappings.
+batch_definition,Named ordered sequence of batch tasks (allocation FTP data file custom SP).
+batch_execution,One execution instance of a batch definition parent track for all steps.
+batch_execution_step,Per-task result row within a batch execution tracking status and timing.
+batch_run,Audit record for a single allocation rule engine execution.
+batch_task,One ordered step within a batch definition template.
+datafile_batch,Audit record for each data file import or export operation.
+dim_account,Account dimension represents the intersection of customer product and org unit.
+dim_customer,Customer dimension tracking individual or corporate customer details.
+dim_org_unit,Organisational unit hierarchy (branches divisions cost centres).
+dim_product,Product dimension tracking bank products loans deposits etc.
+fct_mgmt_instrument,Instrument-level management output mirrors fct_mgmt_ledger at account granularity.
+fct_mgmt_ledger,GL-level management ledger output produced by the allocation engine.
+ftp_model,Groups FTP pricing parameter rules into distinct executable models.
+ftp_model_rule,Pricing parameters mapped to a specific product within an FTP Model.
+ftp_process,Executable batch hooks mapping FTP Models directly to database structures.
+ftp_product_config,Legacy or internal configuration for FTP product pricing parameters.
+ftp_run,Tracks each FTP engine execution one row per batch run.
+group,Application permission groups (Maker / Checker / Admin).
+json_config,Stores generic JSON configuration blocks (UI forms engine settings).
+operation_variable,Named variables available to all batch engines at run time for token substitution.
+post_approval_log,Logs each automatic action triggered when an upload batch is approved.
+proc_gl_data,Approved GL balances consumed by the allocation engine.
+proc_inst_data,Approved instrument data consumed by allocation and FTP engines.
+ref_interest_rate,Interest rate curve data used by the FTP moving-average engine.
+ref_org_reclass,Org unit reclassification mappings to restructure org positions across periods.
+ref_static_alloc,1:1 source-to-target mapping for the Static Allocation method.
+ref_static_allocation,Customer-level allocation ratios used by the Ratio-Based allocation method.
+ref_static_distribution,Distribution table for the Static Distribution allocation method.
+sp_alloc_log,Detailed execution log for SQL-based allocation procedures.
+sp_run,Audit record for each stored-procedure call made from a CUSTOM_SP batch step.
+stg_gl_data,Raw general-ledger balances as uploaded pending checker approval.
+stg_inst_data,Raw instrument-level data as uploaded pending checker approval.
+sys_registered_sp,Registers user-defined stored procedures for execution within the batch framework.
+test_suite_run,Records each in-app pytest invocation triggered from the UI or API.
+upload_batch,Tracks every file upload through the Maker/Checker approval lifecycle.
+user,Application users with credentials and status.
+user_group,Many-to-many join between users and permission groups.
