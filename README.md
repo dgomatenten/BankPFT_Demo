@@ -73,6 +73,15 @@ Result  FCT_MGMT_INSTRUMENT  (entry_mode: BOTH | DEBIT_ONLY | CREDIT_ONLY, instr
 FTP Engine (Component-Based)
         REF_INTEREST_RATE (approved) → Independent Rule per Component (COF, LP, CLP, BUF)
         Result: Multiplexed pricing stored in PROC_INST_DATA (cost_of_fund, lp_amount, clp_amount, etc.)
+
+## Architectural Governance
+
+To maintain a **clean and sophisticated** codebase, BankPFT adheres to several advanced development principles:
+
+1. **Service Layer Sovereignty**: All business logic must be encapsulated in `app/services/`. Routes (Blueprints) are strictly for HTTP orchestration, while Stored Procedures are strictly for high-performance set-based calculation. The Service layer bridges them by performing pre-calculation validation and audit logging.
+2. **The Validation Gateway**: No engine (FTP, Allocation, Import) should execute without a prior validation pass. This ensures data integrity and as-of-date consistency before any records are mutated.
+3. **Reproducibility Metadata**: Every execution stores a 'snapshot' of the active configuration in a `metadata_json` field. This allows users to trace results back to the exact rule state at the time of the run, even if the rule has since been edited.
+4. **Structured Error Handling**: Generic exceptions are avoided. Each module throws domain-specific errors (e.g., `AllocationEngineError`) that carry context, allowing the UI to render graceful, actionable recovery steps.
 ```
 
 Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_id`. Each customer's ratios must sum to 1.0 per allocation group. Org reclassifications are stored in `REF_ORG_RECLASS` as 1:1 org-to-org mappings (ratio always 1.0).
@@ -2725,6 +2734,29 @@ def with_retry(max_attempts: int = 3, backoff_base: float = 2.0,
 # @with_retry(max_attempts=3, retriable_exceptions=(sqlalchemy.exc.OperationalError,))
 # def call_stored_procedure(...): ...
 ```
+
+---
+
+### Architectural Governance
+
+All architectural changes must be reviewed against the **System Integrity Matrix**. Any deviation from the established `BankPFTError` hierarchy or the `BatchRun` state machine requires a formal ADR (Architecture Decision Record) submission.
+
+---
+
+### AI Development & Copilot Usage
+
+This project is optimized for AI-assisted development. Three core documents govern how the AI should build new features:
+
+1. **[copilot-instructions.md](copilot-instructions.md)**: Strict PEP 8 rules, modern type-hinting, and Application Factory constraints.
+2. **[docs/AI_DEVELOPMENT_GUIDE.md](docs/AI_DEVELOPMENT_GUIDE.md)**: Architectural patterns (JSON vs DB) and the Stored Procedure mandate.
+3. **[development_prompt/](development_prompt/)**: A series of graduated prompts (1-12) that guide the AI through the application's entire development lifecycle, from Day 1 to Production Governance.
+
+> [!TIP]
+> **Building with Sophistication**: When asking an AI to extend the system, always reference **Prompt 12** to ensure it maintains the validation and observability standards required for a production-grade financial platform.
+
+## License
+
+MIT
 
 ---
 

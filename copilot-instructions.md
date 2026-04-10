@@ -11,8 +11,9 @@ By strictly adhering to these rules, you will ensure that the Application Factor
 ## 2. Python Coding Standards (PEP 8)
 - **Formatting:** Strictly adhere to PEP 8 conventions. Use 4 spaces for indentation, limit line length where practical, and use standard Python casing (`snake_case` for variables/functions, `PascalCase` for classes, `UPPER_CASE` for constants).
 - **Modern Syntax & Deprecations:** You must exclusively output modern syntax. Do NOT use deprecated functions, near-retired methodologies, or legacy abstractions (e.g. prioritize SQLAlchemy 2.0+ paradigms over legacy ORM hacks, and use modern Pandas 2.1+ logic).
-- **Type Hinting:** Modern Python (`3.10+`) type hints (`-> dict`, `: list[str]`, etc.) must be aggressively used across all service layers, helper methods, and internal logic to provide static analysis tracking.
+- **Type Hinting & Domain Schemas:** Modern Python (`3.10+`) type hints (`-> dict`, `: list[str]`, etc.) must be aggressively used. For complex JSONB payloads, you SHOULD define `TypedDict` schemas to document the expected structure of the JSON blobs.
 - **Documentation:** All functions, methods, and classes must include clear docstrings. Detail expected parameters, payload types, and return values.
+- **Service Layer Sovereignty:** Services (`app/services/`) are the source of truth for business logic. They must perform structured validation and auditing BEFORE delegating to Stored Procedures.
 
 ## 3. Configuration vs. Runtime Separation
 - **Config-Driven Pattern:** Never hardcode form options, validation constraints, or logic routing rules inside Python scripts. BankPFT isolates core structural rules into JSON binaries (`app/config/upload_config.json`, `rule_config.json`, `allocation_config.json`).
@@ -33,7 +34,8 @@ By strictly adhering to these rules, you will ensure that the Application Factor
 ## 6. Execution Lifecycle
 When building or touching system pipelines that touch Data Loaders or allocation orchestration:
 - Defer batch tracking to `app.models.workflow.BatchRun` and `BatchExecution`.
-- Throw handled exceptions. Do not catch generic broad exceptions (`except Exception: pass`). Use system-wide routing validation arrays and Flash messaging (`flash()`) to visually render failures using Bootstrap Alert/Error Grids.
+- **Exceptionalism:** Never catch generic broad exceptions (`except Exception: pass`). Implement custom exception classes in `app/core/exceptions.py` (inheriting from a base `BankPFTError`). All service failures must be raised and caught at the Blueprint level to be rendered via `flash()`.
+- **Atomic Operations:** Ensure service-level interactions are wrapped in atomic database transactions where multi-table state changes occur.
 
 ---
 

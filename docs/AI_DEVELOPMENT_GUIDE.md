@@ -40,9 +40,10 @@ All endpoints adhere to a strict Application Factory abstraction wrapped into Bl
 2. Implement backend data sanitization exclusively through standard Flask-WTF or custom request body parsing.
 3. Call helper engines inside `app/services/` to do the initial dispatching.
 
-**CRITICAL: Stored Procedures over Python Compute**
-- When building intensive business logic (such as extending the Rule Engine or executing heavy allocation calculations), you must execute these operations natively inside **PostgreSQL Stored Procedures**. 
-- Do NOT build heavy in-memory Python calculations (e.g., massive Pandas dataframe merges) for core rule processing. Let the database do the heavy lifting using `.sql` routines found in `db/procedures/`, and use the Flask backend purely as an orchestrator/dispatcher.
+**CRITICAL: Orchestration vs. Calculation**
+- **The Validation Gateway**: Services must fully validate request payloads and environmental state (e.g. "Is the as-of-date closed?") before execution.
+- **The PostgreSQL Engine**: For intensive business logic (such as Rule Engine or heavy allocations), execute natively inside **PostgreSQL Stored Procedures**. 
+- **The Python Orchestrator**: Flask acts as the "Brain" that coordinates steps, logs audit traces, and handles rollbacks. Do NOT build heavy in-memory loops in Python where SQL is natively superior.
 
 4. Keep the presentation layer pure – return `render_template` calls drawing from `app/templates/` containing the exact payload context strings needed to render. Let Jinja handle iterative presentation.
 
