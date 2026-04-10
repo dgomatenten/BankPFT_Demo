@@ -74,7 +74,7 @@ from app.models import db
 from app.models.auth import User
 from app.models.datafile import DataFileBatch
 from app.models.workflow import AllocationRule, BatchRun, BatchDefinition, BatchExecution, BatchExecutionStep
-from app.models.ftp import FtpRun, FtpProductConfig
+from app.models.ftp import FtpRun, FtpProcess, FtpModel, FtpModelRule
 from app.services.datafile_service import (
     DATAFILE_CONFIG, import_file, export_data,
 )
@@ -344,17 +344,30 @@ def api_run_ftp(api_user):
     """Run the FTP (Funds Transfer Pricing) engine.
 
     Request body (JSON):
+        process_id — required integer, ID of the FtpProcess to execute
         as_of_date — optional YYYY-MM-DD, defaults to today
     """
     body = request.get_json(silent=True) or {}
+    process_id_raw = body.get("process_id")
     as_of_str = str(body.get("as_of_date", "")).strip() or None
+
+    if process_id_raw is None:
+        return jsonify({"error": "process_id is required"}), 400
+    try:
+        process_id = int(process_id_raw)
+    except (TypeError, ValueError):
+        return jsonify({"error": "process_id must be an integer"}), 400
+
+    process = FtpProcess.query.get(process_id)
+    if process is None or not process.is_active:
+        return jsonify({"error": f"process_id {process_id} not found or inactive"}), 404
 
     try:
         as_of = _parse_date(as_of_str)
     except ValueError:
         return jsonify({"error": "as_of_date must be YYYY-MM-DD"}), 400
 
-    ftp_run = run_ftp(as_of, api_user.username)
+    ftp_run = run_ftp(process_id, as_of, api_user.username)
     code = 200 if ftp_run.status == "COMPLETED" else 422
     return jsonify(_ftp_run_dict(ftp_run)), code
 
@@ -446,125 +459,54 @@ def api_import_rule(api_user):
 @bp.get("/ftp/configs")
 @api_login_required
 def api_list_ftp_configs(api_user):
-    """List all FTP product configurations."""
-    configs = FtpProductConfig.query.order_by(FtpProductConfig.product_code).all()
+    """List all active FTP processes (replaces legacy ftp_product_config)."""
+    processes = FtpProcess.query.order_by(FtpProcess.process_name).all()
     return jsonify({
-        "configs": [
+        "processes": [
             {
-                "id":               c.id,
-                "product_code":     c.product_code,
-                "method":           c.method,
-                "rate_code":        c.rate_code,
-                "term":             c.term,
-                "term_mult":        c.term_mult,
-                "avg_period":       c.avg_period,
-                "avg_period_mult":  c.avg_period_mult,
-                "is_active":        c.is_active,
-                "created_by":       c.created_by,
+                "id":           p.id,
+                "process_name": p.process_name,
+                "description":  p.description,
+                "ftp_model_id": p.ftp_model_id,
+                "target_table": p.target_table,
+                "is_active":    p.is_active,
+                "created_by":   p.created_by,
             }
-            for c in configs
+            for p in processes
         ]
     })
 
 
-@bp.post("/ftp/config/import")
+@bp.get("/ftp/models")
 @api_login_required
-def api_import_ftp_config(api_user):
-    """Import one or more FTP product configs from a JSON body.
-
-    Request body: a single config object OR an array of config objects.
-    Required per item: product_code, rate_code, term.
-
-    If a product_code already exists, the config is updated in-place.
-
-    Returns a summary of imported, updated, and skipped items.
-    """
-    body = request.get_json(silent=True)
-    if body is None:
-        return jsonify({"error": "Request body must be a JSON object or array"}), 400
-
-    if isinstance(body, dict):
-        items = [body]
-    elif isinstance(body, list):
-        items = body
-    else:
-        return jsonify({"error": "Request body must be a JSON object or array"}), 400
-
-    imported_count = 0
-    updated_count = 0
-    skipped_count = 0
-    errors = []
-
-    for idx, item in enumerate(items, start=1):
-        if not isinstance(item, dict):
-            errors.append(f"Item {idx}: not an object — skipped")
-            skipped_count += 1
-            continue
-
-        product_code = str(item.get("product_code", "")).strip()
-        if not product_code:
-            errors.append(f"Item {idx}: missing 'product_code' — skipped")
-            skipped_count += 1
-            continue
-
-        rate_code = str(item.get("rate_code", "")).strip()
-        if not rate_code:
-            errors.append(f"Item {idx} ('{product_code}'): missing 'rate_code' — skipped")
-            skipped_count += 1
-            continue
-
-        try:
-            term = int(item.get("term", 0))
-            avg_period = int(item.get("avg_period", 1))
-        except (TypeError, ValueError):
-            errors.append(f"Item {idx} ('{product_code}'): 'term' and 'avg_period' must be integers — skipped")
-            skipped_count += 1
-            continue
-
-        if term <= 0:
-            errors.append(f"Item {idx} ('{product_code}'): 'term' must be a positive integer — skipped")
-            skipped_count += 1
-            continue
-
-        term_mult = str(item.get("term_mult", "M")).strip().upper()
-        if term_mult not in ("D", "M", "Y"):
-            term_mult = "M"
-        avg_period_mult = str(item.get("avg_period_mult", "M")).strip().upper()
-        if avg_period_mult not in ("D", "M", "Y"):
-            avg_period_mult = "M"
-
-        existing = FtpProductConfig.query.filter_by(product_code=product_code).first()
-        if existing:
-            existing.rate_code = rate_code
-            existing.term = term
-            existing.term_mult = term_mult
-            existing.avg_period = avg_period
-            existing.avg_period_mult = avg_period_mult
-            existing.is_active = bool(item.get("is_active", True))
-            updated_count += 1
-        else:
-            cfg = FtpProductConfig(
-                product_code=product_code,
-                method=str(item.get("method", "MOVING_AVG")).strip() or "MOVING_AVG",
-                rate_code=rate_code,
-                term=term,
-                term_mult=term_mult,
-                avg_period=avg_period,
-                avg_period_mult=avg_period_mult,
-                is_active=bool(item.get("is_active", True)),
-                created_by=api_user.username,
-            )
-            db.session.add(cfg)
-            imported_count += 1
-
-    db.session.commit()
-
+def api_list_ftp_models(api_user):
+    """List all FTP models with their rules."""
+    models = FtpModel.query.filter_by(is_active=True).order_by(FtpModel.model_name).all()
     return jsonify({
-        "imported": imported_count,
-        "updated":  updated_count,
-        "skipped":  skipped_count,
-        "errors":   errors,
-    }), 200 if (imported_count + updated_count) > 0 else 422
+        "models": [
+            {
+                "id":          m.id,
+                "model_name":  m.model_name,
+                "description": m.description,
+                "rules": [
+                    {
+                        "id":             r.id,
+                        "product_code":   r.product_code,
+                        "method":         r.method,
+                        "rate_code":      r.rate_code,
+                        "term":           r.term,
+                        "term_mult":      r.term_mult,
+                        "avg_period":     r.avg_period,
+                        "avg_period_mult": r.avg_period_mult,
+                        "lp_rate":        float(r.lp_rate) if r.lp_rate is not None else None,
+                        "clp_rate":       float(r.clp_rate) if r.clp_rate is not None else None,
+                    }
+                    for r in m.rules
+                ],
+            }
+            for m in models
+        ]
+    })
 
 
 # ── Multi-task batch definition & execution routes ────────────────────────────

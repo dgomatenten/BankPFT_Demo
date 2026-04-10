@@ -3,16 +3,19 @@
         "proc_inst_data": {
             "label": "Instrument Data",
             "model": "ProcInstData",
-            "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "transaction_number", "balance", "interest_income", "cost_of_fund"],
+            "columns": ["account_id", "customer_id", "product_code", "org_unit_id", "transaction_number", "balance", "interest_income", "cost_of_fund", "lp_amount", "clp_amount", "buffer_amount"],
             "date_filter_column": "as_of_date",
             "account_id_column": "account_id",
             "org_unit_column": "org_unit_id",
-            "balance_columns": ["balance", "interest_income", "cost_of_fund"],
+            "balance_columns": ["balance", "interest_income", "cost_of_fund", "lp_amount", "clp_amount", "buffer_amount"],
             "dimension_columns": ["account_id", "customer_id", "product_code", "org_unit_id", "transaction_number"],
             "financial_element_columns": {
                 "balance": "BAL",
                 "interest_income": "II",
-                "cost_of_fund": "COF"
+                "cost_of_fund": "COF",
+                "lp_amount": "LP",
+                "clp_amount": "CLP",
+                "buffer_amount": "BUF"
             }
         },
         "proc_gl_data": {

@@ -1,0 +1,51 @@
+{% extends "layout/base.html" %}
+
+{% block title %}FTP Processes{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>FTP Execution Processes</h2>
+    <a href="{{ url_for('ftp.process_new') }}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> New Process Mapping</a>
+</div>
+
+<p class="text-muted">Processes bind FTP Models securely against specific physical Staging schemas globally or within Batch tasks.</p>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Process Hook Name</th>
+                        <th>Mapped Model</th>
+                        <th>Target DB Table</th>
+                        <th>Created By</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for proc in processes %}
+                    <tr>
+                        <td><strong>{{ proc.process_name }}</strong></td>
+                        <td><a href="{{ url_for('ftp.model_detail', model_id=proc.ftp_model_id) }}"><i class="bi bi-diagram-3"></i> {{ proc.ftp_model_rel.model_name }}</a></td>
+                        <td><span class="badge bg-dark">{{ proc.target_table }}</span></td>
+                        <td>{{ proc.created_by or 'System' }}</td>
+                        <td>
+                            {% if proc.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4 text-muted">No FTP Processes defined. Create one to begin executing pipelines.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

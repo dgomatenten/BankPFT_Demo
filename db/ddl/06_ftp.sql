@@ -34,27 +34,60 @@ CREATE INDEX IF NOT EXISTS ix_ref_interest_rate_interest_rate_code ON ref_intere
 
 
 -- ──────────────────────────────────────────────────────────
--- FTP calculation configuration per product
+-- FTP Calculation Model (Defines logical groupings of rules)
 -- ──────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS ftp_product_config (
+CREATE TABLE IF NOT EXISTS ftp_model (
     id               SERIAL       PRIMARY KEY,
-    product_code     VARCHAR(20)  NOT NULL UNIQUE REFERENCES dim_product(product_code),
-    method           VARCHAR(20)  NOT NULL DEFAULT 'MOVING_AVG',  -- MOVING_AVG
-    rate_code        VARCHAR(20)  NOT NULL,
-    term             INTEGER      NOT NULL,
-    term_mult        VARCHAR(1)   NOT NULL,                        -- D, M, Y
-    avg_period       INTEGER      NOT NULL DEFAULT 1,
-    avg_period_mult  VARCHAR(1)   NOT NULL DEFAULT 'M',            -- D, M, Y
+    model_name       VARCHAR(100) NOT NULL UNIQUE,
+    description      TEXT,
     is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
     created_by       VARCHAR(50),
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-COMMENT ON TABLE  ftp_product_config                IS 'FTP method and rate parameters per product code.';
-COMMENT ON COLUMN ftp_product_config.method         IS 'Calculation method. Currently only MOVING_AVG is supported.';
-COMMENT ON COLUMN ftp_product_config.avg_period     IS 'Moving-average lookback window length.';
-COMMENT ON COLUMN ftp_product_config.avg_period_mult IS 'Lookback window unit: D=days, M=months, Y=years.';
+COMMENT ON TABLE  ftp_model IS 'Groups FTP pricing parameter rules into distinct executable models.';
+
+-- ──────────────────────────────────────────────────────────
+-- FTP Model Rules (Pricing math per product under a model)
+-- ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ftp_model_rule (
+    id               SERIAL       PRIMARY KEY,
+    ftp_model_id     INTEGER      NOT NULL REFERENCES ftp_model(id) ON DELETE CASCADE,
+    product_code     VARCHAR(20)  NOT NULL REFERENCES dim_product(product_code),
+    component        VARCHAR(3)   NOT NULL DEFAULT 'COF',          -- COF | LP | CLP
+    method           VARCHAR(20)  NOT NULL DEFAULT 'MOVING_AVG',
+    rate_code        VARCHAR(20)  NOT NULL,
+    term             INTEGER      NOT NULL,
+    term_mult        VARCHAR(1)   NOT NULL,                        -- D, M, Y
+    avg_period       INTEGER      NOT NULL DEFAULT 1,
+    avg_period_mult  VARCHAR(1)   NOT NULL DEFAULT 'M',            -- D, M, Y
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE  ftp_model_rule              IS 'Pricing parameters mapped to a specific product within an FTP Model. One rule per component (COF/LP/CLP) per product.';
+COMMENT ON COLUMN ftp_model_rule.component    IS 'FTP output component: COF=Cost of Funds, LP=Liquidity Premium, CLP=Contingent Liquidity Premium.';
+COMMENT ON COLUMN ftp_model_rule.rate_code    IS 'Rate curve identifier in ref_interest_rate used to calculate this component.';
+
+-- ──────────────────────────────────────────────────────────
+-- FTP Process (Execution engine bounds connecting Models to Data)
+-- ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ftp_process (
+    id               SERIAL       PRIMARY KEY,
+    process_name     VARCHAR(100) NOT NULL UNIQUE,
+    description      TEXT,
+    ftp_model_id     INTEGER      NOT NULL REFERENCES ftp_model(id),
+    target_table     VARCHAR(100) NOT NULL DEFAULT 'stg_inst_data',  -- Target engine table parameter
+    filter_json      JSONB,                                          -- Execution narrowing logic
+    is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_by       VARCHAR(50),
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE  ftp_process               IS 'Executable batch hooks mapping FTP Models directly to database structures.';
+COMMENT ON COLUMN ftp_process.target_table  IS 'The physical table structure the execution engine calculates against (e.g., stg_inst_data).';
 
 
 -- ──────────────────────────────────────────────────────────

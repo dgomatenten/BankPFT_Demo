@@ -88,9 +88,13 @@ def gen_interest_rates():
 def gen_ftp_configs():
     count = generate_ftp_configs()
     if count:
-        flash(f"Seeded {count} FTP product config(s).", "success")
+        flash(
+            f"Seeded FTP structure: 'Standard Pricing' model with 5 product rules + 'Default FTP Process' "
+            f"({count} record(s) added).",
+            "success",
+        )
     else:
-        flash("FTP product configs already exist — nothing added.", "info")
+        flash("FTP model, rules, and process already exist — nothing added.", "info")
     return redirect(url_for("testdata.index"))
 
 

@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS stg_inst_data (
     org_unit_id     VARCHAR(20)   NOT NULL,
     balance         NUMERIC(18,6) NOT NULL,
     interest_income NUMERIC(18,6) NOT NULL DEFAULT 0,
+    lp_rate         NUMERIC(18,6),
+    lp_amount       NUMERIC(18,6),
+    clp_rate        NUMERIC(18,6),
+    clp_amount      NUMERIC(18,6),
     created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
@@ -45,6 +49,10 @@ CREATE TABLE IF NOT EXISTS proc_inst_data (
     interest_income NUMERIC(18,6) NOT NULL DEFAULT 0,
     base_rate       NUMERIC(18,6),           -- populated by FTP engine
     cost_of_fund    NUMERIC(18,6),           -- populated by FTP engine (balance × rate × day fraction)
+    lp_rate         NUMERIC(18,6),
+    lp_amount       NUMERIC(18,6),
+    clp_rate        NUMERIC(18,6),
+    clp_amount      NUMERIC(18,6),
     validated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 

@@ -186,11 +186,11 @@ def _run_step(
 
     elif t == "FTP":
         from app.services.ftp_engine import run_ftp
-        result = run_ftp(as_of_date, run_by)
+        result = run_ftp(int(step.ref_id), as_of_date, run_by)
         step.ref_run_id = result.id
         step.status = result.status
         step.summary = (
-            f"{result.instruments_matched} matched, "
+            f"Process [{step.ref_id}]: {result.instruments_matched} matched, "
             f"{result.instruments_skipped} skipped of "
             f"{result.instruments_processed} instruments"
         )

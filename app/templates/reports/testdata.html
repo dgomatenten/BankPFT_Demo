@@ -85,10 +85,15 @@
                     <button type="submit" class="btn btn-primary"><i class="bi bi-graph-up"></i> Generate Rate Data (DB)</button>
                 </form>
                 <hr>
-                <p>Seed FTP product configuration for all 5 standard products (PROD-LON, PROD-MTG, PROD-DEP, PROD-SAV, PROD-CRD).</p>
+                <p>Seed FTP <strong>model rules</strong> for all 5 standard products with LP &amp; CLP rates, plus a default <strong>FTP Process</strong> bound to <code>proc_inst_data</code>.</p>
+                <ul class="small mb-3">
+                    <li><strong>Model:</strong> "Standard Pricing" — 5 product rules (PROD-LON, PROD-MTG, PROD-DEP, PROD-SAV, PROD-CRD)</li>
+                    <li><strong>Process:</strong> "Default FTP Process" → <code>proc_inst_data</code></li>
+                </ul>
                 <form method="POST" action="/testdata/generate-ftp-configs" class="mb-3">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-sliders"></i> Seed FTP Product Configs</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-sliders"></i> Seed FTP Model &amp; Process</button>
                 </form>
+                <p class="text-muted small">Safe to run multiple times — skips if already seeded.</p>
                 <hr>
                 <p>Generate an Excel file with 360 rows of interest rate test data for upload testing.</p>
                 <form method="POST" action="/testdata/generate-interest-rate-testdata" class="mb-2">

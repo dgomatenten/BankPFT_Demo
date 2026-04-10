@@ -1,0 +1,110 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Add Rule for {{ model.model_name }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('ftp.model_list') }}">FTP Models</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('ftp.model_detail', model_id=model.id) }}">{{ model.model_name }}</a></li>
+                <li class="breadcrumb-item active">Add Rule</li>
+            </ol>
+        </nav>
+        <h2><i class="bi bi-puzzle"></i> Add FTP Component Rule</h2>
+        <p class="text-muted">Each rule targets one FTP component (COF, LP, or CLP) for a product, using its own independent rate curve.</p>
+    </div>
+</div>
+
+<div class="card shadow-sm" style="max-width: 820px;">
+    <div class="card-body">
+        <form method="POST">
+
+            <div class="row mb-4">
+                <!-- Component -->
+                <div class="col-md-4 mb-3">
+                    <label class="form-label fw-semibold">Component <span class="text-danger">*</span></label>
+                    <select name="component" id="componentSelect" class="form-select" required onchange="updateComponentHint()">
+                        <option value="COF">COF — Cost of Funds</option>
+                        <option value="LP">LP — Liquidity Premium</option>
+                        <option value="CLP">CLP — Contingent Liquidity Premium</option>
+                        <option value="BUF">BUF — Buffer Asset Cost</option>
+                    </select>
+                </div>
+                <!-- Product -->
+                <div class="col-md-4 mb-3">
+                    <label class="form-label fw-semibold">Product Code <span class="text-danger">*</span></label>
+                    <input type="text" name="product_code" class="form-control" required placeholder="e.g. PROD-LON">
+                </div>
+                <!-- Component hint badge -->
+                <div class="col-md-4 mb-3 d-flex align-items-end">
+                    <div id="componentHint" class="alert alert-primary py-2 px-3 mb-0 small w-100"></div>
+                </div>
+            </div>
+
+            <h5 class="mb-3 border-bottom pb-2">Rate Curve Configuration</h5>
+            <p class="text-muted small mb-3">
+                The engine computes this component's rate by averaging <code>ref_interest_rate</code> rows
+                matching the rate code and tenor over the lookback window.
+            </p>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Rate Code <span class="text-danger">*</span></label>
+                    <select name="rate_code" class="form-select" required>
+                        <option value="">-- Choose Rate Curve --</option>
+                        {% for rc in rate_codes %}
+                        <option value="{{ rc }}">{{ rc }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Term</label>
+                    <input type="number" name="term" class="form-control" value="1" min="1" required>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Multiplier</label>
+                    <select name="term_mult" class="form-select">
+                        {% for k, v in mult_labels.items() %}<option value="{{ k }}" {% if k == 'M' %}selected{% endif %}>{{ v }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Moving Avg Period</label>
+                    <div class="input-group">
+                        <input type="number" name="avg_period" class="form-control" value="1" min="1" required>
+                        <select name="avg_period_mult" class="form-select">
+                            {% for k, v in mult_labels.items() %}<option value="{{ k }}" {% if k == 'M' %}selected{% endif %}>{{ v }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-text">Lookback window for averaging rate observations.</div>
+                </div>
+            </div>
+
+            <hr>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Save Rule</button>
+            <a href="{{ url_for('ftp.model_detail', model_id=model.id) }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+
+<script>
+const HINTS = {
+    COF: { cls: 'alert-primary', text: '→ Writes <strong>base_rate</strong> &amp; <strong>cost_of_fund</strong>' },
+    LP:  { cls: 'alert-success', text: '→ Writes <strong>lp_rate</strong> &amp; <strong>lp_amount</strong>' },
+    CLP: { cls: 'alert-warning', text: '→ Writes <strong>clp_rate</strong> &amp; <strong>clp_amount</strong>' },
+    BUF: { cls: 'alert-info',    text: '→ Writes <strong>buffer_rate</strong> &amp; <strong>buffer_amount</strong>' },
+};
+function updateComponentHint() {
+    const sel = document.getElementById('componentSelect').value;
+    const hint = document.getElementById('componentHint');
+    const h = HINTS[sel] || HINTS.COF;
+    hint.className = `alert ${h.cls} py-2 px-3 mb-0 small w-100`;
+    hint.innerHTML = h.text;
+}
+updateComponentHint();
+</script>
+{% endblock %}

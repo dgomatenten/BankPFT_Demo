@@ -1,0 +1,58 @@
+{% extends "layout/base.html" %}
+
+{% block title %}New FTP Process{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('ftp.index') }}">FTP Dashboard</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('ftp.process_list') }}">FTP Processes</a></li>
+            <li class="breadcrumb-item active">New Process</li>
+        </ol>
+    </nav>
+    <h2><i class="bi bi-play-circle-fill"></i> Map Model to Execution Runtime</h2>
+</div>
+
+<div class="card shadow-sm" style="max-width: 600px;">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Process Execution Name <span class="text-danger">*</span></label>
+                <input type="text" name="process_name" class="form-control" required placeholder="e.g. Daily Standard FTP Sweep">
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label">Bind to FTP Model <span class="text-danger">*</span></label>
+                <select name="ftp_model_id" class="form-select" required>
+                    <option value="">-- Choose Active Model --</option>
+                    {% for m in models %}
+                    <option value="{{ m.id }}">{{ m.model_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Base Target Table</label>
+                <select name="target_table" class="form-select" required>
+                    <option value="stg_inst_data">stg_inst_data (Unapproved uploads)</option>
+                    <option value="proc_inst_data">proc_inst_data (Approved elements)</option>
+                </select>
+                <div class="form-text">Restricts which tables the engine alters mathematically.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Description Override</label>
+                <textarea name="description" class="form-control" rows="2" placeholder="Document pipeline specifics..."></textarea>
+            </div>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" name="is_active" id="isActive" checked>
+                <label class="form-check-label" for="isActive">Process is Active</label>
+            </div>
+            <hr>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-link"></i> Generate Execution Map</button>
+            <a href="{{ url_for('ftp.process_list') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

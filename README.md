@@ -45,7 +45,7 @@ A prototype **Management Allocation System** that redistributes financial balanc
 | **Allocation Rules** | Configure source/lookup/output tables, join key, **allocation method** (Ratio-Based / Static Distribution / Static Allocation), **distribution driver** (named sub-table within `ref_static_distribution`), data filters, per-dimension source member filters (including account/GL account dimension), separate DEBIT and CREDIT dimension mapping (same-as-source / lookup / fixed), and entry mode (BOTH / DEBIT only / CREDIT only). Rules can be created, edited, or imported from JSON |
 | **FTP Product Config Import** | FTP product configurations can be imported in bulk from a JSON file or pasted JSON. Supports a single config object or an array. If a `product_code` already exists its configuration is updated in-place. Available via `/ftp/config/import` (UI) and `POST /api/v1/ftp/config/import` (REST API) |
 | **Batch Execution** | Multi-task batch definitions group allocation rules, FTP runs, data file imports/exports, and custom stored procedure calls into a single orchestrated run. Allocation runs are **idempotent** — re-running a rule for the same as-of date deletes the previous output before inserting new rows (delete + insert). `CUSTOM_SP` steps execute synchronously — the SP runs inline and the step becomes `COMPLETED` or `FAILED` like any other step type. The SP Run detail page (linked from the Run ID in the execution step table) shows timing, resolved parameters, and any error messages |
-| **Fund Transfer Pricing** | FTP engine calculates `base_rate` (moving-average over configurable lookback period) and `cost_of_fund` (balance × base_rate × actual/actual day count) per instrument. Configurable per product code. Interest rates uploaded via the standard Maker/Checker workflow |
+| **Fund Transfer Pricing** | Multi-component FTP engine calculates **COF**, **LP**, **CLP**, and **BUF** (Buffer Asset Cost) independently per instrument. Uses a `Model → Rule → Process` architecture where each rule targets a specific component with its own rate curve. |
 | **Reporting** | Dashboard, management ledger report, execution log, operations report, and database table browser with admin-only inline edit/delete |
 | **Data File Management** | JSON-configured fixed-length and delimited (CSV/pipe/tab) file import from inbox folder and export to outbox. Per-file rule JSONs (`import_loan.json`, `export_inst_proc.json`, etc.) with a full transform expression sandbox (substring, concat, pad, conditional, type conversion, null-default). Accessible under the **Data Management** sidebar group |
 | **REST API** | HTTP Basic Auth API at `/api/v1/` — trigger data file imports/exports, run allocation batches, run FTP batches, run multi-task batch definitions, import allocation rules and FTP configs from JSON, and poll status. All responses JSON |
@@ -70,10 +70,9 @@ Processing (PROC_INST_DATA, PROC_GL_DATA)
 Result  FCT_MGMT_INSTRUMENT  (entry_mode: BOTH | DEBIT_ONLY | CREDIT_ONLY, instrument-level)
         FCT_MGMT_LEDGER      (ledger output)
 
-FTP Engine (separate)
-        REF_INTEREST_RATE (approved) → moving-average lookup → base_rate per instrument
-        cost_of_fund = balance × base_rate × (days_in_month / days_in_year)
-        Results written back to PROC_INST_DATA.base_rate / PROC_INST_DATA.cost_of_fund
+FTP Engine (Component-Based)
+        REF_INTEREST_RATE (approved) → Independent Rule per Component (COF, LP, CLP, BUF)
+        Result: Multiplexed pricing stored in PROC_INST_DATA (cost_of_fund, lp_amount, clp_amount, etc.)
 ```
 
 Allocation ratios are stored in `REF_STATIC_ALLOCATION` and linked by `customer_id`. Each customer's ratios must sum to 1.0 per allocation group. Org reclassifications are stored in `REF_ORG_RECLASS` as 1:1 org-to-org mappings (ratio always 1.0).
@@ -324,7 +323,7 @@ When a user creates a rule via the form, the dropdowns come from `rule_config.js
 
 ── Inside PostgreSQL Stored Procedure ──
 5. Dynamic SQL generates queries applying JSON filters physically on the database layer (`proc_inst_data` or `proc_gl_data`).
-6. Based on method (`RATIO`, `DISTRIBUTION`, or `STATIC`), the procedure executes native `LEFT JOIN` operations against `ref_static_distribution` or `ref_static_allocation`.
+6. Based on method (`RATIO`, `DISTRIBUTION`, or `STATIC`), the procedure executes native `INNER JOIN` operations against `ref_static_distribution` or `ref_static_allocation`.
 7. Source balances are mathematically generated inside the temp table (balance × ratio). Output dimensions map directly from the matched target lookup.
 8. The procedure maps explicit DEBIT and CREDIT columns dynamically based on `output_dim_json` mapping. Orhpans are defaulted securely to 1.0 ratio.
 
@@ -402,45 +401,38 @@ The system supports multiple lookup tables that the allocation engine can join a
 
 ## Fund Transfer Pricing (FTP)
 
-The FTP engine is independent of the allocation engine and operates on `proc_inst_data` directly.
+The FTP engine is decoupled into a granular **Component Architecture**. It operates on `proc_inst_data` directly, calculating multiple pricing components in a single pass.
+
+### Component Types
+- **COF (Cost of Funds):** The base funding rate.
+- **LP (Liquidity Premium):** Add-on for liquidity risk.
+- **CLP (Contingent Liquidity Premium):** Add-on for contingent risk.
+- **BUF (Buffer Asset Cost):** Cost of maintaining liquid assets.
 
 ### Data Model
 
 | Table | Purpose |
 |---|---|
-| `ref_interest_rate` | Uploaded rate curves (Maker/Checker approved). Columns: `effective_date`, `interest_rate_code`, `term`, `term_mult`, `rate` |
-| `ftp_product_config` | Per-product FTP settings: method, rate code, tenor (term+mult), lookback window (avg_period+mult) |
-| `ftp_run` | Execution log: as_of_date, status, instruments processed/matched/skipped |
+| `ref_interest_rate` | Uploaded rate curves (Maker/Checker approved). |
+| `ftp_model_rule` | Component-specific rules defining method, rate code, and tenor for a specific component (COF/LP/CLP/BUF). |
+| `ftp_model` | Groups multiple rules (one for each component) into a logical pricing model. |
+| `ftp_process` | Binds an FTP Model to a target population (filter-based) for batch execution. |
+| `ftp_run` | Execution log: status, duration, and processed counts. |
 
 ### Calculation Method: MOVING_AVG
 
-```
-1. For the instrument's product_code, look up FtpProductConfig (rate_code, term, term_mult, avg_period, avg_period_mult)
-2. Compute lookback_start = as_of_date − avg_period × avg_period_mult
-3. Query ref_interest_rate WHERE interest_rate_code=rate_code AND term=term AND term_mult=term_mult
-   AND effective_date BETWEEN lookback_start AND as_of_date AND status='APPROVED'
-4. base_rate = simple average of those rate values
-5. days_in_month = calendar days in the as_of_date's month
-6. days_in_year  = 366 if leap year else 365
-7. cost_of_fund  = balance × base_rate × (days_in_month / days_in_year)
-8. Write base_rate and cost_of_fund back to proc_inst_data
-```
+1. The engine retrieves all active rules for the instrument's product code.
+2. For **each component** (COF, LP, CLP, BUF):
+   a. Look up the assigned Rule (Rate Code, Tenor, Avg Period).
+   b. Compute `base_rate` = moving average for that curve over the lookback window.
+   c. Calculate component amount = `balance × base_rate × (days_in_month / days_in_year)`.
+3. Results are written back to native columns in `proc_inst_data` (e.g., `lp_rate`, `lp_amount`).
 
-### FTP Upload Type
+### FTP Configuration
+Managed through the **FTP Rules** and **FTP Models** UI, allowing for flexible matrix-based pricing without code changes.
 
-Interest rates are uploaded via the standard upload screen using **Data Type: Interest Rate**. The upload is validated (column checks, date cast) and follows the DRAFT → PENDING → APPROVED workflow before the FTP engine can use the rates.
-
-### FTP Configuration (`/ftp/config`)
-
-| Field | Example | Description |
-|---|---|---|
-| Product Code | `PROD-LON` | Must match a value in `dim_product` |
-| Method | `MOVING_AVG` | Currently the only supported method |
-| Rate Code | `SWAP_RATE` | Must match `interest_rate_code` in the rate table |
-| Term / Term Mult | `5 / Y` | Tenor point to use from the rate curve |
-| Avg Period / Mult | `3 / M` | Length of the moving-average lookback window |
-
-Both tables follow the Maker/Checker workflow (DRAFT → PENDING → APPROVED) and are uploaded via the standard upload screen.
+### FTP Import
+Supports importing complex model/rule hierarchies via JSON or via the REST API.
 
 ## JSON Configuration Files
 

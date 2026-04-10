@@ -248,9 +248,25 @@ def definition_detail(def_id):
     defn = BatchDefinition.query.get_or_404(def_id)
     rules = AllocationRule.query.filter_by(is_active=True).order_by(AllocationRule.name).all()
     formats = DATAFILE_CONFIG.get("formats", [])
-    exports = DATAFILE_CONFIG.get("exports", [])
+    exports = [e for e in DATAFILE_CONFIG.get("formats", []) if e.get("type") == "EXPORT"]
+    
+    from app.models.workflow import RegisteredSp
+    from app.models.ftp import FtpProcess
     registered_sps = RegisteredSp.query.filter_by(is_batch_enabled=True).order_by(RegisteredSp.procedure_name).all()
-    recent_executions = defn.executions.limit(20).all()
+    ftp_processes = FtpProcess.query.filter_by(is_active=True).all()
+    
+    task_types = [
+        "ALLOCATION",
+        "ALLOCATION_SP",
+        "FTP",
+        "DATAFILE_IMPORT",
+        "DATAFILE_EXPORT",
+        "CUSTOM_SP"
+    ]
+    recent_executions = BatchRun.query.filter_by(definition_id=def_id).order_by(
+        BatchRun.started_at.desc()
+    ).limit(10).all()
+
     return render_template(
         "batch/definition_detail.html",
         defn=defn,

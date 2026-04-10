@@ -124,7 +124,7 @@ def seeded_db(db_session, app):
     from app.models.staging import ProcInstData
     from app.models.allocation import RefStaticAllocation
     from app.models.auth import User, Group
-    from app.models.ftp import RefInterestRate, FtpProductConfig
+    from app.models.ftp import RefInterestRate
 
     # Groups & users are already seeded by create_app, but may not exist in
     # the rolled-back session — add them idempotently.
@@ -209,8 +209,16 @@ def seeded_db(db_session, app):
             status="APPROVED",
             maker_id="admin",
         ))
-    if not FtpProductConfig.query.filter_by(product_code="PROD-LON").first():
-        db_session.add(FtpProductConfig(
+        
+    from app.models.ftp import FtpModel, FtpModelRule, FtpProcess
+    
+    if not FtpModel.query.filter_by(model_name="TEST_MODEL").first():
+        model = FtpModel(model_name="TEST_MODEL", is_active=True, created_by="admin")
+        db_session.add(model)
+        db_session.flush()
+        
+        rule = FtpModelRule(
+            ftp_model_id=model.id,
             product_code="PROD-LON",
             method="MOVING_AVG",
             rate_code="SWAP_RATE",
@@ -218,8 +226,19 @@ def seeded_db(db_session, app):
             term_mult="Y",
             avg_period=1,
             avg_period_mult="M",
+            component="COF"
+        )
+        db_session.add(rule)
+        
+        process = FtpProcess(
+            process_name="TEST_PROCESS",
+            ftp_model_id=model.id,
+            target_table="proc_inst_data",
             is_active=True,
-        ))
+            created_by="admin"
+        )
+        db_session.add(process)
+        
     db_session.flush()
 
     return db_session

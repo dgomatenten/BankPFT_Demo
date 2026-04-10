@@ -21,24 +21,55 @@ class RefInterestRate(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
-class FtpProductConfig(db.Model):
-    """FTP calculation configuration per product code."""
-    __tablename__ = "ftp_product_config"
+class FtpModel(db.Model):
+    """Groups FTP pricing parameter rules into distinct executable models."""
+    __tablename__ = "ftp_model"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    product_code = db.Column(db.String(20), nullable=False, unique=True)
-    method = db.Column(db.String(20), default="MOVING_AVG")  # MOVING_AVG (only supported now)
-    rate_code = db.Column(db.String(20), nullable=False)      # interest_rate_code to look up
-    # Tenor of the rate point to use, e.g. term=3, term_mult='M' → 3M rate
-    term = db.Column(db.Integer, nullable=False)
-    term_mult = db.Column(db.String(1), nullable=False)        # D, M, Y
-    # Moving-average lookback window, e.g. avg_period=1, avg_period_mult='M' → 1-month MA
-    avg_period = db.Column(db.Integer, nullable=False, default=1)
-    avg_period_mult = db.Column(db.String(1), nullable=False, default="M")  # D, M, Y
+    model_name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     created_by = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
     updated_at = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    rules = db.relationship("FtpModelRule", backref="ftp_model", lazy="dynamic", cascade="all, delete-orphan")
+
+
+class FtpModelRule(db.Model):
+    """Pricing parameters for one FTP component (COF/LP/CLP) mapped to a product within an FTP Model."""
+    __tablename__ = "ftp_model_rule"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    ftp_model_id = db.Column(db.Integer, db.ForeignKey("ftp_model.id", ondelete="CASCADE"), nullable=False)
+    product_code = db.Column(db.String(20), db.ForeignKey("dim_product.product_code"), nullable=False)
+    component = db.Column(db.String(3), nullable=False, default="COF")  # COF | LP | CLP
+    method = db.Column(db.String(20), default="MOVING_AVG")
+    rate_code = db.Column(db.String(20), nullable=False)
+    term = db.Column(db.Integer, nullable=False)
+    term_mult = db.Column(db.String(1), nullable=False)
+    avg_period = db.Column(db.Integer, nullable=False, default=1)
+    avg_period_mult = db.Column(db.String(1), nullable=False, default="M")
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class FtpProcess(db.Model):
+    """Executable batch hooks mapping FTP Models directly to database structures."""
+    __tablename__ = "ftp_process"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    process_name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
+    ftp_model_id = db.Column(db.Integer, db.ForeignKey("ftp_model.id"), nullable=False)
+    target_table = db.Column(db.String(100), nullable=False, default="stg_inst_data")
+    filter_json = db.Column(db.JSON, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    ftp_model_rel = db.relationship("FtpModel", backref="processes")
 
 
 class FtpRun(db.Model):

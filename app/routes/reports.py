@@ -8,7 +8,7 @@ from app.models.allocation import (
     RefOrgReclass, RefStaticDistribution, RefStaticAlloc,
 )
 from app.models.workflow import UploadBatch, AllocationRule, BatchRun
-from app.models.ftp import RefInterestRate, FtpProductConfig, FtpRun
+from app.models.ftp import RefInterestRate, FtpModel, FtpModelRule, FtpProcess, FtpRun
 from sqlalchemy import func, inspect as sa_inspect, and_, literal, text
 import os
 from app.core.batch_logger import BATCH_LOG_DIR
@@ -40,7 +40,9 @@ ALL_MODELS = {
     "allocation_rule": AllocationRule,
     "batch_run": BatchRun,
     "ref_interest_rate": RefInterestRate,
-    "ftp_product_config": FtpProductConfig,
+    "ftp_model": FtpModel,
+    "ftp_model_rule": FtpModelRule,
+    "ftp_process": FtpProcess,
     "ftp_run": FtpRun,
 }
 
@@ -552,8 +554,8 @@ def trace_ftp(ftp_run_id):
         sq = sq.filter_by(account_id=account_id)
     source_rows = sq.order_by(ProcInstData.account_id).limit(500).all()
 
-    # ── Driver: product configs + rate curves used ──
-    product_configs = FtpProductConfig.query.filter_by(is_active=True).all()
+    # ── Driver: FTP processes + rate curves used ──
+    product_configs = FtpProcess.query.filter_by(is_active=True).all()
 
     # Rate rows for that as_of_date
     rate_rows = (

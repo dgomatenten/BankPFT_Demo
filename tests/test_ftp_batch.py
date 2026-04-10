@@ -9,47 +9,34 @@ from datetime import date, timedelta
 # FTP product config model
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestFtpProductConfig:
-    def test_create_config(self, db_session, app):
-        from app.models.ftp import FtpProductConfig
+class TestFtpModels:
+    def test_create_model(self, db_session, app):
+        from app.models.ftp import FtpModel, FtpModelRule, FtpProcess
         with app.app_context():
-            cfg = FtpProductConfig(
+            model = FtpModel(model_name="TEST_MODEL_X", is_active=True)
+            db_session.add(model)
+            db_session.flush()
+            assert model.id is not None
+            
+            rule = FtpModelRule(
+                ftp_model_id=model.id,
                 product_code="TEST-LON",
                 rate_code="SWAP_RATE",
                 term=3,
                 term_mult="M",
-                avg_period=1,
-                avg_period_mult="M",
-                is_active=True,
+                lp_rate=0.015
             )
-            db_session.add(cfg)
+            db_session.add(rule)
+            
+            proc = FtpProcess(
+                process_name="TEST_PROC_X",
+                ftp_model_id=model.id,
+            )
+            db_session.add(proc)
             db_session.flush()
-            assert cfg.id is not None
-            assert cfg.method == "MOVING_AVG"
-
-    def test_product_code_unique(self, db_session, app):
-        from app.models.ftp import FtpProductConfig
-        from sqlalchemy.exc import IntegrityError
-        with app.app_context():
-            db_session.add(FtpProductConfig(
-                product_code="UNIQUE-PROD",
-                rate_code="R1",
-                term=1,
-                term_mult="Y",
-                avg_period=1,
-                avg_period_mult="M",
-            ))
-            db_session.flush()
-            with pytest.raises(IntegrityError):
-                db_session.add(FtpProductConfig(
-                    product_code="UNIQUE-PROD",
-                    rate_code="R1",
-                    term=1,
-                    term_mult="Y",
-                    avg_period=1,
-                    avg_period_mult="M",
-                ))
-                db_session.flush()
+            
+            assert rule.id is not None
+            assert proc.id is not None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -65,58 +52,16 @@ class TestFtpRoutes:
         rv = auth_client.get("/ftp/")
         assert rv.status_code == 200
 
-    def test_config_list_renders(self, auth_client):
-        rv = auth_client.get("/ftp/config")
+    def test_model_list_renders(self, auth_client):
+        rv = auth_client.get("/ftp/models")
         assert rv.status_code == 200
 
-    def test_config_new_form_renders(self, auth_client):
-        rv = auth_client.get("/ftp/config/new")
+    def test_process_list_renders(self, auth_client):
+        rv = auth_client.get("/ftp/processes")
         assert rv.status_code == 200
 
-    def test_config_import_page_renders(self, auth_client):
-        rv = auth_client.get("/ftp/config/import")
-        assert rv.status_code == 200
-
-    def test_import_single_config_json(self, auth_client):
-        payload = json.dumps({
-            "product_code": "FTP-IMPORT-TEST",
-            "rate_code": "SWAP_RATE",
-            "term": 5,
-            "term_mult": "Y",
-            "avg_period": 1,
-            "avg_period_mult": "M",
-        })
-        rv = auth_client.post(
-            "/ftp/config/import",
-            data={"config_json": payload},
-            follow_redirects=True,
-        )
-        assert rv.status_code == 200
-
-    def test_import_array_config_json(self, auth_client):
-        payload = json.dumps([
-            {
-                "product_code": "FTP-ARR-1",
-                "rate_code": "SWAP_RATE",
-                "term": 1,
-                "term_mult": "Y",
-                "avg_period": 1,
-                "avg_period_mult": "M",
-            },
-            {
-                "product_code": "FTP-ARR-2",
-                "rate_code": "SWAP_RATE",
-                "term": 3,
-                "term_mult": "Y",
-                "avg_period": 3,
-                "avg_period_mult": "M",
-            },
-        ])
-        rv = auth_client.post(
-            "/ftp/config/import",
-            data={"config_json": payload},
-            follow_redirects=True,
-        )
+    def test_model_new_renders(self, auth_client):
+        rv = auth_client.get("/ftp/models/new")
         assert rv.status_code == 200
 
 
@@ -157,35 +102,44 @@ class TestLookbackStart:
 class TestFtpEngine:
     def test_run_ftp_returns_run_record(self, seeded_db, app):
         from app.services.ftp_engine import run_ftp
+        from app.models.ftp import FtpProcess
         with app.app_context():
-            ftp_run = run_ftp(date(2026, 1, 1), "admin")
+            process_id = FtpProcess.query.first().id
+            ftp_run = run_ftp(process_id, date(2026, 1, 1), "admin")
             assert ftp_run is not None
             assert ftp_run.status == "COMPLETED"
 
     def test_run_ftp_matches_instrument_with_config(self, seeded_db, app):
         from app.services.ftp_engine import run_ftp
+        from app.models.ftp import FtpProcess
         with app.app_context():
-            ftp_run = run_ftp(date(2026, 1, 1), "admin")
+            process_id = FtpProcess.query.first().id
+            ftp_run = run_ftp(process_id, date(2026, 1, 1), "admin")
             assert ftp_run.instruments_processed >= 1
             assert ftp_run.instruments_matched >= 1
 
-    def test_run_ftp_writes_base_rate(self, seeded_db, app):
+    def test_run_ftp_writes_base_rate_and_lp(self, seeded_db, app):
         from app.services.ftp_engine import run_ftp
         from app.models.staging import ProcInstData
+        from app.models.ftp import FtpProcess
         with app.app_context():
-            run_ftp(date(2026, 1, 1), "admin")
+            process_id = FtpProcess.query.first().id
+            run_ftp(process_id, date(2026, 1, 1), "admin")
             inst = ProcInstData.query.filter_by(as_of_date=date(2026, 1, 1)).first()
-            if inst:  # may not match if seeded_db state differs
+            if inst:
                 assert inst.base_rate is not None
                 assert inst.cost_of_fund is not None
                 assert inst.cost_of_fund > 0
+                assert inst.lp_rate is not None
+                assert inst.clp_rate is not None
 
-    def test_run_ftp_no_instruments_completes_clean(self, db_session, app):
+    def test_run_ftp_no_instruments_completes_clean(self, db_session, app, seeded_db):
         """FTP run with no instruments should complete without error."""
         from app.services.ftp_engine import run_ftp
+        from app.models.ftp import FtpProcess
         with app.app_context():
-            # Ensure no instruments for a far-future date
-            ftp_run = run_ftp(date(2099, 12, 31), "admin")
+            process_id = FtpProcess.query.first().id
+            ftp_run = run_ftp(process_id, date(2099, 12, 31), "admin")
             assert ftp_run.status == "COMPLETED"
             assert ftp_run.instruments_processed == 0
 

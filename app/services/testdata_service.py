@@ -294,27 +294,54 @@ def generate_interest_rates(as_of_date=None):
 
 
 def generate_ftp_configs():
-    """Seed FtpProductConfig for the 5 standard products if none exist."""
-    from app.models.ftp import FtpProductConfig
+    """Seed a default FtpModel with rules for the 5 standard products, plus a default FtpProcess."""
+    from app.models.ftp import FtpModel, FtpModelRule, FtpProcess
 
-    configs = [
-        dict(product_code="PROD-LON", method="MOVING_AVG", rate_code="SWAP_RATE",
-             term=5,  term_mult="Y", avg_period=3, avg_period_mult="M", is_active=True, created_by="system"),
-        dict(product_code="PROD-MTG", method="MOVING_AVG", rate_code="SWAP_RATE",
-             term=10, term_mult="Y", avg_period=3, avg_period_mult="M", is_active=True, created_by="system"),
-        dict(product_code="PROD-DEP", method="MOVING_AVG", rate_code="LIBOR_USD",
-             term=3,  term_mult="M", avg_period=1, avg_period_mult="M", is_active=True, created_by="system"),
-        dict(product_code="PROD-SAV", method="MOVING_AVG", rate_code="LIBOR_USD",
-             term=1,  term_mult="M", avg_period=1, avg_period_mult="M", is_active=True, created_by="system"),
-        dict(product_code="PROD-CRD", method="MOVING_AVG", rate_code="BASE_RATE",
-             term=12, term_mult="M", avg_period=1, avg_period_mult="M", is_active=True, created_by="system"),
+    MODEL_NAME = "Standard Pricing"
+    PROCESS_NAME = "Default FTP Process"
+
+    # Define components to seed per product
+    product_codes = ["PROD-LON", "PROD-MTG", "PROD-DEP", "PROD-SAV", "PROD-CRD"]
+    
+    # Configuration templates (multiplied across products)
+    components = [
+        {"component": "COF", "rate_code": "SWAP_RATE", "term": 5, "term_mult": "Y"},
+        {"component": "LP",  "rate_code": "LIBOR_USD", "term": 1, "term_mult": "Y"},
+        {"component": "CLP", "rate_code": "BASE_RATE", "term": 3, "term_mult": "M"},
+        {"component": "BUF", "rate_code": "LIBOR_USD", "term": 3, "term_mult": "M"},
     ]
 
     added = 0
-    for cfg in configs:
-        if not FtpProductConfig.query.filter_by(product_code=cfg["product_code"]).first():
-            db.session.add(FtpProductConfig(**cfg))
-            added += 1
+    model = FtpModel.query.filter_by(model_name=MODEL_NAME).first()
+    if not model:
+        model = FtpModel(model_name=MODEL_NAME, description="Default out-of-box pricing model",
+                         is_active=True, created_by="system")
+        db.session.add(model)
+        db.session.flush()
+
+        for prod in product_codes:
+            for comp in components:
+                rule_cfg = {
+                    "ftp_model_id": model.id,
+                    "product_code": prod,
+                    "method": "MOVING_AVG",
+                    "avg_period": 3,
+                    "avg_period_mult": "M",
+                    **comp
+                }
+                db.session.add(FtpModelRule(**rule_cfg))
+                added += 1
+
+    if not FtpProcess.query.filter_by(process_name=PROCESS_NAME).first():
+        db.session.add(FtpProcess(
+            process_name=PROCESS_NAME,
+            description="Default FTP execution process targeting processed instrument data",
+            ftp_model_id=model.id,
+            target_table="proc_inst_data",
+            is_active=True,
+            created_by="system",
+        ))
+        added += 1
 
     db.session.commit()
     return added

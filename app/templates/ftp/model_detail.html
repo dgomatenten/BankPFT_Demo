@@ -1,0 +1,67 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Model: {{ model.model_name }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('ftp.model_list') }}">FTP Models</a></li>
+                <li class="breadcrumb-item active">{{ model.model_name }}</li>
+            </ol>
+        </nav>
+        <h2><i class="bi bi-diagram-3 text-primary"></i> {{ model.model_name }}</h2>
+        <p class="text-muted">{{ model.description or 'No description provided.' }}</p>
+    </div>
+    <div class="col-auto">
+        <a href="{{ url_for('ftp.rule_new', model_id=model.id) }}" class="btn btn-primary"><i class="bi bi-plus"></i> Add Product Rule</a>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Pricing Rules Definition</h5>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Component</th>
+                    <th>Product Code</th>
+                    <th>Rate Curve</th>
+                    <th>Term</th>
+                    <th>Lookback</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rule in model.rules|sort(attribute='product_code') %}
+                <tr>
+                    <td>
+                        {% if rule.component == 'COF' %}
+                        <span class="badge bg-primary">COF</span>
+                        {% elif rule.component == 'LP' %}
+                        <span class="badge bg-success">LP</span>
+                        {% elif rule.component == 'CLP' %}
+                        <span class="badge bg-warning text-dark">CLP</span>
+                        {% elif rule.component == 'BUF' %}
+                        <span class="badge bg-info text-dark">BUF</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ rule.component }}</span>
+                        {% endif %}
+                    </td>
+                    <td><strong>{{ rule.product_code }}</strong></td>
+                    <td>{{ rule.rate_code }}</td>
+                    <td>{{ rule.term }}{{ rule.term_mult }}</td>
+                    <td>{{ rule.avg_period }} {{ mult_labels[rule.avg_period_mult] }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center py-4 text-muted">Each product requires its own rule(s) for COF, LP, or CLP. Products missing rules are skipped.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

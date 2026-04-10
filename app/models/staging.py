@@ -14,6 +14,12 @@ class StgInstData(db.Model):
     org_unit_id = db.Column(db.String(20), nullable=False)
     balance = db.Column(db.Numeric(18, 6), nullable=False)
     interest_income = db.Column(db.Numeric(18, 6), default=0.0)
+    lp_rate = db.Column(db.Numeric(18, 6), nullable=True)
+    lp_amount = db.Column(db.Numeric(18, 6), nullable=True)
+    clp_rate = db.Column(db.Numeric(18, 6), nullable=True)
+    clp_amount = db.Column(db.Numeric(18, 6), nullable=True)
+    buffer_rate = db.Column(db.Numeric(18, 6), nullable=True)
+    buffer_amount = db.Column(db.Numeric(18, 6), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
 
 
@@ -31,6 +37,12 @@ class ProcInstData(db.Model):
     interest_income = db.Column(db.Numeric(18, 6), default=0.0)
     base_rate = db.Column(db.Numeric(18, 6), nullable=True)         # filled by FTP engine
     cost_of_fund = db.Column(db.Numeric(18, 6), nullable=True)      # filled by FTP engine
+    lp_rate = db.Column(db.Numeric(18, 6), nullable=True)           # filled by FTP engine
+    lp_amount = db.Column(db.Numeric(18, 6), nullable=True)         # filled by FTP engine
+    clp_rate = db.Column(db.Numeric(18, 6), nullable=True)          # filled by FTP engine
+    clp_amount = db.Column(db.Numeric(18, 6), nullable=True)        # filled by FTP engine
+    buffer_rate = db.Column(db.Numeric(18, 6), nullable=True)       # filled by FTP engine
+    buffer_amount = db.Column(db.Numeric(18, 6), nullable=True)     # filled by FTP engine
     validated_at = db.Column(db.DateTime(timezone=True), default=utc_now)
 
 
