@@ -1,0 +1,417 @@
+"table_name","column_name","data_type","is_nullable","column_default","character_maximum_length"
+alert_config,id,integer,NO,nextval('alert_config_id_seq'::regclass),
+alert_config,name,character varying,NO,,100
+alert_config,description,text,YES,,
+alert_config,check_type,character varying,NO,,30
+alert_config,table_name,character varying,YES,,100
+alert_config,date_column,character varying,YES,,100
+alert_config,severity,character varying,NO,,20
+alert_config,is_active,boolean,NO,,
+alert_config,created_at,timestamp with time zone,YES,,
+alert_config,updated_at,timestamp with time zone,YES,,
+alert_config,created_by,character varying,YES,,50
+allocation_rule,id,integer,NO,nextval('allocation_rule_id_seq'::regclass),
+allocation_rule,name,character varying,NO,,100
+allocation_rule,description,text,YES,,
+allocation_rule,source_table,character varying,YES,,50
+allocation_rule,lookup_table,character varying,YES,,50
+allocation_rule,output_table,character varying,YES,,50
+allocation_rule,join_key,character varying,YES,,50
+allocation_rule,filter_json,jsonb,YES,,
+allocation_rule,source_dim_json,jsonb,YES,,
+allocation_rule,output_dim_json,jsonb,YES,,
+allocation_rule,credit_dim_json,jsonb,YES,,
+allocation_rule,allocation_method,character varying,YES,,20
+allocation_rule,distribution_driver,character varying,YES,,100
+allocation_rule,entry_mode,character varying,YES,,20
+allocation_rule,generate_offset,boolean,YES,,
+allocation_rule,offset_account,character varying,YES,,50
+allocation_rule,is_active,boolean,YES,,
+allocation_rule,status,character varying,YES,,20
+allocation_rule,created_by,character varying,YES,,50
+allocation_rule,created_at,timestamp with time zone,YES,,
+allocation_rule,updated_at,timestamp with time zone,YES,,
+allocation_rule,balance_column,character varying,YES,,50
+allocation_rule,aggregate_source,boolean,NO,false,
+allocation_rule,fixed_ratio,numeric,YES,,
+batch_definition,id,integer,NO,nextval('batch_definition_id_seq'::regclass),
+batch_definition,name,character varying,NO,,100
+batch_definition,description,text,YES,,
+batch_definition,continue_on_error,boolean,YES,,
+batch_definition,is_active,boolean,YES,,
+batch_definition,created_by,character varying,YES,,50
+batch_definition,created_at,timestamp with time zone,YES,,
+batch_definition,updated_at,timestamp with time zone,YES,,
+batch_execution,id,character varying,NO,,36
+batch_execution,definition_id,integer,NO,,
+batch_execution,as_of_date,date,NO,,
+batch_execution,status,character varying,YES,,20
+batch_execution,started_at,timestamp with time zone,YES,,
+batch_execution,completed_at,timestamp with time zone,YES,,
+batch_execution,run_by,character varying,NO,,50
+batch_execution,error_message,text,YES,,
+batch_execution_step,id,integer,NO,nextval('batch_execution_step_id_seq'::regclass),
+batch_execution_step,execution_id,character varying,NO,,36
+batch_execution_step,step_order,integer,NO,,
+batch_execution_step,task_type,character varying,NO,,30
+batch_execution_step,ref_id,character varying,YES,,100
+batch_execution_step,label,character varying,YES,,200
+batch_execution_step,status,character varying,YES,,20
+batch_execution_step,ref_run_id,character varying,YES,,36
+batch_execution_step,started_at,timestamp with time zone,YES,,
+batch_execution_step,completed_at,timestamp with time zone,YES,,
+batch_execution_step,summary,text,YES,,
+batch_execution_step,error_message,text,YES,,
+batch_execution_step,params_json,jsonb,YES,,
+batch_run,id,character varying,NO,,36
+batch_run,rule_id,integer,NO,,
+batch_run,as_of_date,date,NO,,
+batch_run,status,character varying,YES,,20
+batch_run,source_row_count,integer,YES,,
+batch_run,output_row_count,integer,YES,,
+batch_run,orphan_count,integer,YES,,
+batch_run,source_total,numeric,YES,,
+batch_run,output_total,numeric,YES,,
+batch_run,started_at,timestamp with time zone,YES,,
+batch_run,completed_at,timestamp with time zone,YES,,
+batch_run,run_by,character varying,NO,,50
+batch_run,error_message,text,YES,,
+batch_task,id,integer,NO,nextval('batch_task_id_seq'::regclass),
+batch_task,definition_id,integer,NO,,
+batch_task,step_order,integer,NO,,
+batch_task,task_type,character varying,NO,,30
+batch_task,ref_id,character varying,YES,,100
+batch_task,label,character varying,YES,,200
+batch_task,params_json,jsonb,YES,,
+datafile_batch,id,character varying,NO,,36
+datafile_batch,operation,character varying,NO,,10
+datafile_batch,format_id,character varying,NO,,50
+datafile_batch,format_name,character varying,YES,,100
+datafile_batch,filename,character varying,NO,,255
+datafile_batch,target_table,character varying,YES,,50
+datafile_batch,status,character varying,YES,,20
+datafile_batch,row_count,integer,YES,,
+datafile_batch,error_count,integer,YES,,
+datafile_batch,errors_json,json,YES,,
+datafile_batch,run_by,character varying,NO,,50
+datafile_batch,started_at,timestamp with time zone,YES,,
+datafile_batch,completed_at,timestamp with time zone,YES,,
+datafile_batch,error_message,text,YES,,
+dim_account,account_id,character varying,NO,,20
+dim_account,customer_id,character varying,NO,,20
+dim_account,product_code,character varying,NO,,20
+dim_account,org_unit_id,character varying,NO,,20
+dim_account,created_at,timestamp with time zone,YES,,
+dim_customer,customer_id,character varying,NO,,20
+dim_customer,name,character varying,NO,,100
+dim_customer,segment,character varying,YES,,50
+dim_customer,created_at,timestamp with time zone,YES,,
+dim_org_unit,org_unit_id,character varying,NO,,20
+dim_org_unit,name,character varying,NO,,100
+dim_org_unit,parent_id,character varying,YES,,20
+dim_org_unit,is_leaf,boolean,YES,,
+dim_org_unit,created_at,timestamp with time zone,YES,,
+dim_product,product_code,character varying,NO,,20
+dim_product,name,character varying,NO,,100
+dim_product,category,character varying,YES,,50
+dim_product,is_leaf,boolean,YES,,
+dim_product,created_at,timestamp with time zone,YES,,
+fct_mgmt_instrument,id,integer,NO,nextval('fct_mgmt_instrument_id_seq'::regclass),
+fct_mgmt_instrument,batch_run_id,character varying,NO,,36
+fct_mgmt_instrument,as_of_date,date,NO,,
+fct_mgmt_instrument,entry_type,character varying,YES,,10
+fct_mgmt_instrument,allocation_id,character varying,YES,,36
+fct_mgmt_instrument,source_account_id,character varying,NO,,20
+fct_mgmt_instrument,customer_id,character varying,NO,,20
+fct_mgmt_instrument,product_code,character varying,NO,,20
+fct_mgmt_instrument,source_org_unit_id,character varying,NO,,20
+fct_mgmt_instrument,target_org_unit_id,character varying,NO,,20
+fct_mgmt_instrument,source_balance,numeric,NO,,
+fct_mgmt_instrument,allocated_balance,numeric,NO,,
+fct_mgmt_instrument,allocated_income,numeric,YES,,
+fct_mgmt_instrument,ratio_applied,numeric,NO,,
+fct_mgmt_instrument,is_orphan,boolean,YES,,
+fct_mgmt_instrument,created_at,timestamp with time zone,YES,,
+fct_mgmt_instrument,financial_element,character varying,YES,,20
+fct_mgmt_instrument,transaction_number,character varying,YES,,100
+fct_mgmt_ledger,id,integer,NO,nextval('fct_mgmt_ledger_id_seq'::regclass),
+fct_mgmt_ledger,batch_run_id,character varying,NO,,36
+fct_mgmt_ledger,as_of_date,date,NO,,
+fct_mgmt_ledger,entry_type,character varying,YES,,10
+fct_mgmt_ledger,allocation_id,character varying,YES,,36
+fct_mgmt_ledger,source_account_id,character varying,NO,,20
+fct_mgmt_ledger,customer_id,character varying,NO,,20
+fct_mgmt_ledger,product_code,character varying,NO,,20
+fct_mgmt_ledger,source_org_unit_id,character varying,NO,,20
+fct_mgmt_ledger,target_org_unit_id,character varying,NO,,20
+fct_mgmt_ledger,source_balance,numeric,NO,,
+fct_mgmt_ledger,allocated_balance,numeric,NO,,
+fct_mgmt_ledger,allocated_income,numeric,YES,,
+fct_mgmt_ledger,ratio_applied,numeric,NO,,
+fct_mgmt_ledger,is_orphan,boolean,YES,,
+fct_mgmt_ledger,created_at,timestamp with time zone,YES,,
+fct_mgmt_ledger,financial_element,character varying,YES,,20
+ftp_model,id,integer,NO,nextval('ftp_model_id_seq'::regclass),
+ftp_model,model_name,character varying,NO,,100
+ftp_model,description,text,YES,,
+ftp_model,is_active,boolean,YES,,
+ftp_model,created_by,character varying,YES,,50
+ftp_model,created_at,timestamp with time zone,YES,,
+ftp_model,updated_at,timestamp with time zone,YES,,
+ftp_model_rule,id,integer,NO,nextval('ftp_model_rule_id_seq'::regclass),
+ftp_model_rule,ftp_model_id,integer,NO,,
+ftp_model_rule,product_code,character varying,NO,,20
+ftp_model_rule,method,character varying,YES,,20
+ftp_model_rule,rate_code,character varying,NO,,20
+ftp_model_rule,term,integer,NO,,
+ftp_model_rule,term_mult,character varying,NO,,1
+ftp_model_rule,avg_period,integer,NO,,
+ftp_model_rule,avg_period_mult,character varying,NO,,1
+ftp_model_rule,created_at,timestamp with time zone,YES,,
+ftp_model_rule,updated_at,timestamp with time zone,YES,,
+ftp_model_rule,component,character varying,NO,'COF'::character varying,3
+ftp_process,id,integer,NO,nextval('ftp_process_id_seq'::regclass),
+ftp_process,process_name,character varying,NO,,100
+ftp_process,description,text,YES,,
+ftp_process,ftp_model_id,integer,NO,,
+ftp_process,target_table,character varying,NO,,100
+ftp_process,filter_json,json,YES,,
+ftp_process,is_active,boolean,YES,,
+ftp_process,created_by,character varying,YES,,50
+ftp_process,created_at,timestamp with time zone,YES,,
+ftp_process,updated_at,timestamp with time zone,YES,,
+ftp_product_config,id,integer,NO,nextval('ftp_product_config_id_seq'::regclass),
+ftp_product_config,product_code,character varying,NO,,20
+ftp_product_config,method,character varying,YES,,20
+ftp_product_config,rate_code,character varying,NO,,20
+ftp_product_config,term,integer,NO,,
+ftp_product_config,term_mult,character varying,NO,,1
+ftp_product_config,avg_period,integer,NO,,
+ftp_product_config,avg_period_mult,character varying,NO,,1
+ftp_product_config,is_active,boolean,YES,,
+ftp_product_config,created_by,character varying,YES,,50
+ftp_product_config,created_at,timestamp with time zone,YES,,
+ftp_product_config,updated_at,timestamp with time zone,YES,,
+ftp_run,id,character varying,NO,,36
+ftp_run,as_of_date,date,NO,,
+ftp_run,status,character varying,YES,,20
+ftp_run,run_by,character varying,YES,,50
+ftp_run,instruments_processed,integer,YES,,
+ftp_run,instruments_matched,integer,YES,,
+ftp_run,instruments_skipped,integer,YES,,
+ftp_run,started_at,timestamp with time zone,YES,,
+ftp_run,completed_at,timestamp with time zone,YES,,
+ftp_run,error_message,text,YES,,
+group,id,integer,NO,nextval('group_id_seq'::regclass),
+group,name,character varying,NO,,80
+group,description,character varying,YES,,200
+group,can_make,boolean,YES,,
+group,can_check,boolean,YES,,
+group,is_admin,boolean,YES,,
+group,is_active,boolean,YES,,
+group,created_at,timestamp with time zone,YES,,
+json_config,id,integer,NO,nextval('json_config_id_seq'::regclass),
+json_config,config_name,character varying,NO,,100
+json_config,description,text,YES,,
+json_config,config_data,jsonb,NO,,
+json_config,is_active,boolean,NO,,
+json_config,updated_at,timestamp with time zone,YES,,
+json_config,updated_by,character varying,YES,,50
+operation_variable,id,integer,NO,nextval('operation_variable_id_seq'::regclass),
+operation_variable,key,character varying,NO,,100
+operation_variable,value,character varying,YES,,500
+operation_variable,description,text,YES,,
+operation_variable,data_type,character varying,NO,,20
+operation_variable,is_system,boolean,NO,,
+operation_variable,is_active,boolean,NO,,
+operation_variable,updated_at,timestamp with time zone,YES,,
+operation_variable,updated_by,character varying,YES,,50
+post_approval_log,id,integer,NO,nextval('post_approval_log_id_seq'::regclass),
+post_approval_log,upload_batch_id,character varying,NO,,36
+post_approval_log,action_type,character varying,NO,,20
+post_approval_log,action_ref,character varying,YES,,200
+post_approval_log,status,character varying,NO,,20
+post_approval_log,detail,text,YES,,
+post_approval_log,executed_at,timestamp with time zone,YES,,
+post_approval_log,executed_by,character varying,NO,,50
+proc_gl_data,id,integer,NO,nextval('proc_gl_data_id_seq'::regclass),
+proc_gl_data,upload_batch_id,character varying,NO,,36
+proc_gl_data,as_of_date,date,NO,,
+proc_gl_data,gl_account,character varying,NO,,20
+proc_gl_data,org_unit_id,character varying,NO,,20
+proc_gl_data,debit,numeric,YES,,
+proc_gl_data,credit,numeric,YES,,
+proc_gl_data,balance,numeric,NO,,
+proc_gl_data,validated_at,timestamp with time zone,YES,,
+proc_inst_data,id,integer,NO,nextval('proc_inst_data_id_seq'::regclass),
+proc_inst_data,upload_batch_id,character varying,NO,,36
+proc_inst_data,as_of_date,date,NO,,
+proc_inst_data,account_id,character varying,NO,,20
+proc_inst_data,customer_id,character varying,NO,,20
+proc_inst_data,product_code,character varying,NO,,20
+proc_inst_data,org_unit_id,character varying,NO,,20
+proc_inst_data,balance,numeric,NO,,
+proc_inst_data,interest_income,numeric,YES,,
+proc_inst_data,base_rate,numeric,YES,,
+proc_inst_data,cost_of_fund,numeric,YES,,
+proc_inst_data,validated_at,timestamp with time zone,YES,,
+proc_inst_data,transaction_number,character varying,YES,,100
+proc_inst_data,lp_rate,numeric,YES,,
+proc_inst_data,lp_amount,numeric,YES,,
+proc_inst_data,clp_rate,numeric,YES,,
+proc_inst_data,clp_amount,numeric,YES,,
+ref_interest_rate,id,integer,NO,nextval('ref_interest_rate_id_seq'::regclass),
+ref_interest_rate,upload_batch_id,character varying,YES,,36
+ref_interest_rate,effective_date,date,NO,,
+ref_interest_rate,interest_rate_code,character varying,NO,,20
+ref_interest_rate,term,integer,NO,,
+ref_interest_rate,term_mult,character varying,NO,,1
+ref_interest_rate,rate,numeric,NO,,
+ref_interest_rate,status,character varying,YES,,20
+ref_interest_rate,maker_id,character varying,NO,,50
+ref_interest_rate,checker_id,character varying,YES,,50
+ref_interest_rate,created_at,timestamp with time zone,YES,,
+ref_interest_rate,updated_at,timestamp with time zone,YES,,
+ref_org_reclass,id,integer,NO,nextval('ref_org_reclass_id_seq'::regclass),
+ref_org_reclass,upload_batch_id,character varying,YES,,36
+ref_org_reclass,reclass_id,character varying,NO,,36
+ref_org_reclass,source_org_unit_id,character varying,NO,,20
+ref_org_reclass,target_org_unit_id,character varying,NO,,20
+ref_org_reclass,ratio,numeric,NO,,
+ref_org_reclass,comments,text,YES,,
+ref_org_reclass,status,character varying,YES,,20
+ref_org_reclass,maker_id,character varying,NO,,50
+ref_org_reclass,checker_id,character varying,YES,,50
+ref_org_reclass,created_at,timestamp with time zone,YES,,
+ref_org_reclass,updated_at,timestamp with time zone,YES,,
+ref_org_reclass,as_of_date,date,YES,,
+ref_static_alloc,id,integer,NO,nextval('ref_static_alloc_id_seq'::regclass),
+ref_static_alloc,upload_batch_id,character varying,YES,,36
+ref_static_alloc,alloc_id,character varying,NO,,50
+ref_static_alloc,customer_id,character varying,YES,,20
+ref_static_alloc,org_unit_id,character varying,YES,,20
+ref_static_alloc,product_code,character varying,YES,,20
+ref_static_alloc,target_dim,character varying,NO,,50
+ref_static_alloc,ratio,numeric,NO,,
+ref_static_alloc,comments,text,YES,,
+ref_static_alloc,status,character varying,YES,,20
+ref_static_alloc,maker_id,character varying,NO,,50
+ref_static_alloc,checker_id,character varying,YES,,50
+ref_static_alloc,created_at,timestamp with time zone,YES,,
+ref_static_alloc,updated_at,timestamp with time zone,YES,,
+ref_static_alloc,as_of_date,date,YES,,
+ref_static_allocation,id,integer,NO,nextval('ref_static_allocation_id_seq'::regclass),
+ref_static_allocation,upload_batch_id,character varying,YES,,36
+ref_static_allocation,allocation_id,character varying,NO,,36
+ref_static_allocation,customer_id,character varying,NO,,20
+ref_static_allocation,source_org_unit_id,character varying,NO,,20
+ref_static_allocation,target_org_unit_id,character varying,NO,,20
+ref_static_allocation,ratio,numeric,NO,,
+ref_static_allocation,comments,text,YES,,
+ref_static_allocation,status,character varying,YES,,20
+ref_static_allocation,maker_id,character varying,NO,,50
+ref_static_allocation,checker_id,character varying,YES,,50
+ref_static_allocation,created_at,timestamp with time zone,YES,,
+ref_static_allocation,updated_at,timestamp with time zone,YES,,
+ref_static_allocation,as_of_date,date,YES,,
+ref_static_distribution,id,integer,NO,nextval('ref_static_distribution_id_seq'::regclass),
+ref_static_distribution,upload_batch_id,character varying,YES,,36
+ref_static_distribution,driver_name,character varying,NO,,100
+ref_static_distribution,distribution_id,character varying,NO,,50
+ref_static_distribution,customer_id,character varying,YES,,20
+ref_static_distribution,org_unit_id,character varying,YES,,20
+ref_static_distribution,product_code,character varying,YES,,20
+ref_static_distribution,target_dim,character varying,NO,,50
+ref_static_distribution,ratio,numeric,NO,,
+ref_static_distribution,comments,text,YES,,
+ref_static_distribution,status,character varying,YES,,20
+ref_static_distribution,maker_id,character varying,NO,,50
+ref_static_distribution,checker_id,character varying,YES,,50
+ref_static_distribution,created_at,timestamp with time zone,YES,,
+ref_static_distribution,updated_at,timestamp with time zone,YES,,
+ref_static_distribution,as_of_date,date,YES,,
+sp_alloc_log,id,bigint,NO,nextval('sp_alloc_log_id_seq'::regclass),
+sp_alloc_log,batch_id,text,NO,,
+sp_alloc_log,phase,smallint,NO,"0",
+sp_alloc_log,event_type,character varying,NO,,20
+sp_alloc_log,event_label,character varying,YES,,100
+sp_alloc_log,sql_text,text,YES,,
+sp_alloc_log,row_count,integer,YES,,
+sp_alloc_log,message,text,YES,,
+sp_alloc_log,logged_at,timestamp with time zone,NO,now(),
+sp_run,id,character varying,NO,,36
+sp_run,sp_name,character varying,NO,,200
+sp_run,params_json,json,YES,,
+sp_run,status,character varying,YES,,20
+sp_run,started_at,timestamp with time zone,YES,,
+sp_run,completed_at,timestamp with time zone,YES,,
+sp_run,run_by,character varying,YES,,50
+sp_run,result_message,text,YES,,
+sp_run,error_message,text,YES,,
+sp_run,exec_step_id,integer,YES,,
+sp_run,executed_sql,text,YES,,
+sp_run,notices_log,text,YES,,
+stg_gl_data,id,integer,NO,nextval('stg_gl_data_id_seq'::regclass),
+stg_gl_data,upload_batch_id,character varying,NO,,36
+stg_gl_data,as_of_date,date,NO,,
+stg_gl_data,gl_account,character varying,NO,,20
+stg_gl_data,org_unit_id,character varying,NO,,20
+stg_gl_data,debit,numeric,YES,,
+stg_gl_data,credit,numeric,YES,,
+stg_gl_data,balance,numeric,NO,,
+stg_gl_data,created_at,timestamp with time zone,YES,,
+stg_inst_data,id,integer,NO,nextval('stg_inst_data_id_seq'::regclass),
+stg_inst_data,upload_batch_id,character varying,NO,,36
+stg_inst_data,as_of_date,date,NO,,
+stg_inst_data,account_id,character varying,NO,,20
+stg_inst_data,customer_id,character varying,NO,,20
+stg_inst_data,product_code,character varying,NO,,20
+stg_inst_data,org_unit_id,character varying,NO,,20
+stg_inst_data,balance,numeric,NO,,
+stg_inst_data,interest_income,numeric,YES,,
+stg_inst_data,created_at,timestamp with time zone,YES,,
+stg_inst_data,transaction_number,character varying,YES,,100
+stg_inst_data,lp_rate,numeric,YES,,
+stg_inst_data,lp_amount,numeric,YES,,
+stg_inst_data,clp_rate,numeric,YES,,
+stg_inst_data,clp_amount,numeric,YES,,
+sys_registered_sp,id,integer,NO,nextval('sys_registered_sp_id_seq'::regclass),
+sys_registered_sp,procedure_name,character varying,NO,,255
+sys_registered_sp,description,text,YES,,
+sys_registered_sp,is_batch_enabled,boolean,NO,,
+sys_registered_sp,created_at,timestamp with time zone,YES,,
+sys_registered_sp,updated_at,timestamp with time zone,YES,,
+test_suite_run,id,character varying,NO,,36
+test_suite_run,started_at,timestamp with time zone,YES,,
+test_suite_run,completed_at,timestamp with time zone,YES,,
+test_suite_run,triggered_by,character varying,YES,,50
+test_suite_run,status,character varying,YES,,10
+test_suite_run,total,integer,YES,,
+test_suite_run,passed,integer,YES,,
+test_suite_run,failed,integer,YES,,
+test_suite_run,error,integer,YES,,
+test_suite_run,skipped,integer,YES,,
+test_suite_run,duration_s,numeric,YES,,
+test_suite_run,results_json,json,YES,,
+test_suite_run,stdout,text,YES,,
+upload_batch,id,character varying,NO,,36
+upload_batch,data_type,character varying,NO,,20
+upload_batch,filename,character varying,NO,,255
+upload_batch,row_count,integer,YES,,
+upload_batch,error_count,integer,YES,,
+upload_batch,errors_json,json,YES,,
+upload_batch,maker_comment,text,YES,,
+upload_batch,checker_comment,text,YES,,
+upload_batch,status,character varying,YES,,20
+upload_batch,maker_id,character varying,NO,,50
+upload_batch,checker_id,character varying,YES,,50
+upload_batch,created_at,timestamp with time zone,YES,,
+upload_batch,updated_at,timestamp with time zone,YES,,
+user,id,integer,NO,nextval('user_id_seq'::regclass),
+user,username,character varying,NO,,80
+user,display_name,character varying,YES,,120
+user,password_hash,character varying,NO,,256
+user,is_active,boolean,YES,,
+user,created_at,timestamp with time zone,YES,,
+user_group,user_id,integer,NO,,
+user_group,group_id,integer,NO,,
