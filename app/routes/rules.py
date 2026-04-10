@@ -64,6 +64,12 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
     crd_dim_raw = request.form.get("credit_dim_json", "")
     distribution_driver = request.form.get("distribution_driver", "").strip() or None
     balance_column = request.form.get("balance_column", "").strip() or None
+    fixed_ratio = request.form.get("fixed_ratio", "").strip() or None
+    if fixed_ratio:
+        try:
+            fixed_ratio = float(fixed_ratio)
+        except (ValueError, TypeError):
+            fixed_ratio = None
     return {
         "allocation_method": alloc_method,
         "entry_mode": entry_mode,
@@ -75,6 +81,7 @@ def _parse_rule_form(fallback_join_key: str = "customer_id") -> dict:
         "credit_dim_json": _parse_json_field(crd_dim_raw),
         "distribution_driver": distribution_driver,
         "balance_column": balance_column,
+        "fixed_ratio": fixed_ratio,
         "aggregate_source": request.form.get("aggregate_source") == "on",
     }
 
@@ -109,6 +116,7 @@ def new_rule():
             allocation_method=form["allocation_method"],
             distribution_driver=form["distribution_driver"],
             balance_column=form["balance_column"],
+            fixed_ratio=form["fixed_ratio"],
             entry_mode=form["entry_mode"],
             generate_offset=form["generate_offset"],
             aggregate_source=form["aggregate_source"],
@@ -240,6 +248,7 @@ def edit_rule(rule_id):
         rule.allocation_method = form["allocation_method"]
         rule.distribution_driver = form["distribution_driver"]
         rule.balance_column  = form["balance_column"]
+        rule.fixed_ratio     = form["fixed_ratio"]
         rule.entry_mode     = form["entry_mode"]
         rule.generate_offset = form["generate_offset"]
         rule.aggregate_source = form["aggregate_source"]

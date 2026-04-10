@@ -397,7 +397,7 @@ The system supports multiple lookup tables that the allocation engine can join a
 | `ref_static_allocation` | RATIO | Shred balances across orgs by customer-level ratios | `customer_id` | Variable (must sum to 1.0 per group) |
 | `ref_org_reclass` | RATIO | Reclassify one org unit to another (1:1 mapping) | `org_unit_id` | Always 1.0 |
 | `ref_static_distribution` | DISTRIBUTION | Flexible ratio shredding; output dimension taken from `target_dim` column. Supports multiple named **driver sets** within one table — each row carries a `driver_name`; a rule references one driver by name via `distribution_driver` | `customer_id` / `org_unit_id` / `product_code` | Variable (must sum to 1.0 per `driver_name` + `distribution_id` group) |
-| `ref_static_alloc` | STATIC | 1:1 source-to-target mapping for aggregation or reclassification | any | Always 1.0 (no lookup join) |
+| (None) | STATIC | 1:1 source-to-target mapping. Does not perform a lookup join; uses dimensions from source or fixed values. | (n/a) | Configurable per rule via **Fixed Ratio** (defaults to 1.0) |
 
 ## Fund Transfer Pricing (FTP)
 

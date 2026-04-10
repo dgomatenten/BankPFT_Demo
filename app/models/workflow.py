@@ -38,6 +38,7 @@ class AllocationRule(TimestampMixin, db.Model):
     generate_offset = db.Column(db.Boolean, default=True)   # legacy
     offset_account = db.Column(db.String(50), nullable=True)  # legacy
     aggregate_source = db.Column(db.Boolean, default=False)
+    fixed_ratio = db.Column(db.Numeric(10, 6), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     status = db.Column(db.String(20), default="ACTIVE")
     created_by = db.Column(db.String(50), nullable=True)

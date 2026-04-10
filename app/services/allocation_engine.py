@@ -563,6 +563,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                         crd_acct = _resolve_dim_value(row, acct_col,        credit_dim_cfg, src_acct, src_org)
                     for bal_col, fe_label in fe_cols.items():
                         src_fe_val = float(row.get(bal_col) or 0)
+                        fixed_ratio = float(getattr(rule, "fixed_ratio", 1.0) or 1.0)
                         if emit_debit:
                             _debit_count += 1
                             results.append(OutputModel(
@@ -577,9 +578,9 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 source_org_unit_id=src_org,
                                 target_org_unit_id=tgt_org,
                                 source_balance=src_fe_val,
-                                allocated_balance=src_fe_val,
+                                allocated_balance=src_fe_val * fixed_ratio,
                                 allocated_income=0.0,
-                                ratio_applied=1.0,
+                                ratio_applied=fixed_ratio,
                                 is_orphan=False,
                             ))
                         if emit_credit:
@@ -596,13 +597,14 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                                 source_org_unit_id=src_org,
                                 target_org_unit_id=crd_org,
                                 source_balance=src_fe_val,
-                                allocated_balance=-src_fe_val,
+                                allocated_balance=-(src_fe_val * fixed_ratio),
                                 allocated_income=0.0,
-                                ratio_applied=1.0,
+                                ratio_applied=fixed_ratio,
                                 is_orphan=False,
                             ))
                 else:
                     alloc_inc = float(row[balance_cols[1]] or 0) if len(balance_cols) > 1 else 0.0
+                    fixed_ratio = float(getattr(rule, "fixed_ratio", 1.0) or 1.0)
 
                     if emit_debit:
                         _debit_count += 1
@@ -617,9 +619,9 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             source_org_unit_id=src_org,
                             target_org_unit_id=tgt_org,
                             source_balance=src_bal,
-                            allocated_balance=src_bal,
-                            allocated_income=alloc_inc,
-                            ratio_applied=1.0,
+                            allocated_balance=src_bal * fixed_ratio,
+                            allocated_income=alloc_inc * fixed_ratio,
+                            ratio_applied=fixed_ratio,
                             is_orphan=False,
                         ))
 
@@ -640,9 +642,9 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
                             source_org_unit_id=src_org,
                             target_org_unit_id=crd_org,
                             source_balance=src_bal,
-                            allocated_balance=-src_bal,
-                            allocated_income=-alloc_inc,
-                            ratio_applied=1.0,
+                            allocated_balance=-(src_bal * fixed_ratio),
+                            allocated_income=-(alloc_inc * fixed_ratio),
+                            ratio_applied=fixed_ratio,
                             is_orphan=False,
                         ))
 
