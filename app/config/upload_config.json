@@ -34,7 +34,7 @@
             "label": "General Ledger",
             "description": "GL account balances by org unit",
             "required_columns": ["as_of_date", "gl_account", "org_unit_id", "balance"],
-            "optional_columns": ["debit", "credit"],
+            "optional_columns": ["debit", "credit", "financial_element"],
             "unique_key": null,
             "staging_table": "stg_gl_data",
             "dimension_lookups": {
@@ -50,7 +50,8 @@
                 "org_unit_id": {"type": "string"},
                 "debit": {"type": "float", "default": 0},
                 "credit": {"type": "float", "default": 0},
-                "balance": {"type": "float"}
+                "balance": {"type": "float"},
+                "financial_element": {"type": "string", "default": null}
             },
             "validation_rules": ["required_columns", "null_check", "dimension_lookup", "numeric_range"],
             "post_approval": {"type": "run_rules", "rule_ids": [], "description": "Allocation rule IDs to run automatically after GL data is approved"}

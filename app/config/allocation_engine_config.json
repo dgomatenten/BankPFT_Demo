@@ -21,12 +21,12 @@
         "proc_gl_data": {
             "label": "General Ledger Data",
             "model": "ProcGlData",
-            "columns": ["gl_account", "org_unit_id", "debit", "credit", "balance"],
+            "columns": ["gl_account", "org_unit_id", "debit", "credit", "balance", "financial_element"],
             "date_filter_column": "as_of_date",
             "account_id_column": "gl_account",
             "org_unit_column": "org_unit_id",
             "balance_columns": ["balance"],
-            "dimension_columns": ["gl_account", "org_unit_id"]
+            "dimension_columns": ["gl_account", "org_unit_id", "financial_element"]
         },
         "fct_mgmt_ledger": {
             "label": "Management Ledger",

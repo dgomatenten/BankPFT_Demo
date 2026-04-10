@@ -468,6 +468,7 @@ def execute_allocation(batch_id: str) -> BatchRun:
                             source_balance=src_bal,
                             allocated_balance=alloc_bal,
                             allocated_income=alloc_inc,
+                            financial_element=row.get("financial_element"),
                             ratio_applied=ratio,
                             is_orphan=False,
                         ))
@@ -492,6 +493,7 @@ def execute_allocation(batch_id: str) -> BatchRun:
                             source_balance=src_bal,
                             allocated_balance=-alloc_bal,
                             allocated_income=-alloc_inc,
+                            financial_element=row.get("financial_element"),
                             ratio_applied=ratio,
                             is_orphan=False,
                         ))
@@ -541,6 +543,7 @@ def execute_allocation(batch_id: str) -> BatchRun:
                             source_balance=src_bal,
                             allocated_balance=src_bal * default_ratio,
                             allocated_income=alloc_inc,
+                            financial_element=row.get("financial_element"),
                             ratio_applied=default_ratio,
                             is_orphan=True,
                         ))
@@ -628,6 +631,7 @@ def execute_allocation(batch_id: str) -> BatchRun:
                             source_balance=src_bal,
                             allocated_balance=src_bal * fixed_ratio,
                             allocated_income=alloc_inc * fixed_ratio,
+                            financial_element=row.get("financial_element"),
                             ratio_applied=fixed_ratio,
                             is_orphan=False,
                         ))
@@ -651,6 +655,7 @@ def execute_allocation(batch_id: str) -> BatchRun:
                             source_balance=src_bal,
                             allocated_balance=-(src_bal * fixed_ratio),
                             allocated_income=-(alloc_inc * fixed_ratio),
+                            financial_element=row.get("financial_element"),
                             ratio_applied=fixed_ratio,
                             is_orphan=False,
                         ))

@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS stg_gl_data (
     debit           NUMERIC(18,6) NOT NULL DEFAULT 0,
     credit          NUMERIC(18,6) NOT NULL DEFAULT 0,
     balance         NUMERIC(18,6) NOT NULL,
+    financial_element VARCHAR(20),
     created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS proc_gl_data (
     debit           NUMERIC(18,6) NOT NULL DEFAULT 0,
     credit          NUMERIC(18,6) NOT NULL DEFAULT 0,
     balance         NUMERIC(18,6) NOT NULL,
+    financial_element VARCHAR(20),
     validated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 

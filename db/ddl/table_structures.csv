@@ -1,0 +1,191 @@
+Table Name,Column Name,Column Type,Constraints
+group,id,SERIAL,PRIMARY KEY
+group,name,VARCHAR(80),NOT NULL UNIQUE
+group,description,VARCHAR(200),
+group,can_make,BOOLEAN,NOT NULL DEFAULT FALSE
+group,can_check,BOOLEAN,NOT NULL DEFAULT FALSE
+group,is_admin,BOOLEAN,NOT NULL DEFAULT FALSE
+group,is_active,BOOLEAN,NOT NULL DEFAULT TRUE
+group,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+user,id,SERIAL,PRIMARY KEY
+user,username,VARCHAR(80),NOT NULL UNIQUE
+user,display_name,VARCHAR(120),
+user,password_hash,VARCHAR(256),NOT NULL
+user,is_active,BOOLEAN,NOT NULL DEFAULT TRUE
+user,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+user_group,user_id,INTEGER,NOT NULL REFERENCES "user"("id")
+user_group,group_id,INTEGER,NOT NULL REFERENCES "group"("id")
+user_group,,PK, (user_id, group_id)
+dim_org_unit,org_unit_id,VARCHAR(20),PRIMARY KEY
+dim_org_unit,name,VARCHAR(100),NOT NULL
+dim_org_unit,parent_id,VARCHAR(20),REFERENCES dim_org_unit(org_unit_id)
+dim_org_unit,is_leaf,BOOLEAN,NOT NULL DEFAULT TRUE
+dim_org_unit,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+dim_product,product_code,VARCHAR(20),PRIMARY KEY
+dim_product,name,VARCHAR(100),NOT NULL
+dim_product,category,VARCHAR(50),
+dim_product,is_leaf,BOOLEAN,NOT NULL DEFAULT TRUE
+dim_product,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+dim_customer,customer_id,VARCHAR(20),PRIMARY KEY
+dim_customer,name,VARCHAR(100),NOT NULL
+dim_customer,segment,VARCHAR(50),
+dim_customer,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+dim_account,account_id,VARCHAR(20),PRIMARY KEY
+dim_account,customer_id,VARCHAR(20),NOT NULL REFERENCES dim_customer(customer_id)
+dim_account,product_code,VARCHAR(20),NOT NULL REFERENCES dim_product(product_code)
+dim_account,org_unit_id,VARCHAR(20),NOT NULL REFERENCES dim_org_unit(org_unit_id)
+dim_account,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+stg_inst_data,id,SERIAL,PRIMARY KEY
+stg_inst_data,upload_batch_id,VARCHAR(36),NOT NULL
+stg_inst_data,as_of_date,DATE,NOT NULL
+stg_inst_data,transaction_number,VARCHAR(100),
+stg_inst_data,account_id,VARCHAR(20),NOT NULL
+stg_inst_data,customer_id,VARCHAR(20),NOT NULL
+stg_inst_data,product_code,VARCHAR(20),NOT NULL
+stg_inst_data,org_unit_id,VARCHAR(20),NOT NULL
+stg_inst_data,balance,NUMERIC(18,6),NOT NULL
+stg_inst_data,interest_income,NUMERIC(18,6),NOT NULL DEFAULT 0
+stg_inst_data,lp_rate,NUMERIC(18,6),
+stg_inst_data,lp_amount,NUMERIC(18,6),
+stg_inst_data,clp_rate,NUMERIC(18,6),
+stg_inst_data,clp_amount,NUMERIC(18,6),
+stg_inst_data,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+proc_inst_data,id,SERIAL,PRIMARY KEY
+proc_inst_data,upload_batch_id,VARCHAR(36),NOT NULL
+proc_inst_data,as_of_date,DATE,NOT NULL
+proc_inst_data,transaction_number,VARCHAR(100),
+proc_inst_data,account_id,VARCHAR(20),NOT NULL
+proc_inst_data,customer_id,VARCHAR(20),NOT NULL
+proc_inst_data,product_code,VARCHAR(20),NOT NULL
+proc_inst_data,org_unit_id,VARCHAR(20),NOT NULL
+proc_inst_data,balance,NUMERIC(18,6),NOT NULL
+proc_inst_data,interest_income,NUMERIC(18,6),NOT NULL DEFAULT 0
+proc_inst_data,base_rate,NUMERIC(18,6),
+proc_inst_data,cost_of_fund,NUMERIC(18,6),
+proc_inst_data,lp_rate,NUMERIC(18,6),
+proc_inst_data,lp_amount,NUMERIC(18,6),
+proc_inst_data,clp_rate,NUMERIC(18,6),
+proc_inst_data,clp_amount,NUMERIC(18,6),
+proc_inst_data,validated_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+stg_gl_data,id,SERIAL,PRIMARY KEY
+stg_gl_data,upload_batch_id,VARCHAR(36),NOT NULL
+stg_gl_data,as_of_date,DATE,NOT NULL
+stg_gl_data,gl_account,VARCHAR(20),NOT NULL
+stg_gl_data,org_unit_id,VARCHAR(20),NOT NULL
+stg_gl_data,debit,NUMERIC(18,6),NOT NULL DEFAULT 0
+stg_gl_data,credit,NUMERIC(18,6),NOT NULL DEFAULT 0
+stg_gl_data,balance,NUMERIC(18,6),NOT NULL
+stg_gl_data,financial_element,VARCHAR(20),
+stg_gl_data,created_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+proc_gl_data,id,SERIAL,PRIMARY KEY
+proc_gl_data,upload_batch_id,VARCHAR(36),NOT NULL
+proc_gl_data,as_of_date,DATE,NOT NULL
+proc_gl_data,gl_account,VARCHAR(20),NOT NULL
+proc_gl_data,org_unit_id,VARCHAR(20),NOT NULL
+proc_gl_data,debit,NUMERIC(18,6),NOT NULL DEFAULT 0
+proc_gl_data,credit,NUMERIC(18,6),NOT NULL DEFAULT 0
+proc_gl_data,balance,NUMERIC(18,6),NOT NULL
+proc_gl_data,financial_element,VARCHAR(20),
+proc_gl_data,validated_at,TIMESTAMPTZ,NOT NULL DEFAULT NOW()
+ref_static_allocation,id,SERIAL,PRIMARY KEY
+ref_static_allocation,upload_batch_id,VARCHAR(36),
+ref_static_allocation,allocation_id,VARCHAR(36),NOT NULL
+ref_static_allocation,customer_id,VARCHAR(20),NOT NULL REFERENCES dim_customer
+ref_static_allocation,source_org_unit_id,VARCHAR(20),NOT NULL REFERENCES dim_org_unit
+ref_static_allocation,target_org_unit_id,VARCHAR(20),NOT NULL REFERENCES dim_org_unit
+ref_static_allocation,ratio,NUMERIC(10,6),NOT NULL
+ref_static_allocation,as_of_date,DATE,
+ref_static_allocation,comments,TEXT,
+ref_static_allocation,status,VARCHAR(20),DEFAULT 'DRAFT'
+ref_static_allocation,maker_id,VARCHAR(50),NOT NULL
+ref_static_allocation,checker_id,VARCHAR(50),
+ref_static_allocation,created_at,TIMESTAMPTZ,DEFAULT NOW()
+ref_static_allocation,updated_at,TIMESTAMPTZ,DEFAULT NOW()
+fct_mgmt_ledger,id,SERIAL,PRIMARY KEY
+fct_mgmt_ledger,batch_run_id,VARCHAR(36),NOT NULL
+fct_mgmt_ledger,as_of_date,DATE,NOT NULL
+fct_mgmt_ledger,entry_type,VARCHAR(10),DEFAULT 'DEBIT'
+fct_mgmt_ledger,financial_element,VARCHAR(20),
+fct_mgmt_ledger,allocation_id,VARCHAR(36),
+fct_mgmt_ledger,source_account_id,VARCHAR(20),NOT NULL
+fct_mgmt_ledger,customer_id,VARCHAR(20),NOT NULL
+fct_mgmt_ledger,product_code,VARCHAR(20),NOT NULL
+fct_mgmt_ledger,source_org_unit_id,VARCHAR(20),NOT NULL
+fct_mgmt_ledger,target_org_unit_id,VARCHAR(20),NOT NULL
+fct_mgmt_ledger,source_balance,NUMERIC(18,6),NOT NULL
+fct_mgmt_ledger,allocated_balance,NUMERIC(18,6),NOT NULL
+fct_mgmt_ledger,allocated_income,NUMERIC(18,6),DEFAULT 0
+fct_mgmt_ledger,ratio_applied,NUMERIC(10,6),NOT NULL
+fct_mgmt_ledger,is_orphan,BOOLEAN,DEFAULT FALSE
+fct_mgmt_ledger,created_at,TIMESTAMPTZ,DEFAULT NOW()
+ftp_model,id,SERIAL,PRIMARY KEY
+ftp_model,model_name,VARCHAR(100),NOT NULL UNIQUE
+ftp_model,description,TEXT,
+ftp_model,is_active,BOOLEAN,DEFAULT TRUE
+ftp_model,created_by,VARCHAR(50),
+ftp_model,created_at,TIMESTAMPTZ,DEFAULT NOW()
+ftp_model,updated_at,TIMESTAMPTZ,DEFAULT NOW()
+ftp_model_rule,id,SERIAL,PRIMARY KEY
+ftp_model_rule,ftp_model_id,INTEGER,NOT NULL REFERENCES ftp_model
+ftp_model_rule,product_code,VARCHAR(20),NOT NULL REFERENCES dim_product
+ftp_model_rule,component,VARCHAR(3),DEFAULT 'COF'
+ftp_model_rule,method,VARCHAR(20),DEFAULT 'MOVING_AVG'
+ftp_model_rule,rate_code,VARCHAR(20),NOT NULL
+ftp_model_rule,term,INTEGER,NOT NULL
+ftp_model_rule,term_mult,VARCHAR(1),NOT NULL
+ftp_model_rule,avg_period,INTEGER,DEFAULT 1
+ftp_model_rule,avg_period_mult,VARCHAR(1),DEFAULT 'M'
+ftp_process,id,SERIAL,PRIMARY KEY
+ftp_process,process_name,VARCHAR(100),NOT NULL UNIQUE
+ftp_process,description,TEXT,
+ftp_process,ftp_model_id,INTEGER,NOT NULL REFERENCES ftp_model
+ftp_process,target_table,VARCHAR(100),DEFAULT 'stg_inst_data'
+ftp_process,filter_json,JSONB,
+ftp_process,is_active,BOOLEAN,DEFAULT TRUE
+ftp_process,created_by,VARCHAR(50),
+ftp_process,created_at,TIMESTAMPTZ,DEFAULT NOW()
+ftp_process,updated_at,TIMESTAMPTZ,DEFAULT NOW()
+upload_batch,id,VARCHAR(36),PRIMARY KEY
+upload_batch,data_type,VARCHAR(20),NOT NULL
+upload_batch,filename,VARCHAR(255),NOT NULL
+upload_batch,row_count,INTEGER,DEFAULT 0
+upload_batch,error_count,INTEGER,DEFAULT 0
+upload_batch,errors_json,JSONB,
+upload_batch,maker_comment,TEXT,
+upload_batch,checker_comment,TEXT,
+upload_batch,status,VARCHAR(20),DEFAULT 'DRAFT'
+upload_batch,maker_id,VARCHAR(50),NOT NULL
+upload_batch,checker_id,VARCHAR(50),
+upload_batch,created_at,TIMESTAMPTZ,DEFAULT NOW()
+upload_batch,updated_at,TIMESTAMPTZ,DEFAULT NOW()
+allocation_rule,id,SERIAL,PRIMARY KEY
+allocation_rule,name,VARCHAR(100),NOT NULL
+allocation_rule,description,TEXT,
+allocation_rule,source_table,VARCHAR(50),DEFAULT 'proc_inst_data'
+allocation_rule,lookup_table,VARCHAR(50),DEFAULT 'ref_static_allocation'
+allocation_rule,output_table,VARCHAR(50),DEFAULT 'fct_mgmt_ledger'
+allocation_rule,join_key,VARCHAR(50),DEFAULT 'customer_id'
+allocation_rule,filter_json,JSONB,
+allocation_rule,source_dim_json,JSONB,
+allocation_rule,output_dim_json,JSONB,
+allocation_rule,credit_dim_json,JSONB,
+allocation_rule,allocation_method,VARCHAR(20),DEFAULT 'RATIO'
+allocation_rule,distribution_driver,VARCHAR(100),
+allocation_rule,balance_column,VARCHAR(50),
+allocation_rule,entry_mode,VARCHAR(20),DEFAULT 'BOTH'
+allocation_rule,generate_offset,BOOLEAN,DEFAULT TRUE
+allocation_rule,offset_account,VARCHAR(50),
+allocation_rule,is_active,BOOLEAN,DEFAULT TRUE
+allocation_rule,status,VARCHAR(20),DEFAULT 'ACTIVE'
+operation_variable,id,SERIAL,PRIMARY KEY
+operation_variable,key,VARCHAR(100),NOT NULL UNIQUE
+operation_variable,value,VARCHAR(500),
+operation_variable,description,TEXT,
+operation_variable,data_type,VARCHAR(20),DEFAULT 'string'
+operation_variable,is_system,BOOLEAN,DEFAULT FALSE
+operation_variable,is_active,BOOLEAN,DEFAULT TRUE
+json_config,id,SERIAL,PRIMARY KEY
+json_config,config_name,VARCHAR(100),NOT NULL UNIQUE
+json_config,description,TEXT,
+json_config,config_data,JSONB,NOT NULL
+json_config,is_active,BOOLEAN,DEFAULT TRUE

@@ -208,7 +208,8 @@ def generate_excel_templates(output_dir: str) -> list[str]:
             "org_unit_id": "ORG-001",
             "debit": 5000.0 if i % 2 == 1 else 0.0,
             "credit": 0.0 if i % 2 == 1 else 5000.0,
-            "balance": 5000.0 if i % 2 == 1 else -5000.0
+            "balance": 5000.0 if i % 2 == 1 else -5000.0,
+            "financial_element": "BAL"
         } for i in range(1, 4)]),
 
         "allocation_template.xlsx": pd.DataFrame([{

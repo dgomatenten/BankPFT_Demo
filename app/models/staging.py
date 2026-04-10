@@ -56,6 +56,7 @@ class StgGlData(db.Model):
     debit = db.Column(db.Numeric(18, 6), default=0.0)
     credit = db.Column(db.Numeric(18, 6), default=0.0)
     balance = db.Column(db.Numeric(18, 6), nullable=False)
+    financial_element = db.Column(db.String(20), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), default=utc_now)
 
 
@@ -69,4 +70,5 @@ class ProcGlData(db.Model):
     debit = db.Column(db.Numeric(18, 6), default=0.0)
     credit = db.Column(db.Numeric(18, 6), default=0.0)
     balance = db.Column(db.Numeric(18, 6), nullable=False)
+    financial_element = db.Column(db.String(20), nullable=True)
     validated_at = db.Column(db.DateTime(timezone=True), default=utc_now)
