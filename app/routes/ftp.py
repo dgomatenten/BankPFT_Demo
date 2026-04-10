@@ -1,10 +1,9 @@
-import json
-from datetime import date, datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from threading import Thread
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from app.models import db
 from app.models.ftp import RefInterestRate, FtpModel, FtpModelRule, FtpProcess, FtpRun
-from app.services.ftp_engine import run_ftp
+from app.services.ftp_engine import prepare_ftp, run_ftp_async
 
 bp = Blueprint("ftp", __name__)
 
@@ -37,17 +36,11 @@ def run():
         flash("Invalid date format. Use YYYY-MM-DD.", "danger")
         return redirect(url_for("ftp.index"))
 
-    ftp_run = run_ftp(process_id, as_of, current_user.username)
+    ftp_run = prepare_ftp(process_id, as_of, current_user.username)
+    app = current_app._get_current_object()
+    Thread(target=run_ftp_async, args=(app, ftp_run.id)).start()
 
-    if ftp_run.status == "COMPLETED":
-        flash(
-            f"FTP process executed: {ftp_run.instruments_matched} mapped, "
-            f"{ftp_run.instruments_skipped} skipped.",
-            "success",
-        )
-    else:
-        flash(f"FTP execution failed: {ftp_run.error_message}", "danger")
-
+    flash(f"FTP execution started in background.", "info")
     return redirect(url_for("ftp.run_detail", run_id=ftp_run.id))
 
 
@@ -56,6 +49,23 @@ def run():
 def run_detail(run_id):
     ftp_run = FtpRun.query.get_or_404(run_id)
     return render_template("ftp/run_detail.html", run=ftp_run)
+
+
+@bp.route("/run/<run_id>/status")
+@login_required
+def run_status(run_id):
+    """JSON endpoint for polling FTP run status from the browser."""
+    from flask import jsonify
+    ftp_run = FtpRun.query.get_or_404(run_id)
+    return jsonify({
+        "id": ftp_run.id,
+        "status": ftp_run.status,
+        "instruments_processed": ftp_run.instruments_processed,
+        "instruments_matched": ftp_run.instruments_matched,
+        "instruments_skipped": ftp_run.instruments_skipped,
+        "error_message": ftp_run.error_message,
+        "completed_at": ftp_run.completed_at.isoformat() if ftp_run.completed_at else None,
+    })
 
 
 # ── FTP Models ───────────────────────────────────────────────────────────────

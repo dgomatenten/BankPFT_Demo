@@ -32,5 +32,14 @@ class BatchLogger:
         self._fh.write(f"[{ts}] [{level:<8}] {msg}\n")
         self._fh.flush()
 
+    def info(self, msg: str) -> None:
+        self.log("INFO", msg)
+
+    def warning(self, msg: str) -> None:
+        self.log("WARNING", msg)
+
+    def error(self, msg: str) -> None:
+        self.log("ERROR", msg)
+
     def close(self) -> None:
         self._fh.close()

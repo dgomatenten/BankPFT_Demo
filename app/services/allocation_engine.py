@@ -11,7 +11,9 @@ Flow:
 import os
 import json
 import uuid
+import threading
 from app.core.time_utils import utc_now
+from flask import Flask
 import pandas as pd
 from app.models import db
 from sqlalchemy import or_
@@ -85,22 +87,38 @@ def _resolve_dim_value(
 # Main: run one allocation batch
 # ──────────────────────────────────────────────────────────────────────────────
 def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
-    """Execute allocation shredding; produces DEBIT + CREDIT entries in the output table.
+    """Synchronous version of allocation execution."""
+    batch = prepare_allocation(rule_id, as_of_date, run_by)
+    return execute_allocation(batch.id)
 
-    Allocation methods
-    ------------------
-    RATIO         — join source to a lookup table, apply ratio-based shredding (default).
-    DISTRIBUTION  — same engine path as RATIO but lookup table is ref_static_distribution;
-                    the target_dim column drives flexible output dimension mapping.
-    STATIC        — no lookup join; each source row maps 1:1 to the output at ratio=1.0.
-                    Output dimensions come from output_dim_json (fixed / same_as_source).
-                    Suitable for instrument aggregation and simple reclassification.
-    """
+
+def prepare_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
+    """Initialize a BatchRun record in RUNNING state."""
+    batch_id = str(uuid.uuid4())
+    batch = BatchRun(id=batch_id, rule_id=rule_id, as_of_date=as_of_date,
+                     status="RUNNING", run_by=run_by, started_at=utc_now())
+    db.session.add(batch)
+    db.session.commit()
+    return batch
+
+
+def execute_allocation(batch_id: str) -> BatchRun:
+    """Perform the actual allocation processing for a prepared BatchRun."""
+    batch = db.session.get(BatchRun, batch_id)
+    if not batch:
+        raise ValueError(f"BatchRun {batch_id} not found")
+    
+    rule_id = batch.rule_id
+    as_of_date = batch.as_of_date
+    run_by = batch.run_by
 
     # ── 1. Load rule ──
     rule = AllocationRule.query.get(rule_id)
     if not rule:
-        raise ValueError(f"Rule {rule_id} not found")
+        batch.status = "FAILED"
+        batch.error_message = f"Rule {rule_id} not found"
+        db.session.commit()
+        return batch
 
     alloc_method = (getattr(rule, "allocation_method", None) or "RATIO").strip().upper()
     if alloc_method not in ("RATIO", "DISTRIBUTION", "STATIC"):
@@ -156,7 +174,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
     emit_credit = raw_mode in ("BOTH", "CREDIT_ONLY")
 
     join_key   = rule.join_key
-    batch_id   = str(uuid.uuid4())
+    # Use the existing batch_id from the record
     logger     = _BatchLogger(batch_id)
     _t_start   = utc_now()
 
@@ -168,17 +186,6 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         logger.log("RULE", f"  source_dim_filters: {list(source_dim_cfg.keys())}")
     if output_dim_cfg:
         logger.log("RULE", f"  output_dim_mapping: {list(output_dim_cfg.keys())}")
-
-    batch = BatchRun(
-        id=batch_id,
-        rule_id=rule_id,
-        as_of_date=as_of_date,
-        status="RUNNING",
-        run_by=run_by,
-        started_at=utc_now(),
-    )
-    db.session.add(batch)
-    db.session.commit()
 
     try:
         # ── 3. Load source data ──
@@ -678,7 +685,7 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         logger.log("SUMMARY",  f"source_total={batch.source_total:,.2f}  output_total={batch.output_total:,.2f}  variance={batch.source_total - batch.output_total:,.2f}")
         logger.log("COMPLETE", f"Batch completed in {_elapsed:.2f}s")
         db.session.commit()
-
+        logger.info(f"Rule '{rule.name}' finished with status: {batch.status}")
     except Exception as e:
         logger.log("ERROR",  f"Unhandled exception: {e}")
         logger.log("FAILED", "Batch terminated — status=FAILED")
@@ -691,3 +698,15 @@ def run_allocation(rule_id: int, as_of_date, run_by: str) -> BatchRun:
         logger.close()
 
     return batch
+
+
+def run_allocation_async(app: Flask, batch_id: str):
+    """Background task to run allocation inside app context."""
+    with app.app_context():
+        try:
+            execute_allocation(batch_id)
+        except Exception as e:
+            from app.core.batch_logger import BatchLogger
+            logger = BatchLogger(f"batch_{batch_id}")
+            logger.error(f"Critical background thread failure: {e}")
+            logger.close()

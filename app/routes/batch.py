@@ -1,7 +1,8 @@
 import os
 import json
-from datetime import date, datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from datetime import datetime, date
+from threading import Thread
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from app.models.workflow import (
     AllocationRule, BatchRun,
@@ -9,9 +10,9 @@ from app.models.workflow import (
 )
 from app.models.ftp import FtpRun
 from app.models import db
-from app.services.allocation_engine import run_allocation, BATCH_LOG_DIR
-from app.services.ftp_engine import run_ftp
-from app.services.batch_executor import run_batch
+from app.services.allocation_engine import prepare_allocation, run_allocation_async, BATCH_LOG_DIR
+from app.services.ftp_engine import prepare_ftp, run_ftp_async
+from app.services.batch_executor import prepare_batch, run_batch_async
 from app.services.datafile_service import DATAFILE_CONFIG
 
 from app.models.datafile import DataFileBatch
@@ -43,15 +44,16 @@ def api_run_by_name():
         return {"error": "This batch has no steps. Add at least one task first."}, 400
 
     try:
-        from app.services.batch_executor import run_batch
-        execution = run_batch(defn.id, as_of, run_by)
+        execution = prepare_batch(defn.id, as_of, run_by)
+        app = current_app._get_current_object()
+        Thread(target=run_batch_async, args=(app, execution.id, as_of, run_by)).start()
     except Exception as exc:
         return {"error": f"Batch failed to start: {exc}"}, 500
 
     return {
-        "status": execution.status, 
+        "status": "RUNNING", 
         "execution_id": execution.id, 
-        "message": f"Batch '{defn.name}' finished with status: {execution.status}"
+        "message": f"Batch '{defn.name}' started in background."
     }
 
 
@@ -148,18 +150,11 @@ def run():
         flash("Invalid date format. Use YYYY-MM-DD.", "danger")
         return redirect(url_for("batch.list_batches"))
 
-    batch = run_allocation(rule_id, as_of, run_by)
+    batch = prepare_allocation(rule_id, as_of, run_by)
+    app = current_app._get_current_object()
+    Thread(target=run_allocation_async, args=(app, batch.id)).start()
 
-    if batch.status == "COMPLETED":
-        flash(
-            f"Batch completed: {batch.output_row_count} rows generated, "
-            f"{batch.orphan_count} orphans. Source total: {batch.source_total:,.2f}, "
-            f"Output total: {batch.output_total:,.2f}",
-            "success",
-        )
-    else:
-        flash(f"Batch failed: {batch.error_message}", "danger")
-
+    flash(f"Allocation rule run started in background.", "info")
     return redirect(url_for("batch.detail", batch_id=batch.id))
 
 
@@ -175,17 +170,20 @@ def run_ftp_batch():
         flash("Invalid date format. Use YYYY-MM-DD.", "danger")
         return redirect(url_for("batch.list_batches"))
 
-    ftp_run = run_ftp(as_of, run_by)
+    # Select the first FtpProcess for the 'Run FTP' button if not specified
+    # Actually, we should probably handle this better. 
+    # For now, we assume process_id 1 or look it up.
+    from app.models.ftp import FtpProcess
+    proc = FtpProcess.query.first()
+    if not proc:
+        flash("No FTP processes configured.", "danger")
+        return redirect(url_for("batch.list_batches"))
 
-    if ftp_run.status == "COMPLETED":
-        flash(
-            f"FTP run completed: {ftp_run.instruments_matched} matched, "
-            f"{ftp_run.instruments_skipped} skipped out of {ftp_run.instruments_processed} instruments.",
-            "success",
-        )
-    else:
-        flash(f"FTP run failed: {ftp_run.error_message}", "danger")
+    ftp_run = prepare_ftp(proc.id, as_of, run_by)
+    app = current_app._get_current_object()
+    Thread(target=run_ftp_async, args=(app, ftp_run.id)).start()
 
+    flash(f"FTP calculation started in background.", "info")
     return redirect(url_for("ftp.run_detail", run_id=ftp_run.id))
 
 
@@ -203,6 +201,25 @@ def detail(batch_id):
         log_content = f"DEBUG INFO:\nExpected Path: {log_path}\nExists: {log_exists}\nbatch_id: '{batch_id}'\nLength of ID: {len(batch_id)}"
         
     return render_template("batch/detail.html", batch=batch, log_content=log_content)
+
+
+@bp.route("/runs/<batch_id>/status")
+@login_required
+def batch_run_status(batch_id):
+    """JSON endpoint for polling an individual allocation run status."""
+    from flask import jsonify
+    batch = BatchRun.query.get_or_404(batch_id)
+    return jsonify({
+        "id": batch.id,
+        "status": batch.status,
+        "source_row_count": batch.source_row_count,
+        "output_row_count": batch.output_row_count,
+        "orphan_count": batch.orphan_count,
+        "source_total": float(batch.source_total or 0),
+        "output_total": float(batch.output_total or 0),
+        "error_message": batch.error_message,
+        "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,8 +280,8 @@ def definition_detail(def_id):
         "DATAFILE_EXPORT",
         "CUSTOM_SP"
     ]
-    recent_executions = BatchRun.query.filter_by(definition_id=def_id).order_by(
-        BatchRun.started_at.desc()
+    recent_executions = BatchExecution.query.filter_by(definition_id=def_id).order_by(
+        BatchExecution.started_at.desc()
     ).limit(10).all()
 
     return render_template(
@@ -357,15 +374,14 @@ def run_definition(def_id):
         return redirect(url_for("batch.definition_detail", def_id=def_id))
 
     try:
-        execution = run_batch(def_id, as_of, current_user.username)
+        execution = prepare_batch(def_id, as_of, current_user.username)
+        app = current_app._get_current_object()
+        Thread(target=run_batch_async, args=(app, execution.id, as_of, current_user.username)).start()
     except Exception as exc:
         flash(f"Batch failed to start: {exc}", "danger")
         return redirect(url_for("batch.definition_detail", def_id=def_id))
 
-    status_label = {"COMPLETED": "success", "PARTIAL": "warning", "FAILED": "danger"}.get(
-        execution.status, "info"
-    )
-    flash(f"Batch '{defn.name}' finished with status: {execution.status}", status_label)
+    flash(f"Batch '{defn.name}' started in background.", "info")
     return redirect(url_for("batch.execution_detail", exec_id=execution.id))
 
 
@@ -383,6 +399,28 @@ def execution_detail(exec_id):
         with open(log_path, encoding="utf-8") as _f:
             log_content = _f.read()
     return render_template("batch/execution_detail.html", execution=execution, log_content=log_content)
+
+
+@bp.route("/executions/<exec_id>/status")
+@login_required
+def execution_status(exec_id):
+    """JSON endpoint for polling execution status from the browser."""
+    from flask import jsonify
+    execution = BatchExecution.query.get_or_404(exec_id)
+    return jsonify({
+        "id": execution.id,
+        "status": execution.status,
+        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+        "steps": [
+            {
+                "order": s.step_order,
+                "status": s.status,
+                "summary": s.summary,
+                "error": s.error_message,
+                "ref_run_id": s.ref_run_id,
+            } for s in execution.steps
+        ]
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────

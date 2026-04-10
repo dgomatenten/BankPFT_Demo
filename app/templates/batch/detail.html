@@ -8,7 +8,7 @@
         <div class="row">
             <div class="col-md-3"><strong>Batch ID:</strong><br><small>{{ batch.id }}</small></div>
             <div class="col-md-2"><strong>Status:</strong><br>
-                <span class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else 'danger' if batch.status == 'FAILED' else 'info' }} fs-6">{{ batch.status }}</span>
+                <span id="batch-status-badge" class="badge bg-{{ 'success' if batch.status == 'COMPLETED' else 'danger' if batch.status == 'FAILED' else 'info' }} fs-6">{{ batch.status }}</span>
             </div>
             <div class="col-md-2"><strong>As-of Date:</strong><br>{{ batch.as_of_date }}</div>
             <div class="col-md-2"><strong>Run By:</strong><br>{{ batch.run_by }}</div>
@@ -17,20 +17,20 @@
         <hr>
         <div class="row">
             <div class="col-md-3">
-                <strong>Source Rows:</strong> {{ batch.source_row_count }}<br>
-                <strong>Source Total:</strong> {{ "{:,.2f}".format(batch.source_total) }}
+                <strong>Source Rows:</strong> <span id="batch-source-rows">{{ batch.source_row_count }}</span><br>
+                <strong>Source Total:</strong> <span id="batch-source-total">{{ "{:,.2f}".format(batch.source_total) }}</span>
             </div>
             <div class="col-md-3">
-                <strong>Output Rows:</strong> {{ batch.output_row_count }}<br>
-                <strong>Output Total:</strong> {{ "{:,.2f}".format(batch.output_total) }}
+                <strong>Output Rows:</strong> <span id="batch-output-rows">{{ batch.output_row_count }}</span><br>
+                <strong>Output Total:</strong> <span id="batch-output-total">{{ "{:,.2f}".format(batch.output_total) }}</span>
             </div>
             <div class="col-md-3">
-                <strong>Orphan Rows:</strong> {{ batch.orphan_count }}
+                <strong>Orphan Rows:</strong> <span id="batch-orphan-rows">{{ batch.orphan_count }}</span>
             </div>
             <div class="col-md-3">
                 {% set diff = batch.source_total - batch.output_total %}
                 <strong>Variance:</strong><br>
-                <span class="badge bg-{{ 'success' if diff|abs < 0.01 else 'danger' }} fs-6">{{ "{:,.2f}".format(diff) }}</span>
+                <span id="batch-variance-badge" class="badge bg-{{ 'success' if diff|abs < 0.01 else 'danger' }} fs-6">{{ "{:,.2f}".format(diff) }}</span>
             </div>
         </div>
         {% if batch.error_message %}
@@ -57,5 +57,43 @@
         <pre class="m-0 p-3" style="background:#1e1e1e;color:#d4d4d4;font-size:.80rem;max-height:520px;overflow-y:auto;border-radius:0 0 .375rem .375rem;white-space:pre-wrap;word-break:break-all;">{{ log_content }}</pre>
     </div>
 </div>
+{% endif %}
+{% if batch.status == 'RUNNING' %}
+<script>
+(function() {
+    const statusUrl = "{{ url_for('batch.batch_run_status', batch_id=batch.id) }}";
+    let pollInterval = null;
+
+    async function checkStatus() {
+        try {
+            const resp = await fetch(statusUrl);
+            const data = await resp.json();
+            
+            if (data.status !== 'RUNNING' && data.status !== 'PENDING') {
+                clearInterval(pollInterval);
+                window.location.reload();
+                return;
+            }
+
+            // Update UI elements
+            document.getElementById('batch-source-rows').textContent = data.source_row_count;
+            document.getElementById('batch-source-total').textContent = new Intl.NumberFormat().format(data.source_total);
+            document.getElementById('batch-output-rows').textContent = data.output_row_count;
+            document.getElementById('batch-output-total').textContent = new Intl.NumberFormat().format(data.output_total);
+            document.getElementById('batch-orphan-rows').textContent = data.orphan_count;
+            
+            const diff = data.source_total - data.output_total;
+            const varBadge = document.getElementById('batch-variance-badge');
+            varBadge.textContent = new Intl.NumberFormat().format(diff);
+            varBadge.className = `badge bg-${Math.abs(diff) < 0.01 ? 'success' : 'danger'} fs-6`;
+
+        } catch (err) {
+            console.error("Status poll failed:", err);
+        }
+    }
+
+    pollInterval = setInterval(checkStatus, 3000);
+})();
+</script>
 {% endif %}
 {% endblock %}

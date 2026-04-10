@@ -7,7 +7,9 @@ BatchExecutionStep so the execution screen can show live status.
 from __future__ import annotations
 
 import uuid
+import threading
 from datetime import date
+from flask import Flask
 from app.core.time_utils import utc_now
 
 from app.models import db
@@ -29,21 +31,20 @@ def _get_processing_date(as_of_date: date) -> date:
 
 
 def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecution:
-    """Execute all tasks in a BatchDefinition and return the BatchExecution record."""
+    """Execute all tasks in a BatchDefinition and return the BatchExecution record.
+    This is the synchronous version.
+    """
+    execution = prepare_batch(definition_id, as_of_date, run_by)
+    return execute_batch(execution.id, as_of_date, run_by)
+
+
+def prepare_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecution:
+    """Initialize a BatchExecution record and steps in PENDING state."""
     defn = db.session.get(BatchDefinition, definition_id)
     if not defn or not defn.is_active:
         raise ValueError(f"BatchDefinition {definition_id} not found or inactive")
 
-    # Resolve processing_date from operation variables (falls back to as_of_date)
-    processing_date = _get_processing_date(as_of_date)
-
     exec_id = str(uuid.uuid4())
-    
-    from app.core.batch_logger import BatchLogger
-    logger = BatchLogger(f"execution_{exec_id}")
-    logger.info(f"Starting Multi-task Batch Execution for definition '{defn.name}' (ID: {defn.id})")
-    logger.info(f"Run ID: {exec_id} | As-of: {as_of_date} | Run By: {run_by}")
-    
     execution = BatchExecution(
         id=exec_id,
         definition_id=definition_id,
@@ -51,7 +52,6 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
         status="RUNNING",
         run_by=run_by,
     )
-    # Pre-create all step rows in PENDING state so the UI can show the plan
     for task in defn.tasks:
         execution.steps.append(BatchExecutionStep(
             execution_id=exec_id,
@@ -64,6 +64,22 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
         ))
     db.session.add(execution)
     db.session.commit()
+    return execution
+
+
+def execute_batch(execution_id: str, as_of_date: date, run_by: str) -> BatchExecution:
+    """Perform the actual step-by-step execution for a prepared BatchExecution."""
+    execution = db.session.get(BatchExecution, execution_id)
+    if not execution:
+        raise ValueError(f"BatchExecution {execution_id} not found")
+    
+    defn = execution.definition
+    processing_date = _get_processing_date(as_of_date)
+    
+    from app.core.batch_logger import BatchLogger
+    logger = BatchLogger(f"execution_{execution_id}")
+    logger.info(f"Starting Multi-task Batch Execution for definition '{defn.name}' (ID: {defn.id})")
+    logger.info(f"Run ID: {execution_id} | As-of: {as_of_date} | Run By: {run_by}")
 
     failed_count = 0
     for step in execution.steps:
@@ -88,7 +104,6 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
             
             if not defn.continue_on_error:
                 logger.warning("Continue-on-error is false. Halting execution pipeline.")
-                # Mark all remaining PENDING steps as SKIPPED
                 for remaining in execution.steps:
                     if remaining.status == "PENDING":
                         remaining.status = "SKIPPED"
@@ -109,6 +124,19 @@ def run_batch(definition_id: int, as_of_date: date, run_by: str) -> BatchExecuti
     db.session.commit()
     logger.close()
     return execution
+
+
+def run_batch_async(app: Flask, execution_id: str, as_of_date: date, run_by: str):
+    """Target function for threading; runs execute_batch inside app context."""
+    with app.app_context():
+        try:
+            execute_batch(execution_id, as_of_date, run_by)
+        except Exception as e:
+            # Final safety net for background threads
+            from app.core.batch_logger import BatchLogger
+            logger = BatchLogger(f"execution_{execution_id}")
+            logger.error(f"Critical background thread failure: {e}")
+            logger.close()
 
 
 # ── Per-task dispatch ─────────────────────────────────────────────────────────

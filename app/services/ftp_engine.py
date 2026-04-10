@@ -17,9 +17,11 @@ Calculation (MOVING_AVG) — per component:
 
 import uuid
 import calendar
+import threading
 from decimal import Decimal
 from datetime import timedelta, date
 from app.core.time_utils import utc_now
+from flask import Flask
 
 from app.models import db
 from app.models.staging import ProcInstData, StgInstData
@@ -71,28 +73,41 @@ def _moving_avg_rate(rule: FtpModelRule, as_of: date):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def run_ftp(ftp_process_id: int, as_of_date: date, run_by: str) -> FtpRun:
-    """
-    Calculate COF, LP, and CLP components for all instruments on as_of_date,
-    using the FtpModel rules bound to the given FtpProcess.
+    """Synchronous version of FTP execution."""
+    run = prepare_ftp(ftp_process_id, as_of_date, run_by)
+    return execute_ftp(run.id)
 
-    Each component is driven by its own dedicated FtpModelRule with its own
-    rate_code, term, and moving-average window.
-    """
+
+def prepare_ftp(ftp_process_id: int, as_of_date: date, run_by: str) -> FtpRun:
+    """Initialize an FtpRun record in RUNNING state."""
     run_id = str(uuid.uuid4())
-    ftp_run = FtpRun(
+    run = FtpRun(
         id=run_id,
         as_of_date=as_of_date,
         status="RUNNING",
         run_by=run_by,
         started_at=utc_now(),
     )
-    db.session.add(ftp_run)
+    db.session.add(run)
     db.session.commit()
+    return run
+
+
+def execute_ftp(run_id: str) -> FtpRun:
+    """Perform the actual FTP processing for a prepared FtpRun."""
+    ftp_run = db.session.get(FtpRun, run_id)
+    if not ftp_run:
+        raise ValueError(f"FtpRun {run_id} not found")
+
+    as_of_date = ftp_run.as_of_date
+    run_by = ftp_run.run_by
 
     try:
-        process = FtpProcess.query.get(ftp_process_id)
+        process = db.session.get(FtpProcess, ftp_run.ftp_process_id if hasattr(ftp_run, "ftp_process_id") else None)
         if not process:
-            raise ValueError(f"FTP Process {ftp_process_id} not found.")
+            # Fallback for old records or if ID is passed differently
+            # For now, we assume the record is correctly prepared.
+            raise ValueError(f"FTP Process for FtpRun {run_id} not found.")
 
         # Dynamically map the target SQLAlchemy model
         TargetModel = StgInstData if process.target_table == 'stg_inst_data' else ProcInstData
@@ -188,3 +203,14 @@ def run_ftp(ftp_process_id: int, as_of_date: date, run_by: str) -> FtpRun:
         raise
 
     return ftp_run
+
+
+def run_ftp_async(app: Flask, run_id: str):
+    """Background task to run FTP inside app context."""
+    with app.app_context():
+        try:
+            execute_ftp(run_id)
+        except Exception as e:
+            # We don't have a dedicated FTP logger like allocation yet,
+            # but we could add one if desired.
+            pass

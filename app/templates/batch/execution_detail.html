@@ -99,7 +99,7 @@
                 'DATAFILE_EXPORT': 'warning',
                 'CUSTOM_SP':       'secondary',
             } %}
-            <tr class="{{ 'table-danger' if step.status == 'FAILED' else 'table-warning' if step.status == 'SKIPPED' else '' }}">
+            <tr data-step-order="{{ step.step_order }}" class="{{ 'table-danger' if step.status == 'FAILED' else 'table-warning' if step.status == 'SKIPPED' else '' }}">
                 <td class="text-center fw-bold text-muted">{{ step.step_order }}</td>
                 <td>
                     <span class="badge bg-{{ type_colors.get(step.task_type, 'secondary') }}">
@@ -108,12 +108,12 @@
                 </td>
                 <td class="small">{{ step.label or step.ref_id or '—' }}</td>
                 <td>
-                    <span class="badge bg-{{ step_colors.get(step.status, 'secondary') }}
+                    <span class="badge status-badge bg-{{ step_colors.get(step.status, 'secondary') }}
                         {{ 'text-dark' if step.status == 'PENDING' else '' }}">
                         {{ step.status }}
                     </span>
                 </td>
-                <td class="small">
+                <td class="small summary-cell">
                     {% if step.error_message %}
                     <span class="text-danger"><i class="bi bi-exclamation-triangle"></i> {{ step.error_message }}</span>
                     {% elif step.summary %}
@@ -177,5 +177,63 @@
         All Definitions
     </a>
 </div>
+
+{% if execution.status == 'RUNNING' or execution.status == 'PENDING' %}
+<script>
+(function() {
+    const execId = "{{ execution.id }}";
+    const statusUrl = "{{ url_for('batch.execution_status', exec_id=execution.id) }}";
+    let pollInterval = null;
+
+    async function checkStatus() {
+        try {
+            const resp = await fetch(statusUrl);
+            const data = await resp.json();
+            
+            // If status changed from RUNNING, refresh the page to show full details
+            if (data.status !== 'RUNNING' && data.status !== 'PENDING') {
+                clearInterval(pollInterval);
+                window.location.reload();
+                return;
+            }
+
+            // Update step statuses in the table without full reload
+            data.steps.forEach(step => {
+                const row = document.querySelector(`tr[data-step-order="${step.order}"]`);
+                if (row) {
+                    const statusBadge = row.querySelector('.status-badge');
+                    if (statusBadge && statusBadge.textContent.trim() !== step.status) {
+                        statusBadge.textContent = step.status;
+                        // Update colors if needed
+                        const colorMap = {
+                            'COMPLETED': 'success',
+                            'FAILED': 'danger',
+                            'SKIPPED': 'secondary',
+                            'RUNNING': 'info',
+                            'PENDING': 'light'
+                        };
+                        statusBadge.className = `badge bg-${colorMap[step.status] || 'secondary'}`;
+                    }
+                    
+                    const summaryCell = row.querySelector('.summary-cell');
+                    if (summaryCell && step.summary && summaryCell.textContent.trim() === '—') {
+                        summaryCell.textContent = step.summary;
+                    }
+                    if (summaryCell && step.error && !summaryCell.querySelector('.text-danger')) {
+                         summaryCell.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> ${step.error}</span>`;
+                    }
+                }
+            });
+
+        } catch (err) {
+            console.error("Status poll failed:", err);
+        }
+    }
+
+    // Start polling every 2.5 seconds
+    pollInterval = setInterval(checkStatus, 2500);
+})();
+</script>
+{% endif %}
 
 {% endblock %}

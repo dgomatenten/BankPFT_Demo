@@ -11,7 +11,7 @@
             </div>
             <div class="col-md-2">
                 <strong>Status:</strong><br>
-                <span class="badge bg-{{ 'success' if run.status == 'COMPLETED' else 'danger' if run.status == 'FAILED' else 'info' }} fs-6">
+                <span id="ftp-status-badge" class="badge bg-{{ 'success' if run.status == 'COMPLETED' else 'danger' if run.status == 'FAILED' else 'info' }} fs-6">
                     {{ run.status }}
                 </span>
             </div>
@@ -34,19 +34,19 @@
         <div class="row text-center">
             <div class="col-md-4">
                 <div class="card stat-card blue p-3">
-                    <div class="display-6 fw-bold">{{ run.instruments_processed }}</div>
+                    <div id="ftp-processed-count" class="display-6 fw-bold">{{ run.instruments_processed }}</div>
                     <div class="text-muted">Instruments Processed</div>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="card stat-card green p-3">
-                    <div class="display-6 fw-bold text-success">{{ run.instruments_matched }}</div>
+                    <div id="ftp-matched-count" class="display-6 fw-bold text-success">{{ run.instruments_matched }}</div>
                     <div class="text-muted">Priced (base_rate assigned)</div>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="card stat-card orange p-3">
-                    <div class="display-6 fw-bold text-warning">{{ run.instruments_skipped }}</div>
+                    <div id="ftp-skipped-count" class="display-6 fw-bold text-warning">{{ run.instruments_skipped }}</div>
                     <div class="text-muted">Skipped (no config / no rate)</div>
                 </div>
             </div>
@@ -69,4 +69,35 @@
     </a>
     {% endif %}
 </div>
+{% if run.status == 'RUNNING' %}
+<script>
+(function() {
+    const statusUrl = "{{ url_for('ftp.run_status', run_id=run.id) }}";
+    let pollInterval = null;
+
+    async function checkStatus() {
+        try {
+            const resp = await fetch(statusUrl);
+            const data = await resp.json();
+            
+            if (data.status !== 'RUNNING' && data.status !== 'PENDING') {
+                clearInterval(pollInterval);
+                window.location.reload();
+                return;
+            }
+
+            // Update UI elements
+            document.getElementById('ftp-processed-count').textContent = data.instruments_processed;
+            document.getElementById('ftp-matched-count').textContent = data.instruments_matched;
+            document.getElementById('ftp-skipped-count').textContent = data.instruments_skipped;
+
+        } catch (err) {
+            console.error("Status poll failed:", err);
+        }
+    }
+
+    pollInterval = setInterval(checkStatus, 3000);
+})();
+</script>
+{% endif %}
 {% endblock %}
