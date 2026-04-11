@@ -23,6 +23,8 @@ This guide walks through every screen in the Management Allocation System, expla
 15. [Batch Execution](#15-batch-execution)
 16. [Batch Execution — Detail](#16-batch-execution--detail)
 17. [Fund Transfer Pricing — Dashboard](#17-fund-transfer-pricing--dashboard)
+17a. [Fund Transfer Pricing — Models](#17a-fund-transfer-pricing--models)
+17b. [Fund Transfer Pricing — Processes](#17b-fund-transfer-pricing--processes)
 18. [Fund Transfer Pricing — Product Config](#18-fund-transfer-pricing--product-config)
 18a. [Fund Transfer Pricing — Import Config from JSON](#18a-fund-transfer-pricing--import-config-from-json)
 19. [Fund Transfer Pricing — Interest Rates Browser](#19-fund-transfer-pricing--interest-rates-browser)
@@ -85,7 +87,7 @@ After login, the sidebar shows your display name, role badges (Maker/Checker/Adm
 
 The dashboard is the landing page. It provides a quick overview of the system's current state.
 
-![Dashboard](images/50_dashboard_alerts.png)
+![Dashboard](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/dashboard_1775876962367.png)
 
 **Key elements:**
 - **Alerts panel** — appears at the top when there are active alerts (failed batches, pending approvals, inbox files, stale processing date, or any configured table row checks). Each alert row shows a severity icon, a message, and a **View** link
@@ -123,7 +125,7 @@ Click any file name to view details, or click **New Upload** to upload a file.
 
 Upload an Excel (.xlsx) or CSV file for validation and staging.
 
-![New Upload](images/03_upload_new.png)
+![New Upload](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/manual_data_load_1775876971456.png)
 
 **How to use:**
 1. **Select Data Type** — choose from the dropdown (Instrument Data, General Ledger, Allocation Ratios, Org Reclassification, Static Distribution, Static Allocation). These options are driven by `upload_config.json`
@@ -182,7 +184,7 @@ To configure rule IDs for INSTRUMENT or GL, edit the `rule_ids` array in `upload
 
 Shows all allocation rules with their active/inactive status.
 
-![Rules List](images/04_rules_list.png)
+![Rules List](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/allocation_rules_list_v2_1775917419179.png)
 
 **Key elements:**
 - **Rule name** — links to the rule detail page
@@ -203,7 +205,7 @@ Rules are immediately active when created (no Maker/Checker workflow for rules).
 
 Create a new allocation rule. The form is organised into five sections.
 
-![New Rule](images/05_rules_new.png)
+![New Rule](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/allocation_rule_new_v2_1775917422804.png)
 
 **How to use:**
 1. **Rule Name / Description** — name and optional notes
@@ -492,7 +494,7 @@ After a successful import, the system redirects to the **Rule Detail** page. Eve
 
 The primary interface for running multi-task batch definitions against processed data. Batch definitions group allocation, FTP, data file import/export, and custom stored procedure steps into a single orchestrated run.
 
-![Batch Execution](images/26_batch_execution.png)
+![Batch Execution](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/batch_execution_1775877073219.png)
 
 The page has three sections:
 
@@ -586,7 +588,7 @@ The log file path (`batch_<id[:8]>.log`) is shown in the card header. Log files 
 
 The FTP dashboard is the entry point for all FTP operations.
 
-![FTP Dashboard](images/19_ftp_dashboard.png)
+![FTP Dashboard](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_1775877026091.png)
 
 **Key elements:**
 - **Run FTP Calculation** form — select an as-of date and click **Run FTP** to trigger the engine
@@ -594,6 +596,41 @@ The FTP dashboard is the entry point for all FTP operations.
 - **FTP Config** button — navigate to the product config list
 - **Interest Rates** button — open the rate browser
 - **Upload Rates** button — shortcut to the Data Upload page (for uploading new rate files)
+
+---
+
+## 17a. Fund Transfer Pricing — Models
+
+**URL:** `/ftp/models`
+
+Define multi-dimensional pricing rules (e.g., COF, LP, CLP) that will be applied during the FTP process.
+
+![FTP Models](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_models_v2_1775917435750.png)
+
+**Key elements:**
+- **Model Name** — COF, LP, CLP, etc.
+- **Manage Rules** — Drill down into specific matrix math definitions for that model.
+
+![FTP Model Detail](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_model_detail_v2_1775917439571.png)
+
+---
+
+## 17b. Fund Transfer Pricing — Processes
+
+**URL:** `/ftp/processes`
+
+Processes bind FTP Models to specific target tables for batch execution.
+
+![FTP Processes](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_processes_v2_1775917443512.png)
+
+**Key elements:**
+- **Process Hook Name** — Unique identifier for the process.
+- **Mapped Model** — The pricing model (ruleset) to apply.
+- **Target DB Table** — The physical schema to update (e.g., `proc_inst_data`).
+
+![New FTP Process Mapping](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_process_detail_v2_1775917447651.png)
+
+---
 
 ---
 
@@ -756,7 +793,7 @@ Hub page with links to all available reports.
 
 The primary output report.
 
-![Management Ledger](images/08_mgmt_ledger.png)
+![Management Ledger](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/mgmt_ledger_report_1775877130769.png)
 
 **How to use:**
 1. **Group By** — choose a dimension: Org Unit, Product, Customer
@@ -779,7 +816,7 @@ The primary output report.
 
 System activity and health overview.
 
-![Operations Report](images/09_operations.png)
+![Operations Report](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/operations_report_1775877143127.png)
 
 **Key elements:**
 - Upload activity by type and status
@@ -861,7 +898,7 @@ Generate realistic test data for the system.
 
 **URL:** `/admin/users` (Admin only)
 
-Create, edit, and manage system users.
+![User Management](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/users_groups_1775877155670.png)
 
 **Key elements:**
 - **User list** — shows username, display name, group memberships, effective permissions, and active status
@@ -2160,7 +2197,7 @@ curl $AUTH $BASE/api/v1/batch/executions/<execution_id>
 
 Manage all multi-task batch definitions. A batch definition is a named, ordered sequence of steps (allocation rules, FTP runs, data file imports/exports, and custom stored procedures) that are executed together in a single orchestrated run.
 
-![Batch Definitions List](images/27_batch_definitions.png)
+![Batch Definitions List](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/batch_definitions_1775877087060.png)
 
 **Table columns:**
 
@@ -2205,7 +2242,7 @@ After saving, you are taken to the **Definition Detail** page to add and order s
 
 Configure the ordered steps of a batch definition and run it.
 
-![Batch Definition Detail](images/29_batch_def_detail.png)
+![Batch Definition Detail](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/batch_monitor_v2_1775877059050.png)
 
 ### Left panel — Step list
 
@@ -2441,7 +2478,7 @@ All checks are read-only and safe to run on every page load. A check that raises
 
 Define custom table row-check rules. Each active rule queries a database table for rows matching the current `processing_date` and fires an alert on the dashboard if none are found.
 
-![Alert Configurations — List](images/51_alert_configs_list.png)
+![Alert Configurations — List](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/json_configurations_1775877176538.png)
 
 ### Creating an Alert Config
 
