@@ -23,17 +23,33 @@ The engine supports three distinct allocation strategies defined at the rule lev
 
 ---
 
-## 3. High-Resolution Application Interface
+## 3. Allocation Operators & Mathematical Logic
 
-![Allocation Rule List](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/allocation_rules_list_v2_1775917419179.png)
+The engine defines the relationship between input and output using a mathematical operator. This ensures accounting integrity and allows for complex fractional splitting.
+
+### 3.1 The Allocation Equation
+The fundamental logic applied during the calculation is:
+**`Source Balance` × `Operator (Ratio)` = `Output Amount`**
+
+### 3.2 Ratio Definition
+The operator can be sourced in three ways:
+- **Fixed Operator**: A static number (usually `1.0`) applied to all rows.
+- **Lookup Operator**: A variable percentage (e.g., `0.25`) retrieved from a reference table based on a Join Key.
+- **Balanced Entry Operator**: For 'Both' entry mode, the engine applies `1.0` to the Debit and `-1.0` to the Credit to ensure a zero-sum impact on the ledger.
+
+---
+
+## 4. High-Resolution Application Interface
+
+![Allocation Rule List](images/v2_allocation_rules_list.png)
 *Figure 1: Allocation Rule Management Console*
 
-![New Allocation Rule](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/allocation_rule_new_v2_1775917422804.png)
+![New Allocation Rule](images/v2_allocation_rule_new.png)
 *Figure 2: Multi-Dimensional Rule Definition Form*
 
 ---
 
-## 4. Multi-Dimensional Mapping & Governance
+## 5. Multi-Dimensional Mapping & Governance
 
 ### 4.1 Source Dimension Filters
 Allows for granular selection of source data. Dimensions (e.g., Product, Org Unit, Region) can be set to "All Members" or "Specific Members" (comma-separated list).
@@ -51,7 +67,7 @@ For every output dimension, the engine supports three mapping modes:
 
 ---
 
-## 5. Structural Data Shredding (Financial Elements)
+## 6. Structural Data Shredding (Financial Elements)
 A unique feature of the BankPFT engine is its ability to structurally multiplex source balances into distinct Financial Elements.
 
 If the **Output Model** (e.g., `fct_mgmt_ledger`) contains the `financial_element` column, the engine performs an **Unpivot Transformation**:
@@ -60,7 +76,7 @@ If the **Output Model** (e.g., `fct_mgmt_ledger`) contains the `financial_elemen
 
 ---
 
-## 6. Technical Implementation
+## 7. Technical Implementation
 - **Language**: Python 3.x
 - **Core Library**: Pandas (for high-performance Vectorized Joins and Unpivots)
 - **Database**: PostgreSQL (SQLAlchemy ORM)

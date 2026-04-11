@@ -19,16 +19,16 @@ The Fund Transfer Pricing (FTP) engine provides a decoupled, multi-dimensional f
 
 ## 3. High-Resolution Application Interface
 
-![FTP Models](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_models_v2_1775917435750.png)
+![FTP Models](images/v2_ftp_models.png)
 *Figure 1: FTP Calculation Models — Global Rulesets*
 
-![Pricing Rule Definition](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_model_detail_v2_1775917439571.png)
+![Pricing Rule Definition](images/v2_ftp_model_detail.png)
 *Figure 2: Pricing Matrix — Mapping Tenor and Average Periods*
 
-![FTP Execution Processes](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_processes_v2_1775917443512.png)
+![FTP Execution Processes](images/v2_ftp_processes.png)
 *Figure 3: FTP Execution Processes — Staging Table Binding*
 
-![Process Mapping Form](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_process_detail_v2_1775917447651.png)
+![Process Mapping Form](images/v2_ftp_process_detail.png)
 *Figure 4: Binding Model to Physical Schema*
 
 ---

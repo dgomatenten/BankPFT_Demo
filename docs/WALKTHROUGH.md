@@ -87,7 +87,7 @@ After login, the sidebar shows your display name, role badges (Maker/Checker/Adm
 
 The dashboard is the landing page. It provides a quick overview of the system's current state.
 
-![Dashboard](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/dashboard_1775876962367.png)
+![Dashboard](images/v2_dashboard.png)
 
 **Key elements:**
 - **Alerts panel** — appears at the top when there are active alerts (failed batches, pending approvals, inbox files, stale processing date, or any configured table row checks). Each alert row shows a severity icon, a message, and a **View** link
@@ -184,7 +184,7 @@ To configure rule IDs for INSTRUMENT or GL, edit the `rule_ids` array in `upload
 
 Shows all allocation rules with their active/inactive status.
 
-![Rules List](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/allocation_rules_list_v2_1775917419179.png)
+![Rules List](images/v2_allocation_rules_list.png)
 
 **Key elements:**
 - **Rule name** — links to the rule detail page
@@ -205,7 +205,7 @@ Rules are immediately active when created (no Maker/Checker workflow for rules).
 
 Create a new allocation rule. The form is organised into five sections.
 
-![New Rule](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/allocation_rule_new_v2_1775917422804.png)
+![New Rule](images/v2_allocation_rule_new.png)
 
 **How to use:**
 1. **Rule Name / Description** — name and optional notes
@@ -588,7 +588,7 @@ The log file path (`batch_<id[:8]>.log`) is shown in the card header. Log files 
 
 The FTP dashboard is the entry point for all FTP operations.
 
-![FTP Dashboard](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_1775877026091.png)
+![FTP Dashboard](images/v2_ftp_dashboard.png)
 
 **Key elements:**
 - **Run FTP Calculation** form — select an as-of date and click **Run FTP** to trigger the engine
@@ -605,13 +605,13 @@ The FTP dashboard is the entry point for all FTP operations.
 
 Define multi-dimensional pricing rules (e.g., COF, LP, CLP) that will be applied during the FTP process.
 
-![FTP Models](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_models_v2_1775917435750.png)
+![FTP Models](images/v2_ftp_models.png)
 
 **Key elements:**
 - **Model Name** — COF, LP, CLP, etc.
 - **Manage Rules** — Drill down into specific matrix math definitions for that model.
 
-![FTP Model Detail](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_model_detail_v2_1775917439571.png)
+![FTP Model Detail](images/v2_ftp_model_detail.png)
 
 ---
 
@@ -621,14 +621,14 @@ Define multi-dimensional pricing rules (e.g., COF, LP, CLP) that will be applied
 
 Processes bind FTP Models to specific target tables for batch execution.
 
-![FTP Processes](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_processes_v2_1775917443512.png)
+![FTP Processes](images/v2_ftp_processes.png)
 
 **Key elements:**
 - **Process Hook Name** — Unique identifier for the process.
 - **Mapped Model** — The pricing model (ruleset) to apply.
 - **Target DB Table** — The physical schema to update (e.g., `proc_inst_data`).
 
-![New FTP Process Mapping](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/ftp_process_detail_v2_1775917447651.png)
+![New FTP Process Mapping](images/v2_ftp_process_detail.png)
 
 ---
 
@@ -793,7 +793,7 @@ Hub page with links to all available reports.
 
 The primary output report.
 
-![Management Ledger](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/mgmt_ledger_report_1775877130769.png)
+![Management Ledger](images/v2_mgmt_ledger_report.png)
 
 **How to use:**
 1. **Group By** — choose a dimension: Org Unit, Product, Customer
@@ -816,7 +816,7 @@ The primary output report.
 
 System activity and health overview.
 
-![Operations Report](/home/dgoma/.gemini/antigravity/brain/1613df54-0db3-457c-97ac-ab34bb5ee73d/operations_report_1775877143127.png)
+![Operations Report](images/v2_operations_report.png)
 
 **Key elements:**
 - Upload activity by type and status
