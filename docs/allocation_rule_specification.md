@@ -1,4 +1,4 @@
-# Allocation Rule Specification — BankPFT
+# Allocation Rule Specification (UI) — BankPFT
 
 ## 1. Executive Summary
 The Allocation Rule engine is the primary computational core of the BankPFT platform. It transforms processed staging data into multi-dimensional management ledger entries. It supports ratio-based splitting, static distribution, and structural data shredding (multiplexing) into granular Financial Elements.
@@ -18,7 +18,7 @@ The engine supports three distinct allocation strategies defined at the rule lev
 - **Use Case**: Best for high-level pools (e.g., "IT Cost Pool Q1") that are shared across many rules.
 
 ### 2.3 Static Allocation (`STATIC`)
-- **Logic**: No join performed. Maps source rows 1:1 to the output table with a hardcoded ratio of 1.0.
+- **Logic**: No join performed. Maps source rows 1:1 to the output table.
 - **Use Case**: Used for direct reclassification or simple data migration from staging to fact.
 
 ---
@@ -32,27 +32,16 @@ The fundamental logic applied during the calculation is:
 **`Source Balance` × `Operator (Ratio)` = `Output Amount`**
 
 ### 3.2 Ratio Definition
-The operator can be sourced in three ways:
-- **Fixed Operator**: A static number (usually `1.0`) applied to all rows.
-- **Lookup Operator**: A variable percentage (e.g., `0.25`) retrieved from a reference table based on a Join Key.
-- **Balanced Entry Operator**: For 'Both' entry mode, the engine applies `1.0` to the Debit and `-1.0` to the Credit to ensure a zero-sum impact on the ledger.
+rule can be define ratio in operator section that is stored in table(fixed_ratio).
+default value is set as 1. it can be updated.  
 
----
 
-## 4. High-Resolution Application Interface
 
-![Allocation Rule List](images/v2_allocation_rules_list.png)
-*Figure 1: Allocation Rule Management Console*
-
-![New Allocation Rule](images/v2_allocation_rule_new.png)
-*Figure 2: Multi-Dimensional Rule Definition Form*
-
----
-
-## 5. Multi-Dimensional Mapping & Governance
+## 4. Multi-Dimensional Mapping & Governance
 
 ### 4.1 Source Dimension Filters
 Allows for granular selection of source data. Dimensions (e.g., Product, Org Unit, Region) can be set to "All Members" or "Specific Members" (comma-separated list).
+UI read allocation_rule_form_config.json to define source dimension and target dimension. 
 
 ### 4.2 Output Mapping (Debit & Credit)
 For every output dimension, the engine supports three mapping modes:
@@ -67,7 +56,7 @@ For every output dimension, the engine supports three mapping modes:
 
 ---
 
-## 6. Structural Data Shredding (Financial Elements)
+## 5. Structural Data Shredding (Financial Elements)
 A unique feature of the BankPFT engine is its ability to structurally multiplex source balances into distinct Financial Elements.
 
 If the **Output Model** (e.g., `fct_mgmt_ledger`) contains the `financial_element` column, the engine performs an **Unpivot Transformation**:

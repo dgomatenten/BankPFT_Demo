@@ -302,8 +302,8 @@ Database    =  uploaded data, workflow state, execution results           (WHAT 
 
 | Aspect | Source | Details |
 |---|---|---|
-| Form dropdown options | **JSON** `rule_config.json` | Source/lookup/output tables, join keys |
-| Default form selections | **JSON** `rule_config.json` | `defaults` section |
+| Form dropdown options | **JSON** `allocation_rule_form_config.json` | Source/lookup/output tables, join keys |
+| Default form selections | **JSON** `allocation_rule_form_config.json' | `defaults` section |
 | Filter field/operator options | **JSON** `filter_config.json` | Available columns & operators per source table |
 | User's chosen rule config | **DB** `allocation_rule` | `source_table`, `lookup_table`, `output_table`, `join_key`, `allocation_method` saved per rule |
 | User's data filter conditions | **DB** `allocation_rule.filter_json` | JSON: `{"logic":"AND","conditions":[{"field":"..","operator":"..","value":".."}]}` || Source dimension member filters | **DB** `allocation_rule.source_dim_json` | Per-dimension: `{"org_unit_id":{"mode":"specific","members":["OU1"]}}` |
