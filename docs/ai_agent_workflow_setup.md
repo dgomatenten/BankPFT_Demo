@@ -21,6 +21,10 @@ To replicate the Agentic Workflow described in the technical documentation, conf
 | **@architect** | Custom Instruction / Model Switching | Pattern enforcement & Database Schema integrity. |
 | **@researcher** | `@workspace` + MCP Servers | Navigating `docs/` and researching external APIs. |
 | **@reviewer** | Agentic Workflows / Actions | 4-Stage Pipeline (Quality -> Arch -> Security -> Docs). |
+| **Core AI** | **Your Primary Assistant (Me)** | Orchestration, Tool Execution, & Integration. |
+
+> [!TIP]
+> In GitHub Copilot Chat, for implementation and tool use (the role of `@antigravity`), use the **standard chat interface** combined with the `@workspace` handle to provide context. The `@antigravity` persona defines the *logic* my responses follow when you ask for "Orchestration".
 
 ---
 
@@ -58,4 +62,14 @@ To trigger the specialized logic defined in your agents, use these prompts in VS
 
 ### For Documentation
 > "@researcher check if my latest changes to the FTP engine require an update to the `ftp_specification.md`."
+
+---
+
+## 6. Specialized Workflow: The Refactoring Chain
+When refactoring core engines (Allocation/FTP) or shared services:
+
+1.  **Impact Scan**: "@researcher find all services that call `run_allocation` and list their parameters."
+2.  **Consolidation Design**: "@architect propose a way to merge these two validation handlers while keeping the 4-eyes audit trail intact."
+3.  **Equivalence Review**: "@reviewer verify that my new unpivot logic in the engine creates the same financial elements as the legacy version."
+4.  **Verification**: "@antigravity execute a test run with `test_data_specification.md` settings and verify the Management Ledger output matches baseline."
 
